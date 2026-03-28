@@ -330,6 +330,7 @@ Pre-requisito:
 
 - Comentarios com `*` abrem o terminal integrado do VS Code quando a acao inferida for executavel.
 - Exemplo: `-- * run my tests` cria um terminal visivel, executa o comando de teste inferido e remove a linha gatilho quando o processo termina com sucesso.
+- A execucao no VS Code preserva o foco no editor e deixa o output visivel em tempo real no terminal integrado.
 
 ### Auto-fix no VS Code
 

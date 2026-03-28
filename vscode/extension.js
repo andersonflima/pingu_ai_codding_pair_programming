@@ -652,9 +652,27 @@ function activate(context) {
     );
   }
 
+  function terminalInnerCommand(command, cwd, statusFile) {
+    const parts = ['{'];
+    if (cwd) {
+      parts.push(`cd ${shellEscape(cwd)} &&`);
+    }
+    parts.push(`${command};`);
+    parts.push('}');
+
+    if (statusFile) {
+      parts.push(';');
+      parts.push('rda_status=$?;');
+      parts.push(`printf "%s" "$rda_status" > ${shellEscape(statusFile)};`);
+      parts.push('exit $rda_status');
+    }
+
+    return parts.join(' ');
+  }
+
   function terminalWrappedCommand(command, cwd, statusFile) {
-    const prefix = cwd ? `cd ${shellEscape(cwd)} && ` : '';
-    return `{ ${prefix}${command}; }; rda_status=$?; printf "%s" "$rda_status" > ${shellEscape(statusFile)}; exit $rda_status`;
+    const inner = terminalInnerCommand(command, cwd, statusFile);
+    return `/bin/sh -lc ${shellEscape(inner)}`;
   }
 
   function shellEscape(value) {
