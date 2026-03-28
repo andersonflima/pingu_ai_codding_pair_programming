@@ -505,6 +505,9 @@ function! s:issue_default_action(kind) abort
   if a:kind ==# 'comment_task'
     return {'op': 'replace_line'}
   endif
+  if a:kind ==# 'context_file'
+    return {'op': 'write_file'}
+  endif
   if a:kind ==# 'terminal_task'
     return {'op': 'run_command'}
   endif
@@ -537,12 +540,31 @@ function! s:extract_extra_delimiter_char(text) abort
   return l:match[1]
 endfunction
 
+function! s:issue_action_identity(item) abort
+  let l:action = s:issue_effective_action(a:item)
+  let l:op = get(l:action, 'op', '')
+  if l:op ==# 'write_file'
+    let l:target_file = trim(get(l:action, 'target_file', ''))
+    if empty(l:target_file)
+      return ''
+    endif
+    return fnamemodify(l:target_file, ':p')
+  endif
+  if l:op ==# 'run_command'
+    return get(l:action, 'command', '')
+  endif
+  return get(a:item, 'text', '')
+endfunction
+
 function! s:apply_issue_write_file(issue, snippet_lines) abort
+  let l:issue = copy(a:issue)
   let l:action = s:issue_effective_action(a:issue)
-  let l:target_file = fnamemodify(get(l:action, 'target_file', ''), ':p')
+  let l:target_file = trim(get(l:action, 'target_file', ''))
   if empty(l:target_file)
     return v:false
   endif
+  let l:target_file = fnamemodify(l:target_file, ':p')
+  let l:issue._trigger_line = s:issue_trigger_line_text(a:issue)
 
   let l:target_dir = fnamemodify(l:target_file, ':h')
   if get(l:action, 'mkdir_p', v:false) && !isdirectory(l:target_dir)
@@ -550,6 +572,11 @@ function! s:apply_issue_write_file(issue, snippet_lines) abort
   endif
 
   call writefile(copy(a:snippet_lines), l:target_file, 'b')
+  if get(l:action, 'remove_trigger', v:false)
+    if !s:remove_issue_trigger_line(l:issue, v:false)
+      call s:clear_issue_line(get(l:issue, 'filename', ''), get(l:issue, 'lnum', 1))
+    endif
+  endif
   return v:true
 endfunction
 
@@ -613,6 +640,7 @@ function! s:delete_issue_line(file, lnum, trigger_line) abort
     let l:line_at_lnum = get(getbufline(l:target_buf, a:lnum), 0, '')
     if empty(a:trigger_line) || l:line_at_lnum ==# a:trigger_line
       noautocmd call deletebufline(l:target_buf, a:lnum)
+      call setbufvar(l:target_buf, '&modified', 1)
       return v:true
     endif
   endif
@@ -628,6 +656,7 @@ function! s:delete_issue_line(file, lnum, trigger_line) abort
   endif
 
   noautocmd call deletebufline(l:target_buf, l:index + 1)
+  call setbufvar(l:target_buf, '&modified', 1)
   return v:true
 endfunction
 
@@ -640,6 +669,31 @@ function! s:remove_issue_trigger_line(issue, keep_focus_code) abort
         \ get(a:issue, 'lnum', 1),
         \ get(a:issue, '_trigger_line', '')
         \ )
+endfunction
+
+function! s:clear_issue_line(file, lnum) abort
+  if a:lnum < 1
+    return v:false
+  endif
+
+  let l:target_buf = s:issue_target_buffer(a:file)
+  if l:target_buf <= 0
+    return v:false
+  endif
+
+  if !getbufvar(l:target_buf, '&modifiable', 0)
+    return v:false
+  endif
+
+  let l:last = len(getbufline(l:target_buf, 1, '$'))
+  if l:last < 1
+    return v:false
+  endif
+
+  let l:line_no = min([a:lnum, l:last])
+  noautocmd call setbufline(l:target_buf, l:line_no, '')
+  call setbufvar(l:target_buf, '&modified', 1)
+  return v:true
 endfunction
 
 function! s:issue_terminal_height() abort
@@ -691,10 +745,6 @@ function! s:issue_terminal_shell_command(command, cwd, status_file) abort
   call add(l:parts, 'printf "%s" "$rda_status" > ' . shellescape(a:status_file) . ';')
   call add(l:parts, 'exit $rda_status')
   return join(l:parts, ' ')
-endfunction
-
-function! s:issue_terminal_ex_quote(value) abort
-  return '"' . substitute(substitute(a:value, '\\', '\\\\', 'g'), '"', '\\"', 'g') . '"'
 endfunction
 
 function! s:issue_terminal_context(issue, keep_focus_code) abort
@@ -757,12 +807,33 @@ endfunction
 function! s:apply_issue_run_command_toggleterm(command, cwd, context) abort
   let l:status_file = s:issue_terminal_status_file()
   let l:wrapped_command = s:issue_terminal_shell_command(a:command, a:cwd, l:status_file)
-  let l:exec = 'TermExec go_back=0'
-  if !empty(a:cwd)
-    let l:exec .= ' dir=' . s:issue_terminal_ex_quote(a:cwd)
+  let l:payload = {
+        \ 'cmd': l:wrapped_command,
+        \ 'cwd': a:cwd,
+        \ 'display_name': 'Realtime Dev Agent'
+        \ }
+  let l:ok = luaeval(
+        \ '(function(payload)'
+        \ . ' local ok, terminal_module = pcall(require, "toggleterm.terminal")'
+        \ . ' if not ok or not terminal_module or not terminal_module.Terminal then return false end'
+        \ . ' local term = terminal_module.Terminal:new({'
+        \ . '   dir = payload.cwd ~= "" and payload.cwd or nil,'
+        \ . '   hidden = false,'
+        \ . '   close_on_exit = false,'
+        \ . '   display_name = payload.display_name'
+        \ . ' })'
+        \ . ' term:open()'
+        \ . ' vim.schedule(function() term:send(payload.cmd, false) end)'
+        \ . ' return true'
+        \ . ' end)(_A)',
+        \ l:payload
+        \ )
+  if !l:ok
+    echohl ErrorMsg
+    echomsg '[RealtimeDevAgent] Falha ao controlar o ToggleTerm'
+    echohl None
+    return v:false
   endif
-  let l:exec .= ' cmd=' . s:issue_terminal_ex_quote(l:wrapped_command)
-  execute l:exec
   echomsg '[RealtimeDevAgent] Executando no ToggleTerm: ' . a:command
   call s:issue_terminal_schedule_poll(a:context, l:status_file)
   return v:true
@@ -1034,10 +1105,11 @@ function! s:realtime_issue_still_relevant(item, target_buf, lnum, line_content) 
   let l:op = get(l:action, 'op', '')
 
   if l:op ==# 'write_file'
-    let l:target_file = fnamemodify(get(l:action, 'target_file', ''), ':p')
+    let l:target_file = trim(get(l:action, 'target_file', ''))
     if empty(l:target_file)
       return v:false
     endif
+    let l:target_file = fnamemodify(l:target_file, ':p')
 
     let l:snippet = get(a:item, 'snippet', '')
     if empty(l:snippet)
@@ -1057,7 +1129,7 @@ function! s:realtime_issue_still_relevant(item, target_buf, lnum, line_content) 
   endif
 
   if l:op ==# 'run_command'
-    return l:content =~# '^\s*\(#\|//\|--\|"\)\s*\*\s*.\+$' || l:content =~# '^\s*<!--\s*\*\s*.\+\s*-->\s*$'
+    return l:content =~# '^\s*\(#\|//\|--\|"\)\s*\%(\\s\)\?\s*\*\s*.\+$' || l:content =~# '^\s*<!--\s*\%(\\s\)\?\s*\*\s*.\+\s*-->\s*$'
   endif
 
   if l:line_no < 1
@@ -1504,10 +1576,11 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
     endif
 
     let l:item_key = printf(
-          \ '%s|%d|%s',
+          \ '%s|%d|%s|%s',
           \ fnamemodify(l:item_file, ':p'),
           \ get(l:item, 'lnum', 0),
-          \ get(l:item, 'kind', '')
+          \ get(l:item, 'kind', ''),
+          \ s:issue_action_identity(l:item)
           \ )
     if has_key(l:seen, l:item_key)
       continue
@@ -1548,6 +1621,7 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
         \ 'functional_reassignment',
         \ 'debug_output',
         \ 'comment_task',
+        \ 'context_file',
         \ 'terminal_task',
         \ 'trailing_whitespace',
         \ 'tabs',
@@ -1585,6 +1659,7 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
         continue
       endif
       let l:item_kind = get(l:item, 'kind', '')
+      let l:item_identity = s:issue_action_identity(l:item)
       let l:item_line_key = string(l:item_line)
       let l:line_kinds = get(l:line_kind_applied, l:item_line_key, [])
       if type(l:line_kinds) != v:t_list
@@ -1593,22 +1668,26 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
       if index(l:line_kinds, 'undefined_variable') != -1 && l:item_kind ==# 'debug_output'
         continue
       endif
-      if !empty(l:line_kinds) && index(l:line_kinds, l:item_kind) != -1
+      let l:item_apply_key = l:item_kind
+      if !empty(l:item_identity)
+        let l:item_apply_key = l:item_kind . '|' . l:item_identity
+      endif
+      if !empty(l:line_kinds) && index(l:line_kinds, l:item_apply_key) != -1
         continue
       endif
 
       let l:guard_key = printf(
             \ '%s|%s|%d|%s',
             \ get(l:item, 'filename', ''),
-            \ l:item_kind,
+            \ l:item_apply_key,
             \ l:item_line,
-            \ get(l:item, 'text', '')
+            \ l:item_identity
             \ )
       if has_key(l:fix_guard, l:guard_key)
         continue
       endif
       let l:fix_guard[l:guard_key] = 1
-      call add(l:line_kinds, l:item_kind)
+      call add(l:line_kinds, l:item_apply_key)
       let l:line_kind_applied[l:item_line_key] = l:line_kinds
 
       if s:apply_issue_snippet(l:item, v:false)
@@ -1785,29 +1864,31 @@ function! s:window_refresh(file, qf) abort
 endfunction
 
 function! s:extract_issue_text(raw) abort
-  let l:match = matchlist(a:raw, '\v^(.*)\s\|\|\sSNIPPET:.*$')
-  if empty(l:match)
-    let l:match_no_snippet = matchlist(a:raw, '\v^(.*)\s\|\|\sACTION:\{.*\}\s*$')
-    if !empty(l:match_no_snippet)
-      return l:match_no_snippet[1]
-    endif
-    return a:raw
+  let l:text = a:raw
+  let l:snippet_marker = stridx(l:text, ' || SNIPPET:')
+  if l:snippet_marker >= 0
+    let l:text = strpart(l:text, 0, l:snippet_marker)
   endif
-  let l:text = l:match[1]
-  let l:actionless = matchlist(l:text, '\v^(.*)\s\|\|\sACTION:\{.*\}\s*$')
-  if !empty(l:actionless)
-    return l:actionless[1]
+  let l:action_marker = stridx(l:text, ' || ACTION:')
+  if l:action_marker >= 0
+    let l:text = strpart(l:text, 0, l:action_marker)
   endif
   return l:text
 endfunction
 
 function! s:extract_issue_action(raw) abort
-  let l:match = matchlist(a:raw, '\v\|\| ACTION:(\{.*\})\s*(\|\|.*)?$')
-  if empty(l:match)
+  let l:marker = ' || ACTION:'
+  let l:start = stridx(a:raw, l:marker)
+  if l:start < 0
     return {}
   endif
+  let l:payload = strpart(a:raw, l:start + strlen(l:marker))
+  let l:snippet_marker = stridx(l:payload, ' || SNIPPET:')
+  if l:snippet_marker >= 0
+    let l:payload = strpart(l:payload, 0, l:snippet_marker)
+  endif
   try
-    return json_decode(l:match[1])
+    return json_decode(trim(l:payload))
   catch
     return {}
   endtry

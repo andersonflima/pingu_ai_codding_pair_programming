@@ -213,6 +213,7 @@ if !exists('g:realtime_dev_agent_auto_fix_kinds')
         \ 'undefined_variable',
         \ 'debug_output',
         \ 'comment_task',
+        \ 'context_file',
         \ 'terminal_task',
         \ 'syntax_missing_quote',
         \ 'syntax_extra_delimiter',
