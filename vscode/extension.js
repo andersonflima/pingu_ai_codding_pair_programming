@@ -653,27 +653,35 @@ function activate(context) {
     );
   }
 
-  function terminalInnerCommand(command, cwd, statusFile) {
-    const parts = ['{'];
-    if (cwd) {
-      parts.push(`cd ${shellEscape(cwd)} &&`);
-    }
-    parts.push(`${command};`);
-    parts.push('}');
-
-    if (statusFile) {
-      parts.push(';');
-      parts.push('rda_status=$?;');
-      parts.push(`printf "%s" "$rda_status" > ${shellEscape(statusFile)};`);
-      parts.push('exit $rda_status');
-    }
-
-    return parts.join(' ');
+  function terminalScriptFile() {
+    return path.join(
+      os.tmpdir(),
+      `realtime-dev-agent-terminal-${Date.now()}-${Math.random().toString(16).slice(2)}.sh`,
+    );
   }
 
-  function terminalWrappedCommand(command, cwd, statusFile) {
-    const inner = terminalInnerCommand(command, cwd, statusFile);
-    return `/bin/sh -lc ${shellEscape(inner)}`;
+  function terminalScriptContents(command, cwd, statusFile) {
+    const lines = [
+      '#!/bin/sh',
+      'set +e',
+    ];
+
+    if (cwd) {
+      lines.push(`cd ${shellEscape(cwd)} || exit 1`);
+    }
+
+    lines.push(`printf "%s\\n" ${shellEscape(`[RealtimeDevAgent] command: ${command}`)}`);
+    lines.push(command);
+    lines.push('rda_status=$?');
+    lines.push(`printf "%s" "$rda_status" > ${shellEscape(statusFile)}`);
+    lines.push('printf "\\n[RealtimeDevAgent] exit code: %s\\n" "$rda_status"');
+    lines.push('exit "$rda_status"');
+
+    return lines.join('\n');
+  }
+
+  function terminalWrappedCommand(scriptFile) {
+    return `/bin/sh ${shellEscape(scriptFile)}`;
   }
 
   function recyclePendingTerminalTask(key) {
@@ -731,6 +739,8 @@ function activate(context) {
         : path.dirname(document.fileName));
     const triggerText = issueTriggerText(document, issue);
     const statusFile = terminalStatusFile();
+    const scriptFile = terminalScriptFile();
+    fs.writeFileSync(scriptFile, terminalScriptContents(command, cwd, statusFile), { mode: 0o755 });
     const terminal = vscode.window.createTerminal({
       name: 'Realtime Dev Agent',
       cwd,
@@ -739,10 +749,11 @@ function activate(context) {
     pendingTerminalTasks.set(key, {
       startedAt: Date.now(),
       statusFile,
+      scriptFile,
     });
     terminal.show(true);
     setTimeout(() => {
-      terminal.sendText(terminalWrappedCommand(command, cwd, statusFile), true);
+      terminal.sendText(terminalWrappedCommand(scriptFile), true);
     }, 80);
     output.appendLine(`[RealtimeDevAgent] Executando no terminal do VS Code: ${command}`);
 
@@ -770,6 +781,9 @@ function activate(context) {
       pendingTerminalTasks.delete(key);
       if (fs.existsSync(statusFile)) {
         fs.rmSync(statusFile, { force: true });
+      }
+      if (fs.existsSync(scriptFile)) {
+        fs.rmSync(scriptFile, { force: true });
       }
     }
   }
