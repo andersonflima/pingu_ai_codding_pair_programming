@@ -1,0 +1,8 @@
+{
+  "name": "anget-test-javascript",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "test": "node --test"
+  }
+}
