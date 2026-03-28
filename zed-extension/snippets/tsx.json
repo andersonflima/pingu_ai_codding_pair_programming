@@ -1,0 +1,26 @@
+{
+  "Realtime Dev Agent React Task": {
+    "prefix": "rda:",
+    "body": [
+      "//: ${1:componente de dado de rpg 3D com 20 lados para girar ao clicar e mostrar um numero random na tela}",
+      "$0"
+    ],
+    "description": "Insere um comentario acionavel de geracao para componente React"
+  },
+  "Realtime Dev Agent Terminal Task": {
+    "prefix": "rda*",
+    "body": [
+      "//* ${1:run my tests}",
+      "$0"
+    ],
+    "description": "Insere um comentario acionavel de terminal"
+  },
+  "Realtime Dev Agent Context Task": {
+    "prefix": "rda**",
+    "body": [
+      "//** ${1:bff para crud de usuario}",
+      "$0"
+    ],
+    "description": "Insere um comentario acionavel de contexto ou blueprint"
+  }
+}

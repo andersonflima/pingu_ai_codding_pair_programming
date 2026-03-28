@@ -1,0 +1,26 @@
+{
+  "Realtime Dev Agent Code Task": {
+    "prefix": "rda:",
+    "body": [
+      "#: ${1:funcao dados retorna numero random de dado de rpg de 20 lados}",
+      "$0"
+    ],
+    "description": "Insere um comentario acionavel de geracao ou ajuste de codigo"
+  },
+  "Realtime Dev Agent Terminal Task": {
+    "prefix": "rda*",
+    "body": [
+      "#* ${1:run my tests}",
+      "$0"
+    ],
+    "description": "Insere um comentario acionavel de terminal"
+  },
+  "Realtime Dev Agent Context Task": {
+    "prefix": "rda**",
+    "body": [
+      "#** ${1:projeto existente usa contexts pequenos e modulos coesos}",
+      "$0"
+    ],
+    "description": "Insere um comentario acionavel de contexto ou blueprint"
+  }
+}

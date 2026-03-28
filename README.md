@@ -280,6 +280,27 @@ npm run package:vscode
 code --install-extension realtime-dev-agent.vsix
 ```
 
+## Instalacao local no Zed
+
+O suporte atual para Zed fica em [zed-extension/](./zed-extension) e entrega snippets para inserir rapidamente os comentarios acionaveis do agente.
+
+### Instalar como dev extension no Zed
+
+1. Abra `zed: extensions`
+2. Clique em `Install Dev Extension`
+3. Selecione a pasta `zed-extension/` deste repositorio
+
+### O que esta disponivel no Zed hoje
+
+- snippets para comentarios `:`, `*` e `**`
+- variantes escapadas como `\s:` e `\s*`
+- suporte para JavaScript, TypeScript, React, Python, Elixir, Go, Rust, C, Lua, Dockerfile, YAML, Terraform, Markdown e Mermaid
+
+### Limitacao atual no Zed
+
+- a integracao completa em tempo real com diagnosticos, aplicacao automatica e acoes de terminal continua implementada hoje no Vim/Neovim e no VS Code
+- no Zed, a instalacao atual fornece uma extensao de snippets para acelerar o disparo dos comentarios acionaveis
+
 ## Comandos da extensao VS Code
 
 - `Realtime Dev Agent: Analyze Current File`

@@ -1,0 +1,26 @@
+{
+  "Realtime Dev Agent Code Task": {
+    "prefix": "rda:",
+    "body": [
+      "//: ${1:funcao soma}",
+      "$0"
+    ],
+    "description": "Insere um comentario acionavel de geracao ou ajuste de codigo"
+  },
+  "Realtime Dev Agent Terminal Task": {
+    "prefix": "rda*",
+    "body": [
+      "//* ${1:run my tests}",
+      "$0"
+    ],
+    "description": "Insere um comentario acionavel de terminal"
+  },
+  "Realtime Dev Agent Context Task": {
+    "prefix": "rda**",
+    "body": [
+      "//** ${1:bff para crud de usuario}",
+      "$0"
+    ],
+    "description": "Insere um comentario acionavel de contexto ou blueprint"
+  }
+}
