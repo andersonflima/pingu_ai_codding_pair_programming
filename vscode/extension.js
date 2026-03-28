@@ -12,6 +12,7 @@ function activate(context) {
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   const pendingTimers = new Map();
   const pendingTerminalTasks = new Map();
+  const pendingTerminalTaskStaleMs = 30 * 1000;
   const defaultAutoFixKinds = [
     'moduledoc',
     'function_spec',
@@ -675,6 +676,25 @@ function activate(context) {
     return `/bin/sh -lc ${shellEscape(inner)}`;
   }
 
+  function recyclePendingTerminalTask(key) {
+    const pendingEntry = pendingTerminalTasks.get(key);
+    if (!pendingEntry) {
+      return false;
+    }
+
+    const statusFile = String(pendingEntry.statusFile || '');
+    if (statusFile && fs.existsSync(statusFile)) {
+      return false;
+    }
+
+    if (Date.now() - Number(pendingEntry.startedAt || 0) < pendingTerminalTaskStaleMs) {
+      return false;
+    }
+
+    pendingTerminalTasks.delete(key);
+    return true;
+  }
+
   function shellEscape(value) {
     return `'${String(value).replace(/'/g, `'\"'\"'`)}'`;
   }
@@ -694,14 +714,15 @@ function activate(context) {
 
   async function applyTerminalTask(document, issue) {
     const key = issueKey(document, issue);
-    if (pendingTerminalTasks.has(key)) {
-      return false;
-    }
-
     const action = issue.action || {};
     const command = String(action.command || '').trim();
     if (!command) {
       return false;
+    }
+
+    if (pendingTerminalTasks.has(key) && !recyclePendingTerminalTask(key)) {
+      output.appendLine(`[RealtimeDevAgent] Acao de terminal ja esta em execucao no VS Code: ${command}`);
+      return true;
     }
 
     const cwd = String(action.cwd || '').trim()
@@ -713,11 +734,15 @@ function activate(context) {
     const terminal = vscode.window.createTerminal({
       name: 'Realtime Dev Agent',
       cwd,
+      shellPath: '/bin/sh',
+      shellArgs: ['-lc', terminalInnerCommand(command, cwd, statusFile)],
     });
 
-    pendingTerminalTasks.set(key, true);
+    pendingTerminalTasks.set(key, {
+      startedAt: Date.now(),
+      statusFile,
+    });
     terminal.show(true);
-    terminal.sendText(terminalWrappedCommand(command, cwd, statusFile), true);
     output.appendLine(`[RealtimeDevAgent] Executando no terminal do VS Code: ${command}`);
 
     try {
