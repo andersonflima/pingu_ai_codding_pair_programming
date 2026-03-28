@@ -1,0 +1,75 @@
+{
+  "name": "realtime-dev-agent",
+  "displayName": "Realtime Dev Agent",
+  "description": "Agente de pair programming em tempo real para Vim e VS Code.",
+  "version": "0.1.0",
+  "publisher": "andersonflima",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./vscode/extension.js",
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:realtimeDevAgent.analyzeCurrentFile",
+    "onCommand:realtimeDevAgent.toggleRealtime"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "realtimeDevAgent.analyzeCurrentFile",
+        "title": "Realtime Dev Agent: Analyze Current File"
+      },
+      {
+        "command": "realtimeDevAgent.toggleRealtime",
+        "title": "Realtime Dev Agent: Toggle Realtime Analysis"
+      }
+    ],
+    "configuration": {
+      "title": "Realtime Dev Agent",
+      "properties": {
+        "realtimeDevAgent.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Ativa a analise automatica em tempo real no VS Code."
+        },
+        "realtimeDevAgent.nodePath": {
+          "type": "string",
+          "default": "node",
+          "description": "Executavel Node.js usado para chamar o agente."
+        },
+        "realtimeDevAgent.scriptPath": {
+          "type": "string",
+          "default": "",
+          "description": "Caminho opcional para um realtime_dev_agent.js externo. Quando vazio, usa o script do proprio plugin."
+        },
+        "realtimeDevAgent.maxLineLength": {
+          "type": "number",
+          "default": 120,
+          "description": "Limite maximo de caracteres considerado pela analise."
+        },
+        "realtimeDevAgent.realtimeOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Executa analise automatica ao salvar arquivos."
+        },
+        "realtimeDevAgent.realtimeOnChange": {
+          "type": "boolean",
+          "default": true,
+          "description": "Executa analise automatica durante a digitacao."
+        },
+        "realtimeDevAgent.changeDebounceMs": {
+          "type": "number",
+          "default": 1200,
+          "description": "Tempo de debounce em milissegundos antes de rodar a analise por mudanca."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "package:vscode": "npx @vscode/vsce package --out realtime-dev-agent.vsix"
+  }
+}

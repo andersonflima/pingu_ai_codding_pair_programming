@@ -1,0 +1,7 @@
+.git/**
+.github/**
+vim/**
+plugin/**
+autoload/**
+tests/**
+realtime-dev-agent.vsix
