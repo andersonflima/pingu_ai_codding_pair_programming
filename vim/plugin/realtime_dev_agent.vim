@@ -132,6 +132,16 @@ if !exists('g:realtime_dev_agent_review_on_open')
   let g:realtime_dev_agent_review_on_open = 1
 endif
 
+if !exists('g:realtime_dev_agent_start_on_editor_enter')
+  " Inicia o agente automaticamente no primeiro buffer suportado da sessao.
+  let g:realtime_dev_agent_start_on_editor_enter = 1
+endif
+
+if !exists('g:realtime_dev_agent_open_window_on_start')
+  " Abre o painel junto do startup automatico do agente.
+  let g:realtime_dev_agent_open_window_on_start = 1
+endif
+
 if !exists('g:realtime_dev_agent_realtime_delay')
   " Milisegundos de espera apos a ultima mudanca para disparar a checagem.
   let g:realtime_dev_agent_realtime_delay = 1200
@@ -175,6 +185,21 @@ if !exists('g:realtime_dev_agent_auto_fix_enabled')
   let g:realtime_dev_agent_auto_fix_enabled = 1
 endif
 
+if !exists('g:realtime_dev_agent_terminal_actions_enabled')
+  " 1 permite executar acoes de terminal inferidas a partir de comentarios com *.
+  let g:realtime_dev_agent_terminal_actions_enabled = 1
+endif
+
+if !exists('g:realtime_dev_agent_terminal_height')
+  " Altura da split usada para exibir a execucao de comandos do terminal.
+  let g:realtime_dev_agent_terminal_height = 12
+endif
+
+if !exists('g:realtime_dev_agent_terminal_strategy')
+  " auto: VS Code terminal em vscode-neovim, ToggleTerm quando houver TermExec, terminal nativa como fallback.
+  let g:realtime_dev_agent_terminal_strategy = 'auto'
+endif
+
 if !exists('g:realtime_dev_agent_auto_fix_kinds')
   " Pair mode: revisar e corrigir boas praticas automaticamente sem pausa.
   let g:realtime_dev_agent_auto_fix_kinds = [
@@ -188,6 +213,11 @@ if !exists('g:realtime_dev_agent_auto_fix_kinds')
         \ 'undefined_variable',
         \ 'debug_output',
         \ 'comment_task',
+        \ 'terminal_task',
+        \ 'syntax_missing_quote',
+        \ 'syntax_extra_delimiter',
+        \ 'syntax_missing_delimiter',
+        \ 'syntax_missing_comma',
         \ 'markdown_title',
         \ 'terraform_required_version',
         \ 'dockerfile_workdir'

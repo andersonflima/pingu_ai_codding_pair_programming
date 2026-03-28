@@ -12,6 +12,8 @@ let s:realtime_dev_agent_auto_fix_busy = v:false
 let s:realtime_dev_agent_is_realtime_check = v:false
 let s:realtime_dev_agent_file_ticks = {}
 let s:realtime_dev_agent_fix_guard = {}
+let s:realtime_dev_agent_window_source_winid = -1
+let s:realtime_dev_agent_started = v:false
 
 function! s:realtime_dev_agent_script_runner() abort
   if !executable('node')
@@ -122,6 +124,10 @@ function! s:should_check_file(file) abort
 endfunction
 
 function! s:realtime_dev_agent_open_review() abort
+  if s:realtime_dev_agent_start_current_buffer()
+    return
+  endif
+
   if !g:realtime_dev_agent_review_on_open
     return
   endif
@@ -139,7 +145,43 @@ function! s:realtime_dev_agent_open_review() abort
     return
   endif
 
+  call s:remember_code_window(win_getid())
   call s:realtime_check_from_buffer(l:bufnr, g:realtime_dev_agent_realtime_open_qf, 0)
+endfunction
+
+function! s:realtime_dev_agent_start_current_buffer() abort
+  if s:realtime_dev_agent_started
+    return v:false
+  endif
+
+  if !get(g:, 'realtime_dev_agent_start_on_editor_enter', 0)
+    return v:false
+  endif
+
+  let l:bufnr = bufnr('%')
+  if l:bufnr <= 0 || !bufloaded(l:bufnr) || s:realtime_dev_agent_auto_fix_busy
+    return v:false
+  endif
+
+  if &l:buftype !=# ''
+    return v:false
+  endif
+
+  let l:file = fnamemodify(bufname(l:bufnr), ':p')
+  if empty(l:file) || !s:should_check_file(l:file)
+    return v:false
+  endif
+
+  let s:realtime_dev_agent_started = v:true
+  call s:remember_code_window(win_getid())
+
+  if get(g:, 'realtime_dev_agent_open_window_on_start', 1)
+    let g:realtime_dev_agent_show_window = 1
+    call s:window_open()
+  endif
+
+  call s:realtime_check_from_buffer(l:bufnr, g:realtime_dev_agent_open_qf, 0)
+  return v:true
 endfunction
 
 function! s:window_buffer() abort
@@ -156,7 +198,62 @@ function! s:window_find() abort
   return -1
 endfunction
 
+function! s:is_panel_window(winid) abort
+  let l:winnr = win_id2win(a:winid)
+  if l:winnr == 0
+    return v:false
+  endif
+  return winbufnr(l:winnr) == s:window_buffer()
+endfunction
+
+function! s:is_code_window(winid) abort
+  let l:winnr = win_id2win(a:winid)
+  if l:winnr == 0 || s:is_panel_window(a:winid)
+    return v:false
+  endif
+
+  let l:buf = winbufnr(l:winnr)
+  if l:buf <= 0 || !bufexists(l:buf)
+    return v:false
+  endif
+
+  return getbufvar(l:buf, '&buftype') ==# ''
+endfunction
+
+function! s:remember_code_window(winid) abort
+  if s:is_code_window(a:winid)
+    let s:realtime_dev_agent_window_source_winid = a:winid
+  endif
+endfunction
+
+function! s:focus_code_window() abort
+  let l:preferred = get(s:, 'realtime_dev_agent_window_source_winid', -1)
+  if s:is_code_window(l:preferred)
+    call win_gotoid(l:preferred)
+    return v:true
+  endif
+
+  let l:current = win_getid()
+  if s:is_code_window(l:current)
+    call s:remember_code_window(l:current)
+    return v:true
+  endif
+
+  for l:info in getwininfo()
+    if s:is_code_window(l:info.winid)
+      call win_gotoid(l:info.winid)
+      call s:remember_code_window(l:info.winid)
+      return v:true
+    endif
+  endfor
+
+  execute 'aboveleft split'
+  call s:remember_code_window(win_getid())
+  return v:true
+endfunction
+
 function! s:window_open() abort
+  call s:remember_code_window(win_getid())
   let l:win = s:window_find()
   if l:win != -1
     call s:window_set_buffer_keymaps()
@@ -195,7 +292,9 @@ function! s:window_set_buffer_keymaps() abort
   nnoremap <buffer> <silent> <CR> :call <SID>window_jumpto_issue()<CR>
   nnoremap <buffer> <silent> r :RealtimeDevAgentWindowCheck<CR>
   nnoremap <buffer> <silent> q :RealtimeDevAgentWindowClose<CR>
-  nnoremap <buffer> <silent> i :call <SID>window_insert_followup()<CR>
+  nnoremap <buffer> <silent> a :call <SID>window_apply_suggestion()<CR>
+  nnoremap <buffer> <silent> i :call <SID>window_apply_suggestion()<CR>
+  nnoremap <buffer> <silent> f :call <SID>window_insert_followup()<CR>
   nnoremap <buffer> <silent> <Tab> :call <SID>window_apply_suggestion()<CR>
   execute 'buffer ' . l:current
 endfunction
@@ -281,11 +380,11 @@ function! s:window_jumpto_issue() abort
     return
   endif
 
-  if winnr('$') > 1
-    wincmd p
+  if !s:focus_code_window()
+    return
   endif
 
-  silent! execute 'edit ' . fnameescape(l:issue.filename)
+  silent! execute 'keepalt keepjumps edit ' . fnameescape(l:issue.filename)
   call cursor(l:issue.lnum, max([1, l:issue.col]))
   normal! zz
   redraw
@@ -304,11 +403,16 @@ function! s:window_insert_followup() abort
     return
   endif
 
-  let l:snippet = printf('  # follow-up Realtime Dev Agent: %s', l:issue.text)
-  if winnr('$') > 1
-    wincmd p
+  let l:instruction = s:build_followup_instruction(l:issue)
+  let l:snippet = s:build_followup_comment(l:issue.filename, l:instruction)
+  if empty(l:snippet)
+    return
   endif
-  execute 'silent! edit ' . fnameescape(l:issue.filename)
+
+  if !s:focus_code_window()
+    return
+  endif
+  execute 'silent! keepalt keepjumps edit ' . fnameescape(l:issue.filename)
   call cursor(l:issue.lnum, 1)
   normal! o
   call append('.', l:snippet)
@@ -395,7 +499,16 @@ function! s:issue_default_action(kind) abort
   if a:kind ==# 'debug_output' || a:kind ==# 'trailing_whitespace' || a:kind ==# 'tabs'
     return {'op': 'replace_line'}
   endif
+  if a:kind ==# 'syntax_missing_quote' || a:kind ==# 'syntax_extra_delimiter' || a:kind ==# 'syntax_missing_comma'
+    return {'op': 'replace_line'}
+  endif
   if a:kind ==# 'comment_task'
+    return {'op': 'replace_line'}
+  endif
+  if a:kind ==# 'terminal_task'
+    return {'op': 'run_command'}
+  endif
+  if a:kind ==# 'syntax_missing_delimiter'
     return {'op': 'insert_after', 'dedupeLookahead': 6}
   endif
   if a:kind ==# 'unit_test'
@@ -416,11 +529,19 @@ function! s:issue_effective_action(item) abort
   return s:issue_default_action(l:kind)
 endfunction
 
+function! s:extract_extra_delimiter_char(text) abort
+  let l:match = matchlist(a:text, "Delimitador '\\(.\\)' sem abertura correspondente")
+  if empty(l:match)
+    return ''
+  endif
+  return l:match[1]
+endfunction
+
 function! s:apply_issue_write_file(issue, snippet_lines) abort
   let l:action = s:issue_effective_action(a:issue)
   let l:target_file = fnamemodify(get(l:action, 'target_file', ''), ':p')
   if empty(l:target_file)
-    return
+    return v:false
   endif
 
   let l:target_dir = fnamemodify(l:target_file, ':h')
@@ -429,6 +550,330 @@ function! s:apply_issue_write_file(issue, snippet_lines) abort
   endif
 
   call writefile(copy(a:snippet_lines), l:target_file, 'b')
+  return v:true
+endfunction
+
+function! s:issue_target_buffer(file) abort
+  let l:target_file = fnamemodify(a:file, ':p')
+  if empty(l:target_file)
+    return -1
+  endif
+
+  let l:target_buf = bufnr(l:target_file)
+  if l:target_buf <= 0
+    let l:target_buf = bufadd(l:target_file)
+  endif
+  if l:target_buf <= 0
+    return -1
+  endif
+
+  call bufload(l:target_buf)
+  if !bufloaded(l:target_buf)
+    return -1
+  endif
+
+  return l:target_buf
+endfunction
+
+function! s:issue_trigger_line_text(issue) abort
+  let l:filename = get(a:issue, 'filename', '')
+  let l:lnum = get(a:issue, 'lnum', 1)
+  if l:lnum < 1
+    return ''
+  endif
+
+  let l:target_buf = s:issue_target_buffer(l:filename)
+  if l:target_buf <= 0
+    return ''
+  endif
+
+  return get(getbufline(l:target_buf, l:lnum), 0, '')
+endfunction
+
+function! s:delete_issue_line(file, lnum, trigger_line) abort
+  if a:lnum < 1
+    return v:false
+  endif
+
+  let l:target_buf = s:issue_target_buffer(a:file)
+  if l:target_buf <= 0
+    return v:false
+  endif
+
+  if !getbufvar(l:target_buf, '&modifiable', 0)
+    return v:false
+  endif
+
+  let l:last = len(getbufline(l:target_buf, 1, '$'))
+  if l:last < 1
+    return v:false
+  endif
+
+  if a:lnum <= l:last
+    let l:line_at_lnum = get(getbufline(l:target_buf, a:lnum), 0, '')
+    if empty(a:trigger_line) || l:line_at_lnum ==# a:trigger_line
+      noautocmd call deletebufline(l:target_buf, a:lnum)
+      return v:true
+    endif
+  endif
+
+  if empty(a:trigger_line)
+    return v:false
+  endif
+
+  let l:buffer_lines = getbufline(l:target_buf, 1, '$')
+  let l:index = index(l:buffer_lines, a:trigger_line)
+  if l:index < 0
+    return v:false
+  endif
+
+  noautocmd call deletebufline(l:target_buf, l:index + 1)
+  return v:true
+endfunction
+
+function! s:remove_issue_trigger_line(issue, keep_focus_code) abort
+  if a:keep_focus_code
+    call s:focus_code_window()
+  endif
+  return s:delete_issue_line(
+        \ get(a:issue, 'filename', ''),
+        \ get(a:issue, 'lnum', 1),
+        \ get(a:issue, '_trigger_line', '')
+        \ )
+endfunction
+
+function! s:issue_terminal_height() abort
+  let l:height = get(g:, 'realtime_dev_agent_terminal_height', 12)
+  if type(l:height) != v:t_number
+    let l:height = str2nr(string(l:height))
+  endif
+  if l:height < 6
+    let l:height = 6
+  endif
+  return l:height
+endfunction
+
+function! s:issue_terminal_strategy() abort
+  let l:strategy = trim(get(g:, 'realtime_dev_agent_terminal_strategy', 'auto'))
+  if empty(l:strategy)
+    let l:strategy = 'auto'
+  endif
+  let l:strategy = tolower(l:strategy)
+
+  if l:strategy !=# 'auto'
+    return l:strategy
+  endif
+
+  if exists('g:vscode') && get(g:, 'vscode', 0) && exists('*VSCodeNotify')
+    return 'vscode'
+  endif
+
+  if exists(':TermExec') == 2
+    return 'toggleterm'
+  endif
+
+  return 'native'
+endfunction
+
+function! s:issue_terminal_status_file() abort
+  return tempname()
+endfunction
+
+function! s:issue_terminal_shell_command(command, cwd, status_file) abort
+  let l:parts = ['{']
+  if !empty(a:cwd)
+    call add(l:parts, 'cd ' . shellescape(a:cwd) . ' &&')
+  endif
+  call add(l:parts, a:command . ';')
+  call add(l:parts, '}')
+  call add(l:parts, ';')
+  call add(l:parts, 'rda_status=$?;')
+  call add(l:parts, 'printf "%s" "$rda_status" > ' . shellescape(a:status_file) . ';')
+  call add(l:parts, 'exit $rda_status')
+  return join(l:parts, ' ')
+endfunction
+
+function! s:issue_terminal_ex_quote(value) abort
+  return '"' . substitute(substitute(a:value, '\\', '\\\\', 'g'), '"', '\\"', 'g') . '"'
+endfunction
+
+function! s:issue_terminal_context(issue, keep_focus_code) abort
+  let l:context = copy(a:issue)
+  let l:context.keep_focus_code = v:false
+  let l:context._trigger_line = s:issue_trigger_line_text(a:issue)
+  return l:context
+endfunction
+
+function! s:issue_terminal_reanalyze(context) abort
+  let l:target_buf = s:issue_target_buffer(get(a:context, 'filename', ''))
+  if l:target_buf <= 0
+    return
+  endif
+
+  call s:realtime_check_from_buffer(l:target_buf, g:realtime_dev_agent_realtime_open_qf, 0)
+endfunction
+
+function! s:issue_terminal_finish(context, exit_code) abort
+  if a:exit_code != 0
+    echohl ErrorMsg
+    echomsg printf('[RealtimeDevAgent] Acao de terminal falhou com codigo %d', a:exit_code)
+    echohl None
+    return
+  endif
+
+  if get(get(a:context, 'action', {}), 'remove_trigger', v:false)
+    call s:remove_issue_trigger_line(a:context, get(a:context, 'keep_focus_code', v:false))
+  endif
+  call s:issue_terminal_reanalyze(a:context)
+endfunction
+
+function! s:nvim_terminal_action_exit(context, job_id, exit_code, event) abort
+  call s:issue_terminal_finish(a:context, a:exit_code)
+endfunction
+
+function! s:vim_terminal_action_exit(context, job, status) abort
+  call s:issue_terminal_finish(a:context, a:status)
+endfunction
+
+function! s:issue_terminal_status_poll(context, timer_id) abort
+  let l:status_file = get(a:context, '_status_file', '')
+  if empty(l:status_file) || !filereadable(l:status_file)
+    return
+  endif
+
+  call timer_stop(a:timer_id)
+  let l:lines = readfile(l:status_file)
+  silent! call delete(l:status_file)
+  let l:exit_code = str2nr(trim(join(l:lines, '')))
+  call s:issue_terminal_finish(a:context, l:exit_code)
+endfunction
+
+function! s:issue_terminal_schedule_poll(context, status_file) abort
+  let l:context = copy(a:context)
+  let l:context._status_file = a:status_file
+  call timer_start(250, function('s:issue_terminal_status_poll', [l:context]), {'repeat': 240})
+endfunction
+
+function! s:apply_issue_run_command_toggleterm(command, cwd, context) abort
+  let l:status_file = s:issue_terminal_status_file()
+  let l:wrapped_command = s:issue_terminal_shell_command(a:command, a:cwd, l:status_file)
+  let l:exec = 'TermExec go_back=0'
+  if !empty(a:cwd)
+    let l:exec .= ' dir=' . s:issue_terminal_ex_quote(a:cwd)
+  endif
+  let l:exec .= ' cmd=' . s:issue_terminal_ex_quote(l:wrapped_command)
+  execute l:exec
+  echomsg '[RealtimeDevAgent] Executando no ToggleTerm: ' . a:command
+  call s:issue_terminal_schedule_poll(a:context, l:status_file)
+  return v:true
+endfunction
+
+function! s:apply_issue_run_command_vscode(command, cwd, context) abort
+  let l:status_file = s:issue_terminal_status_file()
+  let l:wrapped_command = s:issue_terminal_shell_command(a:command, a:cwd, l:status_file)
+  call VSCodeNotify('workbench.action.terminal.new')
+  call VSCodeNotify('workbench.action.terminal.focus')
+  call VSCodeNotify('workbench.action.terminal.sendSequence', {'text': l:wrapped_command . "\n"})
+  echomsg '[RealtimeDevAgent] Executando no terminal do VS Code: ' . a:command
+  call s:issue_terminal_schedule_poll(a:context, l:status_file)
+  return v:true
+endfunction
+
+function! s:apply_issue_run_command_hidden(issue, keep_focus_code) abort
+  let l:action = s:issue_effective_action(a:issue)
+  let l:command = get(l:action, 'command', '')
+  let l:cwd = fnamemodify(get(l:action, 'cwd', ''), ':p')
+  if empty(l:cwd)
+    let l:cwd = s:project_root(get(a:issue, 'filename', ''))
+  endif
+
+  let l:system_command = l:command
+  if !empty(l:cwd)
+    let l:system_command = 'cd ' . shellescape(l:cwd) . ' && ' . l:command
+  endif
+
+  let l:output = systemlist(l:system_command)
+  if v:shell_error != 0
+    echohl ErrorMsg
+    echomsg '[RealtimeDevAgent] Falha ao executar acao de terminal'
+    if !empty(l:output)
+      echomsg '[RealtimeDevAgent] ' . trim(get(l:output, -1, ''))
+    endif
+    echohl None
+    return v:false
+  endif
+
+  if get(l:action, 'remove_trigger', v:false)
+    call s:remove_issue_trigger_line(a:issue, a:keep_focus_code)
+  endif
+
+  if !empty(l:output)
+    let l:last_output = trim(get(l:output, -1, ''))
+    if !empty(l:last_output)
+      echomsg '[RealtimeDevAgent] ' . l:last_output
+    endif
+  endif
+
+  call s:issue_terminal_reanalyze(a:issue)
+  return v:true
+endfunction
+
+function! s:apply_issue_run_command(issue, keep_focus_code) abort
+  if !get(g:, 'realtime_dev_agent_terminal_actions_enabled', 1)
+    echomsg '[RealtimeDevAgent] Acoes de terminal estao desligadas'
+    return v:false
+  endif
+
+  let l:action = s:issue_effective_action(a:issue)
+  let l:command = get(l:action, 'command', '')
+  if empty(l:command)
+    echomsg '[RealtimeDevAgent] Comando de terminal ausente para esta sugestao'
+    return v:false
+  endif
+
+  let l:cwd = fnamemodify(get(l:action, 'cwd', ''), ':p')
+  if empty(l:cwd)
+    let l:cwd = s:project_root(get(a:issue, 'filename', ''))
+  endif
+
+  let l:context = s:issue_terminal_context(a:issue, a:keep_focus_code)
+  let l:height = s:issue_terminal_height()
+  let l:strategy = s:issue_terminal_strategy()
+
+  if l:strategy ==# 'vscode'
+    return s:apply_issue_run_command_vscode(l:command, l:cwd, l:context)
+  endif
+
+  if l:strategy ==# 'toggleterm'
+    return s:apply_issue_run_command_toggleterm(l:command, l:cwd, l:context)
+  endif
+
+  if l:strategy ==# 'native' && has('nvim')
+    call s:remember_code_window(win_getid())
+    execute 'botright ' . l:height . 'split'
+    enew
+    call termopen(l:command, {
+          \ 'cwd': l:cwd,
+          \ 'on_exit': function('s:nvim_terminal_action_exit', [l:context])
+          \ })
+    startinsert
+    echomsg '[RealtimeDevAgent] Executando no terminal: ' . l:command
+    return v:true
+  endif
+
+  if l:strategy ==# 'native' && exists('*term_start')
+    call s:remember_code_window(win_getid())
+    execute 'botright ' . l:height . 'split'
+    call term_start(l:command, {
+          \ 'cwd': l:cwd,
+          \ 'curwin': 1,
+          \ 'exit_cb': function('s:vim_terminal_action_exit', [l:context])
+          \ })
+    echomsg '[RealtimeDevAgent] Executando no terminal: ' . l:command
+    return v:true
+  endif
+
+  return s:apply_issue_run_command_hidden(l:context, a:keep_focus_code)
 endfunction
 
 function! s:apply_issue_snippet(issue, keep_focus_code) abort
@@ -440,25 +885,31 @@ function! s:apply_issue_snippet(issue, keep_focus_code) abort
   let l:snippet_raw = get(l:issue, 'snippet', '')
   let l:op = get(l:action, 'op', '')
   let l:restore_view = {}
+  if l:op ==# 'run_command'
+    return s:apply_issue_run_command(l:issue, a:keep_focus_code)
+  endif
   if empty(l:snippet_raw)
-    if l:kind ==# 'trailing_whitespace'
+    if l:kind ==# 'trailing_whitespace' || l:kind ==# 'syntax_extra_delimiter'
       let l:snippet_lines = ['']
     else
       echohl WarningMsg
       echomsg '[RealtimeDevAgent] Sem snippet para esta sugestao'
       echohl None
-      return
+      return v:false
     endif
   else
     let l:snippet_lines = split(l:snippet_raw, '\n', 1)
   endif
   if empty(l:snippet_lines)
-    return
+    return v:false
   endif
 
   if l:op ==# 'write_file'
-    call s:apply_issue_write_file(l:issue, l:snippet_lines)
-    return
+    return s:apply_issue_write_file(l:issue, l:snippet_lines)
+  endif
+
+  if a:keep_focus_code
+    call s:focus_code_window()
   endif
 
   let l:target_buf = bufnr('%')
@@ -469,20 +920,20 @@ function! s:apply_issue_snippet(issue, keep_focus_code) abort
       execute 'silent! keepalt keepjumps edit ' . fnameescape(l:filename)
       let l:target_buf = bufnr('%')
       if !bufexists(l:target_buf) || l:target_buf < 1
-        return
+        return v:false
       endif
     else
       echomsg '[RealtimeDevAgent] Snippet descartado: issue nao pertence ao buffer atual'
-      return
+      return v:false
     endif
   endif
 
   if !bufexists(l:target_buf) || l:target_buf < 1
-    return
+    return v:false
   endif
 
   if !getbufvar(l:target_buf, '&modifiable', 0)
-    return
+    return v:false
   endif
 
   if !a:keep_focus_code
@@ -507,7 +958,7 @@ function! s:apply_issue_snippet(issue, keep_focus_code) abort
   endif
   let l:line_content = l:line_content[0]
   if !s:realtime_issue_still_relevant(l:issue, l:target_buf, l:lnum, l:line_content)
-    return
+    return v:false
   endif
 
   let l:indent = get(l:action, 'indent', matchstr(l:line_content, '^\s*'))
@@ -517,10 +968,15 @@ function! s:apply_issue_snippet(issue, keep_focus_code) abort
   endif
 
   if l:op ==# 'replace_line'
-    if empty(l:snippet_lines[0]) || substitute(l:line_content, '^\s*', '', '') ==# substitute(l:snippet_lines[0], '^\s*', '', '')
-      return
+    let l:normalized_current = substitute(l:line_content, '^\s*', '', '')
+    let l:normalized_first = substitute(l:snippet_lines[0], '^\s*', '', '')
+    if len(l:snippet_lines) == 1 && (empty(l:snippet_lines[0]) || l:normalized_current ==# l:normalized_first)
+      return v:false
     endif
     noautocmd call setbufline(l:target_buf, l:lnum, l:snippet_lines[0])
+    if len(l:snippet_lines) > 1
+      noautocmd call appendbufline(l:target_buf, l:lnum, l:snippet_lines[1:])
+    endif
   elseif l:op ==# 'insert_after'
     noautocmd call appendbufline(l:target_buf, l:lnum, l:snippet_lines)
   else
@@ -532,6 +988,7 @@ function! s:apply_issue_snippet(issue, keep_focus_code) abort
       call winrestview(l:restore_view)
     endif
   endif
+  return v:true
 endfunction
 
 function! s:normalize_snippet_lines(snippet_lines, indent) abort
@@ -599,12 +1056,20 @@ function! s:realtime_issue_still_relevant(item, target_buf, lnum, line_content) 
 ")
   endif
 
+  if l:op ==# 'run_command'
+    return l:content =~# '^\s*\(#\|//\|--\|"\)\s*\*\s*.\+$' || l:content =~# '^\s*<!--\s*\*\s*.\+\s*-->\s*$'
+  endif
+
   if l:line_no < 1
     return v:false
   endif
 
   if get(a:item, 'snippet', '') ==# ''
     if l:op ==# 'replace_line'
+      if l:kind ==# 'syntax_extra_delimiter'
+        let l:delimiter = s:extract_extra_delimiter_char(l:text)
+        return !empty(l:delimiter) && stridx(l:content, l:delimiter) >= 0
+      endif
       return l:content =~# '\s$'
     endif
     return v:false
@@ -682,6 +1147,74 @@ function! s:extract_undefined_variable_suggestion(text) abort
     return ''
   endif
   return l:match[1]
+endfunction
+
+function! s:followup_comment_prefix(file) abort
+  let l:ext = s:file_type_token(a:file)
+  if l:ext ==# '.md'
+    return '<!-- : '
+  endif
+  if index([
+        \ '.c',
+        \ '.cpp',
+        \ '.cs',
+        \ '.go',
+        \ '.h',
+        \ '.hpp',
+        \ '.java',
+        \ '.js',
+        \ '.jsx',
+        \ '.kt',
+        \ '.kts',
+        \ '.rs',
+        \ '.scala',
+        \ '.swift',
+        \ '.ts',
+        \ '.tsx'
+        \ ], l:ext) >= 0
+    return '// : '
+  endif
+  if l:ext ==# '.lua'
+    return '-- : '
+  endif
+  if l:ext ==# '.vim'
+    return '" : '
+  endif
+  return '# : '
+endfunction
+
+function! s:build_followup_instruction(issue) abort
+  let l:parts = s:issue_parse_parts(get(a:issue, 'text', ''))
+  let l:message = get(l:parts, 1, '')
+  let l:suggestion = get(l:parts, 2, '')
+  let l:kind = get(a:issue, 'kind', '')
+
+  if l:kind ==# 'undefined_variable'
+    let l:unknown = s:extract_undefined_variable_name(l:message)
+    let l:replacement = s:extract_undefined_variable_suggestion(l:suggestion)
+    if !empty(l:unknown) && !empty(l:replacement)
+      return printf('substitua %s por %s', l:unknown, l:replacement)
+    endif
+  endif
+
+  if !empty(l:suggestion)
+    return l:suggestion
+  endif
+
+  return l:message
+endfunction
+
+function! s:build_followup_comment(file, instruction) abort
+  let l:instruction = trim(a:instruction)
+  if empty(l:instruction)
+    return ''
+  endif
+
+  let l:prefix = s:followup_comment_prefix(a:file)
+  if l:prefix ==# '<!-- : '
+    return l:prefix . l:instruction . ' -->'
+  endif
+  return l:prefix . l:instruction
 endfunction
 
 function! s:window_close() abort
@@ -776,6 +1309,10 @@ function! s:realtime_check_from_buffer(bufnr, open_qf, show_echo) abort
   let l:file = fnamemodify(bufname(a:bufnr), ':p')
   if !s:should_check_file(l:file)
     return
+  endif
+
+  if bufnr('%') == a:bufnr && &buftype ==# ''
+    call s:remember_code_window(win_getid())
   endif
 
   let l:file_tick = getbufvar(a:bufnr, 'changedtick')
@@ -885,8 +1422,14 @@ function! s:realtime_check_from_buffer(bufnr, open_qf, show_echo) abort
   call setqflist([], 'r', {'title': 'Realtime Dev Agent'})
   call setqflist(l:qf, 'a')
   let s:realtime_dev_agent_last_qf = l:qf
+  let l:auto_fix_applied = 0
   if g:realtime_dev_agent_auto_fix_enabled
-    call s:realtime_dev_agent_apply_auto_fixes(l:qf, l:file)
+    let l:auto_fix_applied = s:realtime_dev_agent_apply_auto_fixes(l:qf, l:file)
+  endif
+
+  if l:auto_fix_applied > 0
+    call s:realtime_check_from_buffer(a:bufnr, a:open_qf, a:show_echo)
+    return
   endif
 
   if empty(l:qf)
@@ -910,26 +1453,26 @@ endfunction
 
 function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
   if !s:realtime_dev_agent_can_apply_auto_fixes()
-    return
+    return 0
   endif
 
   if s:realtime_dev_agent_auto_fix_busy
-    return
+    return 0
   endif
 
   if type(a:qf) != v:t_list
-    return
+    return 0
   endif
 
   if !g:realtime_dev_agent_auto_fix_enabled
-    return
+    return 0
   endif
 
   let l:current_buf = bufnr('%')
   let l:current_file = fnamemodify(bufname(l:current_buf), ':p')
   let l:target_file = fnamemodify(a:file, ':p')
   if l:current_file !=# l:target_file
-    return
+    return 0
   endif
 
   let l:kinds = get(g:, 'realtime_dev_agent_auto_fix_kinds', [])
@@ -955,7 +1498,8 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
     if !l:apply_all_kinds && index(l:kinds, l:item_kind) == -1
       continue
     endif
-    if empty(get(l:item, 'snippet', '')) && l:item_kind !=# 'trailing_whitespace'
+    let l:item_action = s:issue_effective_action(l:item)
+    if empty(get(l:item, 'snippet', '')) && l:item_kind !=# 'trailing_whitespace' && get(l:item_action, 'op', '') !=# 'run_command'
       continue
     endif
 
@@ -973,7 +1517,7 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
   endfor
 
   if empty(l:auto_candidates)
-    return
+    return 0
   endif
 
   if g:realtime_dev_agent_auto_fix_cursor_only
@@ -988,10 +1532,14 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
   endif
 
   if empty(l:auto_candidates)
-    return
+    return 0
   endif
 
   let l:fix_priority = [
+        \ 'syntax_missing_quote',
+        \ 'syntax_extra_delimiter',
+        \ 'syntax_missing_delimiter',
+        \ 'syntax_missing_comma',
         \ 'undefined_variable',
         \ 'missing_dependency',
         \ 'moduledoc',
@@ -1000,6 +1548,7 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
         \ 'functional_reassignment',
         \ 'debug_output',
         \ 'comment_task',
+        \ 'terminal_task',
         \ 'trailing_whitespace',
         \ 'tabs',
         \ 'todo_fixme',
@@ -1013,7 +1562,7 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
 
   if mode() =~# '^i'
     let s:realtime_dev_agent_pending_auto_fixes = l:auto_candidates
-    return
+    return 0
   endif
 
   let l:applied = 0
@@ -1062,8 +1611,9 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
       call add(l:line_kinds, l:item_kind)
       let l:line_kind_applied[l:item_line_key] = l:line_kinds
 
-      call s:apply_issue_snippet(l:item, v:false)
-      let l:applied += 1
+      if s:apply_issue_snippet(l:item, v:false)
+        let l:applied += 1
+      endif
     endfor
     let s:realtime_dev_agent_fix_guard[l:file_key] = l:fix_guard
   finally
@@ -1074,6 +1624,7 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
     let l:summary = printf('[RealtimeDevAgent] Auto-fix aplicado em %d sugerenca(s)', l:applied)
     echo l:summary
   endif
+  return l:applied
 endfunction
 
 function! s:compare_fix_order(entry_a, entry_b, priorities) abort
@@ -1228,7 +1779,7 @@ function! s:window_refresh(file, qf) abort
   let s:realtime_dev_agent_last_qf = a:qf
   call add(l:lines, '')
   let l:command_line = 'Painel Realtime Dev Agent: ' . g:realtime_dev_agent_window_key . ' para abrir/atualizar'
-  let l:command_line = l:command_line . ' | Enter: ir para item | r: reanalisar | i: follow-up | q: fechar'
+  let l:command_line = l:command_line . ' | <Tab>/i/a: aplicar | Enter: ir para item | f: follow-up | r: reanalisar | q: fechar'
   call add(l:lines, l:command_line)
   call s:window_set_lines(l:lines)
 endfunction
@@ -1325,6 +1876,13 @@ if !empty(g:realtime_dev_agent_window_key)
   execute 'nnoremap <silent> ' . g:realtime_dev_agent_window_key . ' :RealtimeDevAgentWindowCheck<CR>'
 endif
 
+if g:realtime_dev_agent_start_on_editor_enter
+  augroup realtime_dev_agent_startup
+    autocmd!
+    autocmd VimEnter,BufEnter * call s:realtime_dev_agent_start_current_buffer()
+  augroup END
+endif
+
 augroup realtime_dev_agent_code_buffer_maps
   autocmd!
   autocmd BufEnter * call s:set_code_buffer_tab_accept()
@@ -1353,4 +1911,3 @@ if g:realtime_dev_agent_realtime_on_change
 endif
 
 call s:set_code_buffer_tab_accept()
-

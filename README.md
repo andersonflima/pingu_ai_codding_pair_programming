@@ -54,6 +54,8 @@ O repositorio agora expõe `plugin/` e `autoload/` na raiz, entao pode ser insta
 {
   "andersonflima/pingo_ai_codding_pair_programming",
   config = function()
+    vim.g.realtime_dev_agent_start_on_editor_enter = 1
+    vim.g.realtime_dev_agent_open_window_on_start = 1
     vim.g.realtime_dev_agent_auto_fix_enabled = 1
     vim.g.realtime_dev_agent_review_on_open = 1
     vim.g.realtime_dev_agent_realtime_on_change = 1
@@ -71,6 +73,133 @@ Plug 'andersonflima/pingo_ai_codding_pair_programming'
 
 - `<leader>i`: dispara analise do arquivo atual
 - `<leader>ia`: abre ou fecha a janela do agente
+
+### Startup automatico no Vim
+
+- O agente inicia automaticamente no primeiro buffer suportado da sessao.
+- O painel abre sozinho no startup por padrao.
+- Para manter o agente ligado sem abrir o painel: `let g:realtime_dev_agent_open_window_on_start = 0`
+- Para desligar o startup automatico: `let g:realtime_dev_agent_start_on_editor_enter = 0`
+
+### Atalhos do painel do agente no Vim
+
+- `<Tab>`, `i` ou `a`: aplica a sugestao selecionada no codigo
+- `<CR>`: navega ate o item no arquivo
+- `f`: insere um follow-up acionavel para o agente
+- `r`: reanalisa o arquivo atual
+- `q`: fecha o painel
+
+### Comentarios acionaveis
+
+- Comentarios com `:` geram ou ajustam codigo no proprio arquivo.
+- Comentarios com `*` executam acoes de terminal inferidas pelo contexto do projeto.
+- Depois da execucao bem-sucedida, a linha do comentario acionavel e removida do arquivo.
+- Para desligar a execucao de terminal: `let g:realtime_dev_agent_terminal_actions_enabled = 0`
+- No Neovim, o backend do terminal e escolhido automaticamente: terminal do VS Code em `vscode-neovim`, `ToggleTerm` quando `:TermExec` existir e split nativa como fallback.
+- Para forcar o backend no Vim/Neovim: `let g:realtime_dev_agent_terminal_strategy = 'vscode'`, `let g:realtime_dev_agent_terminal_strategy = 'toggleterm'` ou `let g:realtime_dev_agent_terminal_strategy = 'native'`
+
+### Exemplos de geracao com `:`
+
+```lua
+-- : complete user crud
+```
+
+```javascript
+// : create login form component
+```
+
+```python
+# : implementar funcao para calcular total do pedido
+```
+
+```vim
+" : adicionar comando para recarregar configuracao
+```
+
+### Exemplos de acoes de terminal com `*`
+
+Rodar testes do projeto:
+
+```lua
+-- * rodar testes do projeto
+```
+
+```lua
+-- * run my tests
+```
+
+```javascript
+// * executar testes
+```
+
+```python
+# * rodar test
+```
+
+Formatar o codigo ou o projeto:
+
+```lua
+-- * formatar arquivo atual
+```
+
+```javascript
+// * rodar format
+```
+
+```elixir
+# * mix format
+```
+
+Executar o arquivo atual:
+
+```lua
+-- * executar este arquivo
+```
+
+```javascript
+// * rodar este arquivo
+```
+
+```python
+# * executar arquivo atual
+```
+
+Rodar build ou lint:
+
+```javascript
+// * rodar build do projeto
+```
+
+```rust
+// * rodar lint
+```
+
+```go
+// * compilar projeto
+```
+
+Acoes de Git:
+
+```lua
+-- * git status
+```
+
+```javascript
+// * git diff
+```
+
+```python
+# * commit: feat: adiciona fluxo automatico do agente
+```
+
+### Como o agente infere o comando
+
+- Em projetos Node.js, o agente procura `package.json` e usa scripts como `test`, `dev`, `start`, `build`, `lint` e `format`.
+- Em projetos Elixir, o agente usa comandos como `mix test`, `mix run`, `mix compile` e `mix format`.
+- Em projetos Go, o agente usa `go test ./...`, `go run`, `go build ./...` e `gofmt -w`.
+- Em projetos Rust, o agente usa `cargo test`, `cargo run`, `cargo build`, `cargo fmt` e `cargo clippy`.
+- Em projetos Python, o agente usa `python -m pytest`, `python arquivo.py` e `python -m py_compile`.
+- Para comentarios de Git, o agente pode executar `git status`, `git diff` e `git add -A && git commit -m ...`.
 
 ## Instalacao via GitHub no VS Code
 
@@ -106,12 +235,18 @@ code --install-extension realtime-dev-agent.vsix
 - `realtimeDevAgent.realtimeOnSave`
 - `realtimeDevAgent.realtimeOnChange`
 - `realtimeDevAgent.changeDebounceMs`
+- `realtimeDevAgent.terminalActionsEnabled`
+
+### Terminal no VS Code
+
+- Comentarios com `*` abrem o terminal integrado do VS Code quando a acao inferida for executavel.
+- Exemplo: `-- * run my tests` cria um terminal visivel, executa o comando de teste inferido e remove a linha gatilho quando o processo termina com sucesso.
 
 ## Como funciona
 
 - O runtime principal continua em `realtime_dev_agent.js`.
-- O plugin Vim chama o runtime em modo `vim` e aplica correcoes diretamente no buffer ou em arquivos de teste.
-- A extensao VS Code chama o mesmo runtime em modo `json` e publica diagnosticos no editor.
+- O plugin Vim chama o runtime em modo `vim` e aplica correcoes diretamente no buffer, em arquivos de teste ou no terminal visivel do editor.
+- A extensao VS Code chama o mesmo runtime em modo `json`, publica diagnosticos no editor e executa `terminal_task` no terminal integrado quando habilitado.
 
 ## Estrutura principal
 

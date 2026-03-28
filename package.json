@@ -65,6 +65,11 @@
           "type": "number",
           "default": 1200,
           "description": "Tempo de debounce em milissegundos antes de rodar a analise por mudanca."
+        },
+        "realtimeDevAgent.terminalActionsEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Executa acoes de terminal inferidas a partir de comentarios com * no terminal integrado do VS Code."
         }
       }
     }

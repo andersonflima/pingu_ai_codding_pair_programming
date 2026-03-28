@@ -1,5 +1,7 @@
 'use strict';
 
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 const vscode = require('vscode');
@@ -9,6 +11,7 @@ function activate(context) {
   const output = vscode.window.createOutputChannel('Realtime Dev Agent');
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   const pendingTimers = new Map();
+  const pendingTerminalTasks = new Map();
 
   function configuration(uri) {
     return vscode.workspace.getConfiguration('realtimeDevAgent', uri);
@@ -93,6 +96,10 @@ function activate(context) {
         cwd,
       });
       publishDiagnostics(document, issues);
+      const terminalTaskApplied = await applyTerminalTasks(document, issues);
+      if (terminalTaskApplied) {
+        return;
+      }
       if (trigger === 'manual') {
         output.appendLine(`[RealtimeDevAgent] ${issues.length} item(ns) em ${document.fileName}`);
         if (issues.length > 0) {
@@ -182,6 +189,180 @@ function activate(context) {
   refreshStatusBar();
   if (vscode.window.activeTextEditor && isEnabled(vscode.window.activeTextEditor.document.uri)) {
     scheduleAnalysis(vscode.window.activeTextEditor.document);
+  }
+
+  function isTerminalIssue(issue) {
+    return Boolean(
+      issue
+      && issue.kind === 'terminal_task'
+      && issue.action
+      && issue.action.op === 'run_command'
+      && typeof issue.action.command === 'string'
+      && issue.action.command.trim() !== ''
+    );
+  }
+
+  function isTerminalActionsEnabled(uri) {
+    return configuration(uri).get('terminalActionsEnabled', true);
+  }
+
+  function issueKey(document, issue) {
+    return [
+      document.uri.toString(),
+      Number(issue.line || 1),
+      issue.kind || '',
+      issue.message || '',
+      issue.action && issue.action.command || '',
+    ].join('|');
+  }
+
+  function issueLineIndex(issue) {
+    return Math.max(0, Number(issue.line || 1) - 1);
+  }
+
+  function issueTriggerText(document, issue) {
+    const lineIndex = issueLineIndex(issue);
+    if (lineIndex >= document.lineCount) {
+      return '';
+    }
+    return document.lineAt(lineIndex).text;
+  }
+
+  function lineDeleteRange(document, lineIndex) {
+    const start = new vscode.Position(lineIndex, 0);
+    if (lineIndex < document.lineCount - 1) {
+      return new vscode.Range(start, new vscode.Position(lineIndex + 1, 0));
+    }
+    return new vscode.Range(start, new vscode.Position(lineIndex, document.lineAt(lineIndex).text.length));
+  }
+
+  function resolveTriggerDeleteRange(document, issue, triggerText) {
+    const lineIndex = issueLineIndex(issue);
+    if (lineIndex < document.lineCount && document.lineAt(lineIndex).text === triggerText) {
+      return lineDeleteRange(document, lineIndex);
+    }
+
+    if (!triggerText) {
+      return undefined;
+    }
+
+    const targetIndex = Array.from({ length: document.lineCount }, (_, index) => index)
+      .find((index) => document.lineAt(index).text === triggerText);
+    if (typeof targetIndex !== 'number') {
+      return undefined;
+    }
+
+    return lineDeleteRange(document, targetIndex);
+  }
+
+  async function removeTriggerLine(document, issue, triggerText) {
+    const liveDocument = await vscode.workspace.openTextDocument(document.uri);
+    const range = resolveTriggerDeleteRange(liveDocument, issue, triggerText);
+    if (!range) {
+      return false;
+    }
+
+    const edit = new vscode.WorkspaceEdit();
+    edit.delete(liveDocument.uri, range);
+    return vscode.workspace.applyEdit(edit);
+  }
+
+  function terminalStatusFile() {
+    return path.join(
+      os.tmpdir(),
+      `realtime-dev-agent-terminal-${Date.now()}-${Math.random().toString(16).slice(2)}.txt`,
+    );
+  }
+
+  function terminalWrappedCommand(command, cwd, statusFile) {
+    const prefix = cwd ? `cd ${shellEscape(cwd)} && ` : '';
+    return `{ ${prefix}${command}; }; rda_status=$?; printf "%s" "$rda_status" > ${shellEscape(statusFile)}; exit $rda_status`;
+  }
+
+  function shellEscape(value) {
+    return `'${String(value).replace(/'/g, `'\"'\"'`)}'`;
+  }
+
+  async function waitForTerminalExit(statusFile, timeoutMs) {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < timeoutMs) {
+      if (fs.existsSync(statusFile)) {
+        const raw = fs.readFileSync(statusFile, 'utf8').trim();
+        fs.rmSync(statusFile, { force: true });
+        return Number(raw || 1);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    return null;
+  }
+
+  async function applyTerminalTask(document, issue) {
+    const key = issueKey(document, issue);
+    if (pendingTerminalTasks.has(key)) {
+      return false;
+    }
+
+    const action = issue.action || {};
+    const command = String(action.command || '').trim();
+    if (!command) {
+      return false;
+    }
+
+    const cwd = String(action.cwd || '').trim()
+      || (vscode.workspace.getWorkspaceFolder(document.uri)
+        ? vscode.workspace.getWorkspaceFolder(document.uri).uri.fsPath
+        : path.dirname(document.fileName));
+    const triggerText = issueTriggerText(document, issue);
+    const statusFile = terminalStatusFile();
+    const terminal = vscode.window.createTerminal({
+      name: 'Realtime Dev Agent',
+      cwd,
+    });
+
+    pendingTerminalTasks.set(key, true);
+    terminal.show(true);
+    terminal.sendText(terminalWrappedCommand(command, cwd, statusFile), true);
+    output.appendLine(`[RealtimeDevAgent] Executando no terminal do VS Code: ${command}`);
+
+    try {
+      const exitCode = await waitForTerminalExit(statusFile, 10 * 60 * 1000);
+      if (exitCode === null) {
+        output.appendLine('[RealtimeDevAgent] Timeout ao aguardar a acao de terminal no VS Code');
+        output.show(true);
+        return true;
+      }
+
+      if (exitCode !== 0) {
+        output.appendLine(`[RealtimeDevAgent] Acao de terminal falhou com codigo ${exitCode}`);
+        output.show(true);
+        return true;
+      }
+
+      const removed = await removeTriggerLine(document, issue, triggerText);
+      if (removed) {
+        const refreshedDocument = await vscode.workspace.openTextDocument(document.uri);
+        await analyzeDocument(refreshedDocument, 'terminal');
+      }
+      return true;
+    } finally {
+      pendingTerminalTasks.delete(key);
+      if (fs.existsSync(statusFile)) {
+        fs.rmSync(statusFile, { force: true });
+      }
+    }
+  }
+
+  async function applyTerminalTasks(document, issues) {
+    if (!isTerminalActionsEnabled(document.uri)) {
+      return false;
+    }
+
+    const terminalIssue = issues.find((issue) => isTerminalIssue(issue));
+    if (!terminalIssue) {
+      return false;
+    }
+
+    return applyTerminalTask(document, terminalIssue);
   }
 }
 
