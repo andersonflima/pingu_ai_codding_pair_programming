@@ -4,4 +4,6 @@ vim/**
 plugin/**
 autoload/**
 tests/**
+anget_test/**
+.nvimlog
 realtime-dev-agent.vsix

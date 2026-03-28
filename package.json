@@ -5,6 +5,10 @@
   "version": "0.1.0",
   "publisher": "andersonflima",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/andersonflima/pingu_ai_codding_pair_programming.git"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
