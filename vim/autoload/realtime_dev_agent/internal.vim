@@ -733,18 +733,40 @@ function! s:issue_terminal_status_file() abort
   return tempname()
 endfunction
 
-function! s:issue_terminal_shell_command(command, cwd, status_file) abort
-  let l:parts = ['{']
+function! s:issue_terminal_inner_command(command, cwd, status_file) abort
+  let l:parts = []
   if !empty(a:cwd)
     call add(l:parts, 'cd ' . shellescape(a:cwd) . ' &&')
   endif
   call add(l:parts, a:command . ';')
-  call add(l:parts, '}')
-  call add(l:parts, ';')
-  call add(l:parts, 'rda_status=$?;')
-  call add(l:parts, 'printf "%s" "$rda_status" > ' . shellescape(a:status_file) . ';')
-  call add(l:parts, 'exit $rda_status')
+  if !empty(a:status_file)
+    call add(l:parts, 'rda_status=$?;')
+    call add(l:parts, 'printf "%s" "$rda_status" > ' . shellescape(a:status_file) . ';')
+    call add(l:parts, 'exit $rda_status')
+  endif
   return join(l:parts, ' ')
+endfunction
+
+function! s:issue_terminal_shell_command(command, cwd, status_file) abort
+  let l:inner = s:issue_terminal_inner_command(a:command, a:cwd, a:status_file)
+  if executable('sh')
+    return shellescape(exepath('sh')) . ' -lc ' . shellescape(l:inner)
+  endif
+
+  let l:shell = !empty(&shell) ? &shell : 'sh'
+  let l:flag = !empty(&shellcmdflag) ? &shellcmdflag : '-c'
+  return shellescape(l:shell) . ' ' . l:flag . ' ' . shellescape(l:inner)
+endfunction
+
+function! s:issue_terminal_hidden_command(command, cwd) abort
+  let l:inner = s:issue_terminal_inner_command(a:command, a:cwd, '')
+  if executable('sh')
+    return shellescape(exepath('sh')) . ' -lc ' . shellescape(l:inner)
+  endif
+
+  let l:shell = !empty(&shell) ? &shell : 'sh'
+  let l:flag = !empty(&shellcmdflag) ? &shellcmdflag : '-c'
+  return shellescape(l:shell) . ' ' . l:flag . ' ' . shellescape(l:inner)
 endfunction
 
 function! s:issue_terminal_context(issue, keep_focus_code) abort
@@ -823,7 +845,13 @@ function! s:apply_issue_run_command_toggleterm(command, cwd, context) abort
         \ . '   display_name = payload.display_name'
         \ . ' })'
         \ . ' term:open()'
-        \ . ' vim.schedule(function() term:send(payload.cmd, false) end)'
+        \ . ' vim.schedule(function()'
+        \ . '   if term.job_id then'
+        \ . '     vim.api.nvim_chan_send(term.job_id, payload.cmd .. "\r")'
+        \ . '   else'
+        \ . '     term:send(payload.cmd .. "\r", false)'
+        \ . '   end'
+        \ . ' end)'
         \ . ' return true'
         \ . ' end)(_A)',
         \ l:payload
@@ -858,10 +886,7 @@ function! s:apply_issue_run_command_hidden(issue, keep_focus_code) abort
     let l:cwd = s:project_root(get(a:issue, 'filename', ''))
   endif
 
-  let l:system_command = l:command
-  if !empty(l:cwd)
-    let l:system_command = 'cd ' . shellescape(l:cwd) . ' && ' . l:command
-  endif
+  let l:system_command = s:issue_terminal_hidden_command(l:command, l:cwd)
 
   let l:output = systemlist(l:system_command)
   if v:shell_error != 0
