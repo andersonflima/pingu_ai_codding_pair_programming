@@ -75,6 +75,39 @@
           "type": "boolean",
           "default": true,
           "description": "Executa acoes de terminal inferidas a partir de comentarios com * no terminal integrado do VS Code."
+        },
+        "realtimeDevAgent.autoFixEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Aplica automaticamente snippets de geracao de codigo, arquivos de contexto e testes no VS Code."
+        },
+        "realtimeDevAgent.autoFixKinds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "moduledoc",
+            "function_spec",
+            "function_doc",
+            "missing_dependency",
+            "functional_reassignment",
+            "trailing_whitespace",
+            "tabs",
+            "undefined_variable",
+            "debug_output",
+            "comment_task",
+            "context_file",
+            "unit_test",
+            "syntax_missing_quote",
+            "syntax_extra_delimiter",
+            "syntax_missing_delimiter",
+            "syntax_missing_comma",
+            "markdown_title",
+            "terraform_required_version",
+            "dockerfile_workdir"
+          ],
+          "description": "Lista de tipos de sugestao que podem ser autoaplicados pela extensao do VS Code."
         }
       }
     }

@@ -316,11 +316,20 @@ O suporte atual para Zed fica em [zed-extension/](./zed-extension) e entrega sni
 - `realtimeDevAgent.realtimeOnChange`
 - `realtimeDevAgent.changeDebounceMs`
 - `realtimeDevAgent.terminalActionsEnabled`
+- `realtimeDevAgent.autoFixEnabled`
+- `realtimeDevAgent.autoFixKinds`
 
 ### Terminal no VS Code
 
 - Comentarios com `*` abrem o terminal integrado do VS Code quando a acao inferida for executavel.
 - Exemplo: `-- * run my tests` cria um terminal visivel, executa o comando de teste inferido e remove a linha gatilho quando o processo termina com sucesso.
+
+### Auto-fix no VS Code
+
+- A extensao roda em tempo real quando `realtimeDevAgent.enabled` estiver ativo.
+- Por padrao, mudancas de buffer e `save` disparam nova analise.
+- Comentarios acionaveis como `//:`, `#:`, `--:` e equivalentes agora sao autoaplicados pela extensao.
+- Arquivos de contexto `**` e testes gerados em `test/` ou `tests/` tambem podem ser criados automaticamente no VS Code.
 
 ## Como funciona
 
