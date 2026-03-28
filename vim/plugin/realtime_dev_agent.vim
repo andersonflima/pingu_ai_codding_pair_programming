@@ -197,6 +197,7 @@ endif
 
 if !exists('g:realtime_dev_agent_terminal_strategy')
   " auto: VS Code terminal em vscode-neovim, ToggleTerm quando houver TermExec, terminal nativa como fallback.
+  " background: abre o terminal, inicia a execucao e devolve o foco ao codigo mantendo o output visivel em tempo real.
   let g:realtime_dev_agent_terminal_strategy = 'auto'
 endif
 

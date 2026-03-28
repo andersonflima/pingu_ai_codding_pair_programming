@@ -737,6 +737,15 @@ function! s:issue_terminal_strategy() abort
   return 'native'
 endfunction
 
+function! s:issue_terminal_refocus_code(winid) abort
+  if a:winid > 0 && win_gotoid(a:winid)
+    call s:remember_code_window(a:winid)
+    return v:true
+  endif
+
+  return s:focus_code_window()
+endfunction
+
 function! s:issue_terminal_status_file() abort
   return tempname()
 endfunction
@@ -834,32 +843,36 @@ function! s:issue_terminal_schedule_poll(context, status_file) abort
   call timer_start(250, function('s:issue_terminal_status_poll', [l:context]), {'repeat': 240})
 endfunction
 
-function! s:apply_issue_run_command_toggleterm(command, cwd, context) abort
+function! s:apply_issue_run_command_toggleterm(command, cwd, context, background) abort
   let l:status_file = s:issue_terminal_status_file()
   let l:wrapped_command = s:issue_terminal_shell_command(a:command, a:cwd, l:status_file)
   let l:payload = {
         \ 'cmd': l:wrapped_command,
         \ 'cwd': a:cwd,
-        \ 'display_name': 'Realtime Dev Agent'
+        \ 'height': s:issue_terminal_height(),
+        \ 'return_winid': win_getid(),
+        \ 'background': a:background ? v:true : v:false
         \ }
   let l:ok = luaeval(
         \ '(function(payload)'
         \ . ' local ok, terminal_module = pcall(require, "toggleterm.terminal")'
         \ . ' if not ok or not terminal_module or not terminal_module.Terminal then return false end'
         \ . ' local term = terminal_module.Terminal:new({'
+        \ . '   cmd = payload.cmd,'
         \ . '   dir = payload.cwd ~= "" and payload.cwd or nil,'
         \ . '   hidden = false,'
         \ . '   close_on_exit = false,'
-        \ . '   display_name = payload.display_name'
-        \ . ' })'
-        \ . ' term:open()'
-        \ . ' vim.schedule(function()'
-        \ . '   if term.job_id then'
-        \ . '     vim.api.nvim_chan_send(term.job_id, payload.cmd .. "\r")'
-        \ . '   else'
-        \ . '     term:send(payload.cmd .. "\r", false)'
+        \ . '   direction = "horizontal",'
+        \ . '   size = payload.height,'
+        \ . '   on_open = function(_) '
+        \ . '     if payload.background and payload.return_winid > 0 then'
+        \ . '       vim.defer_fn(function() pcall(vim.fn.win_gotoid, payload.return_winid) end, 80)'
+        \ . '     else'
+        \ . '       vim.defer_fn(function() pcall(vim.cmd, "startinsert") end, 20)'
+        \ . '     end'
         \ . '   end'
-        \ . ' end)'
+        \ . ' })'
+        \ . ' term:toggle()'
         \ . ' return true'
         \ . ' end)(_A)',
         \ l:payload
@@ -870,20 +883,72 @@ function! s:apply_issue_run_command_toggleterm(command, cwd, context) abort
     echohl None
     return v:false
   endif
-  echomsg '[RealtimeDevAgent] Executando no ToggleTerm: ' . a:command
+  if a:background
+    call s:issue_terminal_refocus_code(get(l:payload, 'return_winid', 0))
+    echomsg '[RealtimeDevAgent] Executando em background no ToggleTerm: ' . a:command
+  else
+    echomsg '[RealtimeDevAgent] Executando no ToggleTerm: ' . a:command
+  endif
   call s:issue_terminal_schedule_poll(a:context, l:status_file)
   return v:true
 endfunction
 
-function! s:apply_issue_run_command_vscode(command, cwd, context) abort
+function! s:apply_issue_run_command_vscode(command, cwd, context, background) abort
   let l:status_file = s:issue_terminal_status_file()
   let l:wrapped_command = s:issue_terminal_shell_command(a:command, a:cwd, l:status_file)
   call VSCodeNotify('workbench.action.terminal.new')
   call VSCodeNotify('workbench.action.terminal.focus')
   call VSCodeNotify('workbench.action.terminal.sendSequence', {'text': l:wrapped_command . "\n"})
-  echomsg '[RealtimeDevAgent] Executando no terminal do VS Code: ' . a:command
+  if a:background
+    call timer_start(80, {-> VSCodeNotify('workbench.action.focusActiveEditorGroup')})
+    echomsg '[RealtimeDevAgent] Executando em background no terminal do VS Code: ' . a:command
+  else
+    echomsg '[RealtimeDevAgent] Executando no terminal do VS Code: ' . a:command
+  endif
   call s:issue_terminal_schedule_poll(a:context, l:status_file)
   return v:true
+endfunction
+
+function! s:apply_issue_run_command_native(command, cwd, context, background) abort
+  let l:height = s:issue_terminal_height()
+  let l:return_winid = win_getid()
+
+  call s:remember_code_window(l:return_winid)
+
+  if has('nvim')
+    execute 'botright ' . l:height . 'split'
+    enew
+    call termopen(a:command, {
+          \ 'cwd': a:cwd,
+          \ 'on_exit': function('s:nvim_terminal_action_exit', [a:context])
+          \ })
+    if a:background
+      call s:issue_terminal_refocus_code(l:return_winid)
+      echomsg '[RealtimeDevAgent] Executando em background no terminal: ' . a:command
+    else
+      startinsert
+      echomsg '[RealtimeDevAgent] Executando no terminal: ' . a:command
+    endif
+    return v:true
+  endif
+
+  if exists('*term_start')
+    execute 'botright ' . l:height . 'split'
+    call term_start(a:command, {
+          \ 'cwd': a:cwd,
+          \ 'curwin': 1,
+          \ 'exit_cb': function('s:vim_terminal_action_exit', [a:context])
+          \ })
+    if a:background
+      call s:issue_terminal_refocus_code(l:return_winid)
+      echomsg '[RealtimeDevAgent] Executando em background no terminal: ' . a:command
+    else
+      echomsg '[RealtimeDevAgent] Executando no terminal: ' . a:command
+    endif
+    return v:true
+  endif
+
+  return v:false
 endfunction
 
 function! s:apply_issue_run_command_hidden(issue, keep_focus_code) abort
@@ -941,40 +1006,35 @@ function! s:apply_issue_run_command(issue, keep_focus_code) abort
   endif
 
   let l:context = s:issue_terminal_context(a:issue, a:keep_focus_code)
-  let l:height = s:issue_terminal_height()
   let l:strategy = s:issue_terminal_strategy()
+  let l:is_background = l:strategy ==# 'background'
+
+  if l:is_background
+    if exists('g:vscode') && get(g:, 'vscode', 0) && exists('*VSCodeNotify')
+      return s:apply_issue_run_command_vscode(l:command, l:cwd, l:context, v:true)
+    endif
+
+    if exists(':TermExec') == 2
+      return s:apply_issue_run_command_toggleterm(l:command, l:cwd, l:context, v:true)
+    endif
+
+    if s:apply_issue_run_command_native(l:command, l:cwd, l:context, v:true)
+      return v:true
+    endif
+  endif
 
   if l:strategy ==# 'vscode'
-    return s:apply_issue_run_command_vscode(l:command, l:cwd, l:context)
+    return s:apply_issue_run_command_vscode(l:command, l:cwd, l:context, v:false)
   endif
 
   if l:strategy ==# 'toggleterm'
-    return s:apply_issue_run_command_toggleterm(l:command, l:cwd, l:context)
+    return s:apply_issue_run_command_toggleterm(l:command, l:cwd, l:context, v:false)
   endif
 
-  if l:strategy ==# 'native' && has('nvim')
-    call s:remember_code_window(win_getid())
-    execute 'botright ' . l:height . 'split'
-    enew
-    call termopen(l:command, {
-          \ 'cwd': l:cwd,
-          \ 'on_exit': function('s:nvim_terminal_action_exit', [l:context])
-          \ })
-    startinsert
-    echomsg '[RealtimeDevAgent] Executando no terminal: ' . l:command
-    return v:true
-  endif
-
-  if l:strategy ==# 'native' && exists('*term_start')
-    call s:remember_code_window(win_getid())
-    execute 'botright ' . l:height . 'split'
-    call term_start(l:command, {
-          \ 'cwd': l:cwd,
-          \ 'curwin': 1,
-          \ 'exit_cb': function('s:vim_terminal_action_exit', [l:context])
-          \ })
-    echomsg '[RealtimeDevAgent] Executando no terminal: ' . l:command
-    return v:true
+  if l:strategy ==# 'native'
+    if s:apply_issue_run_command_native(l:command, l:cwd, l:context, v:false)
+      return v:true
+    endif
   endif
 
   return s:apply_issue_run_command_hidden(l:context, a:keep_focus_code)

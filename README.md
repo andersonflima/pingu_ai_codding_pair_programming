@@ -98,7 +98,8 @@ Plug 'andersonflima/pingo_ai_codding_pair_programming'
 - Instrucoes incompletas, como `funcao que` ou `function that`, sao ignoradas para evitar geracao imprecisa.
 - Para desligar a execucao de terminal: `let g:realtime_dev_agent_terminal_actions_enabled = 0`
 - No Neovim, o backend do terminal e escolhido automaticamente: terminal do VS Code em `vscode-neovim`, `ToggleTerm` quando `:TermExec` existir e split nativa como fallback.
-- Para forcar o backend no Vim/Neovim: `let g:realtime_dev_agent_terminal_strategy = 'vscode'`, `let g:realtime_dev_agent_terminal_strategy = 'toggleterm'` ou `let g:realtime_dev_agent_terminal_strategy = 'native'`
+- Para forcar o backend no Vim/Neovim: `let g:realtime_dev_agent_terminal_strategy = 'vscode'`, `let g:realtime_dev_agent_terminal_strategy = 'toggleterm'`, `let g:realtime_dev_agent_terminal_strategy = 'native'` ou `let g:realtime_dev_agent_terminal_strategy = 'background'`
+- O modo `background` abre o terminal, inicia o comando e devolve o foco ao editor, mantendo o output visivel em tempo real durante a execucao.
 
 ### Exemplos de geracao com `:`
 
