@@ -671,6 +671,14 @@ function! s:remove_issue_trigger_line(issue, keep_focus_code) abort
         \ )
 endfunction
 
+function! s:remove_issue_trigger_residue(issue, keep_focus_code) abort
+  let l:removed = 0
+  while s:remove_issue_trigger_line(a:issue, a:keep_focus_code)
+    let l:removed += 1
+  endwhile
+  return l:removed > 0
+endfunction
+
 function! s:clear_issue_line(file, lnum) abort
   if a:lnum < 1
     return v:false
@@ -1072,6 +1080,9 @@ function! s:apply_issue_snippet(issue, keep_focus_code) abort
     noautocmd call setbufline(l:target_buf, l:lnum, l:snippet_lines[0])
     if len(l:snippet_lines) > 1
       noautocmd call appendbufline(l:target_buf, l:lnum, l:snippet_lines[1:])
+    endif
+    if l:kind ==# 'comment_task' && !empty(get(l:issue, '_trigger_line', ''))
+      call s:remove_issue_trigger_residue(l:issue, a:keep_focus_code)
     endif
   elseif l:op ==# 'insert_after'
     noautocmd call appendbufline(l:target_buf, l:lnum, l:snippet_lines)
