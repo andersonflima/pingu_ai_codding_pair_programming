@@ -573,7 +573,7 @@ function! s:apply_issue_write_file(issue, snippet_lines) abort
 
   call writefile(copy(a:snippet_lines), l:target_file, 'b')
   if get(l:action, 'remove_trigger', v:false)
-    if !s:remove_issue_trigger_line(l:issue, v:false)
+    if !s:remove_issue_trigger_line(l:issue, v:false) && empty(get(l:issue, '_trigger_line', ''))
       call s:clear_issue_line(get(l:issue, 'filename', ''), get(l:issue, 'lnum', 1))
     endif
   endif
