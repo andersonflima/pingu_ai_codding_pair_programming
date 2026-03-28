@@ -230,6 +230,9 @@ Acoes de Git:
 - Quando um arquivo novo ainda nao tiver teste correspondente, o agente cria o teste base em `tests/`.
 - Quando o arquivo ja possuir teste base, o agente procura metodos ainda sem cobertura e cria testes complementares.
 - `unit_test` agora faz parte do auto-fix padrao do plugin Vim/Neovim, entao o arquivo de teste passa a ser criado automaticamente quando a sugestao for detectada.
+- O suporte atual cobre testes nativos para `React`, `Node.js`, `Elixir`, `Rust`, `Go`, `Python`, `C`, `Lua` e `.vim`.
+- Para `Dockerfile`, `docker-compose.yml`, `docker-compose.yaml`, `compose.yml`, `compose.yaml`, `Markdown` (`.md`) e `Mermaid` (`.mmd` e `.mermaid`), o agente gera testes de contrato em shell dentro de `tests/`.
+- Em projetos `Go` sem `go.mod` e `Rust` sem `Cargo.toml`, o agente usa fallback de contrato em shell para nao bloquear a validacao automatica.
 
 Exemplo de fluxo:
 
