@@ -282,7 +282,7 @@ code --install-extension realtime-dev-agent.vsix
 
 ## Instalacao local no Zed
 
-O suporte atual para Zed fica em [zed-extension/](./zed-extension) e entrega snippets para inserir rapidamente os comentarios acionaveis do agente.
+O suporte atual para Zed fica em [zed-extension/](./zed-extension) e entrega snippets com uma base de language server local para manter o agente ativo com diagnosticos em tempo real.
 
 ### Instalar como dev extension no Zed
 
@@ -290,16 +290,23 @@ O suporte atual para Zed fica em [zed-extension/](./zed-extension) e entrega sni
 2. Clique em `Install Dev Extension`
 3. Selecione a pasta `zed-extension/` deste repositorio
 
+Pre-requisito:
+
+- `node` no PATH para o language server local
+- toolchain Rust instalada para o Zed compilar a dev extension
+
 ### O que esta disponivel no Zed hoje
 
 - snippets para comentarios `:`, `*` e `**`
 - variantes escapadas como `\s:` e `\s*`
 - suporte para JavaScript, TypeScript, React, Python, Elixir, Go, Rust, C, Lua, Dockerfile, YAML, Terraform, Markdown e Mermaid
+- diagnostics em tempo real via language server local
+- quick fixes para sugestoes baseadas em snippet no proprio arquivo
 
 ### Limitacao atual no Zed
 
-- a integracao completa em tempo real com diagnosticos, aplicacao automatica e acoes de terminal continua implementada hoje no Vim/Neovim e no VS Code
-- no Zed, a instalacao atual fornece uma extensao de snippets para acelerar o disparo dos comentarios acionaveis
+- a integracao completa com execucao automatica de terminal continua mais madura hoje no Vim/Neovim e no VS Code
+- no Zed, a base ativa atual cobre diagnosticos continuos e quick fixes, mas a parte de acoes de terminal ainda precisa evoluir
 
 ## Comandos da extensao VS Code
 
@@ -335,7 +342,7 @@ O suporte atual para Zed fica em [zed-extension/](./zed-extension) e entrega sni
 
 - Vim/Neovim: modo mais completo hoje, com analise continua, auto-fix, painel e acoes de terminal.
 - VS Code: analise continua ao abrir, focar, editar e salvar arquivos, com auto-fix e terminal integrado.
-- Zed: suporte atual via dev extension de snippets. Ainda nao possui a mesma automacao continua de buffer e terminal dos fluxos de Vim/Neovim e VS Code.
+- Zed: base ativa via dev extension com snippets, diagnostics em tempo real e quick fixes locais. A paridade total com acoes de terminal ainda esta em evolucao.
 
 ## Como funciona
 
