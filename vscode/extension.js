@@ -267,6 +267,18 @@ function activate(context) {
       }
       scheduleAnalysis(event.document);
     }),
+    vscode.workspace.onDidOpenTextDocument((document) => {
+      if (!supportsDocument(document) || !isEnabled(document.uri)) {
+        return;
+      }
+      scheduleAnalysis(document);
+    }),
+    vscode.window.onDidChangeActiveTextEditor((editor) => {
+      if (!editor || !supportsDocument(editor.document) || !isEnabled(editor.document.uri)) {
+        return;
+      }
+      scheduleAnalysis(editor.document);
+    }),
     vscode.workspace.onDidCloseTextDocument((document) => {
       clearPending(document.uri);
       diagnostics.delete(document.uri);
@@ -274,9 +286,16 @@ function activate(context) {
   );
 
   refreshStatusBar();
-  if (vscode.window.activeTextEditor && isEnabled(vscode.window.activeTextEditor.document.uri)) {
-    scheduleAnalysis(vscode.window.activeTextEditor.document);
-  }
+  const startupDocuments = new Map();
+  vscode.window.visibleTextEditors.forEach((editor) => {
+    if (!supportsDocument(editor.document) || !isEnabled(editor.document.uri)) {
+      return;
+    }
+    startupDocuments.set(editor.document.uri.toString(), editor.document);
+  });
+  startupDocuments.forEach((document) => {
+    scheduleAnalysis(document);
+  });
 
   function isTerminalIssue(issue) {
     return Boolean(

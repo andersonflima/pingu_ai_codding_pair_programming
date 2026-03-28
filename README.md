@@ -327,9 +327,15 @@ O suporte atual para Zed fica em [zed-extension/](./zed-extension) e entrega sni
 ### Auto-fix no VS Code
 
 - A extensao roda em tempo real quando `realtimeDevAgent.enabled` estiver ativo.
-- Por padrao, mudancas de buffer e `save` disparam nova analise.
+- Por padrao, abertura de arquivo, troca de foco, mudancas de buffer e `save` disparam nova analise.
 - Comentarios acionaveis como `//:`, `#:`, `--:` e equivalentes agora sao autoaplicados pela extensao.
 - Arquivos de contexto `**` e testes gerados em `test/` ou `tests/` tambem podem ser criados automaticamente no VS Code.
+
+## Paridade por editor
+
+- Vim/Neovim: modo mais completo hoje, com analise continua, auto-fix, painel e acoes de terminal.
+- VS Code: analise continua ao abrir, focar, editar e salvar arquivos, com auto-fix e terminal integrado.
+- Zed: suporte atual via dev extension de snippets. Ainda nao possui a mesma automacao continua de buffer e terminal dos fluxos de Vim/Neovim e VS Code.
 
 ## Como funciona
 
