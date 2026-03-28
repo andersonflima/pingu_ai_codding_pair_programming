@@ -734,8 +734,6 @@ function activate(context) {
     const terminal = vscode.window.createTerminal({
       name: 'Realtime Dev Agent',
       cwd,
-      shellPath: '/bin/sh',
-      shellArgs: ['-lc', terminalInnerCommand(command, cwd, statusFile)],
     });
 
     pendingTerminalTasks.set(key, {
@@ -743,6 +741,9 @@ function activate(context) {
       statusFile,
     });
     terminal.show(true);
+    setTimeout(() => {
+      terminal.sendText(terminalWrappedCommand(command, cwd, statusFile), true);
+    }, 80);
     output.appendLine(`[RealtimeDevAgent] Executando no terminal do VS Code: ${command}`);
 
     try {
