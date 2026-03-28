@@ -214,6 +214,7 @@ if !exists('g:realtime_dev_agent_auto_fix_kinds')
         \ 'debug_output',
         \ 'comment_task',
         \ 'context_file',
+        \ 'unit_test',
         \ 'terminal_task',
         \ 'syntax_missing_quote',
         \ 'syntax_extra_delimiter',

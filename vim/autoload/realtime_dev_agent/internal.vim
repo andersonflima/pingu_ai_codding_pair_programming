@@ -1622,6 +1622,7 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
         \ 'debug_output',
         \ 'comment_task',
         \ 'context_file',
+        \ 'unit_test',
         \ 'terminal_task',
         \ 'trailing_whitespace',
         \ 'tabs',
