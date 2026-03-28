@@ -225,9 +225,9 @@ Acoes de Git:
 
 ### Regras de testes unitarios automaticos
 
-- O agente so gera testes automaticamente quando o projeto ja possuir a pasta `tests/`.
-- Se `tests/` nao existir, o agente nao cria a pasta e nao gera testes unitarios.
-- Quando um arquivo novo ainda nao tiver teste correspondente, o agente cria o teste base em `tests/`.
+- O agente so gera testes automaticamente quando o projeto ja possuir a pasta `tests/` ou `test/`.
+- Se nem `tests/` nem `test/` existirem, o agente nao cria a pasta e nao gera testes unitarios.
+- Quando um arquivo novo ainda nao tiver teste correspondente, o agente cria o teste base na pasta de testes ja existente.
 - Quando o arquivo ja possuir teste base, o agente procura metodos ainda sem cobertura e cria testes complementares.
 - `unit_test` agora faz parte do auto-fix padrao do plugin Vim/Neovim, entao o arquivo de teste passa a ser criado automaticamente quando a sugestao for detectada.
 - O suporte atual cobre testes nativos para `React`, `Node.js`, `Elixir`, `Rust`, `Go`, `Python`, `C`, `Lua` e `.vim`.
