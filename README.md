@@ -92,8 +92,10 @@ Plug 'andersonflima/pingo_ai_codding_pair_programming'
 ### Comentarios acionaveis
 
 - Comentarios com `:` geram ou ajustam codigo no proprio arquivo.
+- Comentarios com `**` criam contexto persistente para o agente e podem gerar estrutura inicial de projeto conforme o blueprint descrito.
 - Comentarios com `*` executam acoes de terminal inferidas pelo contexto do projeto.
-- Depois da execucao bem-sucedida, a linha do comentario acionavel e removida do arquivo.
+- O agente remove a linha do comentario acionavel depois da aplicacao bem-sucedida da acao.
+- Instrucoes incompletas, como `funcao que` ou `function that`, sao ignoradas para evitar geracao imprecisa.
 - Para desligar a execucao de terminal: `let g:realtime_dev_agent_terminal_actions_enabled = 0`
 - No Neovim, o backend do terminal e escolhido automaticamente: terminal do VS Code em `vscode-neovim`, `ToggleTerm` quando `:TermExec` existir e split nativa como fallback.
 - Para forcar o backend no Vim/Neovim: `let g:realtime_dev_agent_terminal_strategy = 'vscode'`, `let g:realtime_dev_agent_terminal_strategy = 'toggleterm'` ou `let g:realtime_dev_agent_terminal_strategy = 'native'`
@@ -112,9 +114,38 @@ Plug 'andersonflima/pingo_ai_codding_pair_programming'
 # : implementar funcao para calcular total do pedido
 ```
 
+```lua
+-- : funcao de soma
+```
+
+```javascript
+// : funcao que recebe um numero e soma + 10 e retorna
+```
+
 ```vim
 " : adicionar comando para recarregar configuracao
 ```
+
+### Exemplos de contexto com `**`
+
+Criar contexto persistente para um projeto existente:
+
+```lua
+-- ** projeto existente usa onion architecture, controllers finos e casos de uso puros
+```
+
+Criar blueprint com scaffolding inicial:
+
+```javascript
+// ** bff para crud de usuario
+```
+
+Comportamento do `**`:
+
+- cria arquivos em `.realtime-dev-agent/contexts/`
+- atualiza o `.gitignore` para ignorar `.realtime-dev-agent/`
+- remove a linha do comentario depois da aplicacao
+- quando o blueprint for de `bff + crud`, pode criar estrutura inicial em Onion Architecture
 
 ### Exemplos de acoes de terminal com `*`
 
@@ -191,6 +222,30 @@ Acoes de Git:
 ```python
 # * commit: feat: adiciona fluxo automatico do agente
 ```
+
+### Regras de testes unitarios automaticos
+
+- O agente so gera testes automaticamente quando o projeto ja possuir a pasta `tests/`.
+- Se `tests/` nao existir, o agente nao cria a pasta e nao gera testes unitarios.
+- Quando um arquivo novo ainda nao tiver teste correspondente, o agente cria o teste base em `tests/`.
+- Quando o arquivo ja possuir teste base, o agente procura metodos ainda sem cobertura e cria testes complementares.
+- `unit_test` agora faz parte do auto-fix padrao do plugin Vim/Neovim, entao o arquivo de teste passa a ser criado automaticamente quando a sugestao for detectada.
+
+Exemplo de fluxo:
+
+```lua
+function retornar_valor()
+  return "anderson"
+end
+```
+
+Se `tests/` existir e `retornar_valor` ainda nao estiver coberta, o agente cria um arquivo como:
+
+```lua
+tests/teste_lua_spec.lua
+```
+
+Se depois surgir um metodo novo no mesmo arquivo, o agente cria um teste complementar para o metodo descoberto.
 
 ### Como o agente infere o comando
 
