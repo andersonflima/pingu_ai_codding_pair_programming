@@ -12,6 +12,7 @@ function activate(context) {
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   const pendingTimers = new Map();
   const pendingTerminalTasks = new Map();
+  const activeTerminals = new Map();
   const pendingTerminalTaskStaleMs = 30 * 1000;
   const defaultAutoFixKinds = [
     'moduledoc',
@@ -283,6 +284,13 @@ function activate(context) {
     vscode.workspace.onDidCloseTextDocument((document) => {
       clearPending(document.uri);
       diagnostics.delete(document.uri);
+    }),
+    vscode.window.onDidCloseTerminal((terminal) => {
+      Array.from(activeTerminals.entries()).forEach(([key, value]) => {
+        if (value === terminal) {
+          activeTerminals.delete(key);
+        }
+      });
     }),
   );
 
@@ -681,7 +689,7 @@ function activate(context) {
   }
 
   function terminalWrappedCommand(scriptFile) {
-    return `/bin/sh ${shellEscape(scriptFile)}`;
+    return `/bin/sh ${shellEscape(scriptFile)}; printf "\\n[RealtimeDevAgent] terminal pronto para o proximo comando.\\n"`;
   }
 
   function recyclePendingTerminalTask(key) {
@@ -740,18 +748,24 @@ function activate(context) {
     const triggerText = issueTriggerText(document, issue);
     const statusFile = terminalStatusFile();
     const scriptFile = terminalScriptFile();
+    const terminalKey = cwd || '__default__';
     fs.writeFileSync(scriptFile, terminalScriptContents(command, cwd, statusFile), { mode: 0o755 });
-    const terminal = vscode.window.createTerminal({
-      name: 'Realtime Dev Agent',
-      cwd,
-    });
+    let terminal = activeTerminals.get(terminalKey);
+    if (!terminal || terminal.exitStatus) {
+      terminal = vscode.window.createTerminal({
+        name: 'Realtime Dev Agent',
+        cwd,
+        isTransient: false,
+      });
+      activeTerminals.set(terminalKey, terminal);
+    }
 
     pendingTerminalTasks.set(key, {
       startedAt: Date.now(),
       statusFile,
       scriptFile,
     });
-    terminal.show(true);
+    terminal.show(false);
     setTimeout(() => {
       terminal.sendText(terminalWrappedCommand(scriptFile), true);
     }, 80);
