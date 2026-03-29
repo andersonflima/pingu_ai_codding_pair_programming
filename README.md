@@ -78,6 +78,18 @@ export OPENAI_API_KEY="sua_chave_aqui"
 - Se voce adicionar ou alterar a chave depois que o editor ja estiver aberto, reinicie o editor para o agente receber o novo environment.
 - Nunca commite credenciais no repositorio.
 
+## Cobertura offline por linguagem
+
+O runtime local usa perfis de linguagem versionados com snippets offline e boas praticas por stack. Isso permite gerar codigo util sem depender de API key.
+
+- JavaScript, TypeScript e React: funcoes simples, funcoes aritmeticas, retornos literais, componentes e fluxos de dado, CRUD inicial, testes e acoes de terminal.
+- Python: funcoes simples, funcoes aritmeticas, retornos literais, dado aleatorio, CRUD inicial, testes e acoes de terminal.
+- Elixir: funcoes simples, funcoes aritmeticas, retornos literais, dado aleatorio, CRUD inicial, encapsulamento em modulo, testes e acoes de terminal.
+- Go, Rust, C, Lua e Vimscript: funcoes utilitarias, funcoes aritmeticas, retornos literais, testes iniciais e acoes de terminal conforme o perfil da linguagem.
+- Terraform, YAML, Dockerfile, Markdown e Mermaid: snippets estruturados, correcoes de contrato, testes de contrato e contexto persistente.
+
+O contexto `**` agora registra no blueprint as boas praticas e a cobertura offline da linguagem ativa, para o agente seguir esse contrato ao continuar a implementacao.
+
 ## Instalacao via GitHub no Vim
 
 O repositorio agora expõe `plugin/` e `autoload/` na raiz, entao pode ser instalado direto por URL do GitHub em gerenciadores comuns.

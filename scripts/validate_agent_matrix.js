@@ -49,6 +49,49 @@ const fixtureCases = [
   ['anget_test/syntax/markdown_unclosed_fence.md', ['syntax_missing_delimiter']],
 ];
 
+const snippetExpectations = {
+  'anget_test/javascript/src/01_comment_simple.js': [
+    'function soma(a, b)',
+    'return a + b',
+  ],
+  'anget_test/typescript/src/02_comment_advanced.ts': [
+    'function somar_10(numero)',
+    'return numero + 10',
+  ],
+  'anget_test/python/app/01_d20_prompt.py': [
+    'def dados()',
+    'random.randint(1, 20)',
+  ],
+  'anget_test/elixir/lib/01_d20_prompt.ex': [
+    'def dados() do',
+    'Enum.random(1..20)',
+  ],
+  'anget_test/react/src/01_d20_prompt.tsx': [
+    'export function D20DiceRoller()',
+    'const [faceValue, setFaceValue] = useState(sides);',
+  ],
+  'anget_test/go/pkg/01_comment_prompt.go': [
+    'func soma(a float64, b float64) float64 {',
+    'return a + b',
+  ],
+  'anget_test/rust/src/01_comment_prompt.rs': [
+    'fn soma(a: f64, b: f64) -> f64 {',
+    'a + b',
+  ],
+  'anget_test/c/src/01_comment_prompt.c': [
+    'double soma(double a, double b) {',
+    'return a + b;',
+  ],
+  'anget_test/lua/lua/02_comment_advanced.lua': [
+    'function somar_10(numero)',
+    'return numero + 10',
+  ],
+  'anget_test/terraform/prompt.tf': [
+    'terraform {',
+    'required_version = ">= 1.5.0"',
+  ],
+};
+
 function readFile(relativeFile) {
   return fs.readFileSync(path.join(repoRoot, relativeFile), 'utf8');
 }
@@ -60,9 +103,16 @@ function analyzeFixture(relativeFile) {
 
 function runFixtureMatrix() {
   const failures = fixtureCases.reduce((accumulator, [relativeFile, expectedKinds]) => {
-    const kinds = new Set(analyzeFixture(relativeFile).map((issue) => issue.kind));
+    const issues = analyzeFixture(relativeFile);
+    const kinds = new Set(issues.map((issue) => issue.kind));
     const missingKinds = expectedKinds.filter((kind) => !kinds.has(kind));
-    if (missingKinds.length === 0) {
+    const expectedSnippets = snippetExpectations[relativeFile] || [];
+    const snippetPayload = issues
+      .map((issue) => String(issue.snippet || ''))
+      .filter((snippet) => snippet.length > 0)
+      .join('\n---\n');
+    const missingSnippetIncludes = expectedSnippets.filter((snippet) => !snippetPayload.includes(snippet));
+    if (missingKinds.length === 0 && missingSnippetIncludes.length === 0) {
       return accumulator;
     }
 
@@ -71,6 +121,7 @@ function runFixtureMatrix() {
       expectedKinds,
       actualKinds: Array.from(kinds).sort(),
       missingKinds,
+      missingSnippetIncludes,
     });
   }, []);
 
