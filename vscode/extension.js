@@ -1,7 +1,6 @@
 'use strict';
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 const vscode = require('vscode');
@@ -12,7 +11,8 @@ function activate(context) {
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   const pendingTimers = new Map();
   const pendingTerminalTasks = new Map();
-  const activeTerminals = new Map();
+  const activeTerminalSessions = new Map();
+  const attemptedTerminalTasks = new Map();
   const pendingTerminalTaskStaleMs = 30 * 1000;
   const defaultAutoFixKinds = [
     'moduledoc',
@@ -126,6 +126,15 @@ function activate(context) {
       clearTimeout(timer);
       pendingTimers.delete(key);
     }
+  }
+
+  function clearTerminalAttempts(uri) {
+    const prefix = `${uri.toString()}|`;
+    Array.from(attemptedTerminalTasks.keys()).forEach((key) => {
+      if (key.startsWith(prefix)) {
+        attemptedTerminalTasks.delete(key);
+      }
+    });
   }
 
   function resolveScriptPath(uri) {
@@ -267,6 +276,7 @@ function activate(context) {
       if (!supportsDocument(event.document) || !isEnabled(event.document.uri)) {
         return;
       }
+      clearTerminalAttempts(event.document.uri);
       scheduleAnalysis(event.document);
     }),
     vscode.workspace.onDidOpenTextDocument((document) => {
@@ -283,12 +293,13 @@ function activate(context) {
     }),
     vscode.workspace.onDidCloseTextDocument((document) => {
       clearPending(document.uri);
+      clearTerminalAttempts(document.uri);
       diagnostics.delete(document.uri);
     }),
     vscode.window.onDidCloseTerminal((terminal) => {
-      Array.from(activeTerminals.entries()).forEach(([key, value]) => {
-        if (value === terminal) {
-          activeTerminals.delete(key);
+      Array.from(activeTerminalSessions.entries()).forEach(([key, session]) => {
+        if (session.terminal === terminal) {
+          activeTerminalSessions.delete(key);
         }
       });
     }),
@@ -339,6 +350,15 @@ function activate(context) {
       issue.kind || '',
       issue.message || '',
       issueActionIdentity(issue),
+    ].join('|');
+  }
+
+  function terminalIssueFingerprint(document, issue) {
+    return [
+      document.uri.toString(),
+      Number(issue.line || 1),
+      issueActionIdentity(issue),
+      issueTriggerText(document, issue),
     ].join('|');
   }
 
@@ -654,56 +674,17 @@ function activate(context) {
     return true;
   }
 
-  function terminalStatusFile() {
-    return path.join(
-      os.tmpdir(),
-      `realtime-dev-agent-terminal-${Date.now()}-${Math.random().toString(16).slice(2)}.txt`,
-    );
-  }
-
-  function terminalScriptFile() {
-    return path.join(
-      os.tmpdir(),
-      `realtime-dev-agent-terminal-${Date.now()}-${Math.random().toString(16).slice(2)}.sh`,
-    );
-  }
-
-  function terminalScriptContents(command, cwd, statusFile) {
-    const lines = [
-      '#!/bin/sh',
-      'set +e',
-    ];
-
-    if (cwd) {
-      lines.push(`cd ${shellEscape(cwd)} || exit 1`);
-    }
-
-    lines.push(`printf "%s\\n" ${shellEscape(`[RealtimeDevAgent] command: ${command}`)}`);
-    lines.push(command);
-    lines.push('rda_status=$?');
-    lines.push(`printf "%s" "$rda_status" > ${shellEscape(statusFile)}`);
-    lines.push('printf "\\n[RealtimeDevAgent] exit code: %s\\n" "$rda_status"');
-    lines.push('exit "$rda_status"');
-
-    return lines.join('\n');
-  }
-
-  function terminalWrappedCommand(scriptFile) {
-    return `/bin/sh ${shellEscape(scriptFile)}; printf "\\n[RealtimeDevAgent] terminal pronto para o proximo comando.\\n"`;
-  }
-
   function recyclePendingTerminalTask(key) {
     const pendingEntry = pendingTerminalTasks.get(key);
     if (!pendingEntry) {
       return false;
     }
 
-    const statusFile = String(pendingEntry.statusFile || '');
-    if (statusFile && fs.existsSync(statusFile)) {
+    if (!pendingEntry.finishedAt) {
       return false;
     }
 
-    if (Date.now() - Number(pendingEntry.startedAt || 0) < pendingTerminalTaskStaleMs) {
+    if (Date.now() - Number(pendingEntry.finishedAt || 0) < pendingTerminalTaskStaleMs) {
       return false;
     }
 
@@ -711,25 +692,89 @@ function activate(context) {
     return true;
   }
 
-  function shellEscape(value) {
-    return `'${String(value).replace(/'/g, `'\"'\"'`)}'`;
+  function terminalText(value) {
+    return String(value || '').replace(/\r?\n/g, '\r\n');
   }
 
-  async function waitForTerminalExit(statusFile, timeoutMs) {
-    const startedAt = Date.now();
-    while (Date.now() - startedAt < timeoutMs) {
-      if (fs.existsSync(statusFile)) {
-        const raw = fs.readFileSync(statusFile, 'utf8').trim();
-        fs.rmSync(statusFile, { force: true });
-        return Number(raw || 1);
+  function createTerminalSession(cwd) {
+    const writeEmitter = new vscode.EventEmitter();
+    const closeEmitter = new vscode.EventEmitter();
+    const session = {
+      child: null,
+      terminal: null,
+      busy: false,
+      onDidWrite: writeEmitter.event,
+      onDidClose: closeEmitter.event,
+      open: () => {
+        writeEmitter.fire(terminalText(`[RealtimeDevAgent] terminal conectado em ${cwd || process.cwd()}\n`));
+      },
+      close: () => {
+        if (session.child && !session.child.killed) {
+          session.child.kill('SIGTERM');
+        }
+        closeEmitter.fire();
+      },
+      handleInput: (data) => {
+        if (data === '\x03' && session.child && !session.child.killed) {
+          session.child.kill('SIGINT');
+          writeEmitter.fire('^C\r\n');
+        }
+      },
+      async run(command) {
+        if (session.busy) {
+          writeEmitter.fire(terminalText('[RealtimeDevAgent] terminal ocupado, aguardando a execucao atual finalizar.\n'));
+          return 1;
+        }
+
+        session.busy = true;
+        writeEmitter.fire(terminalText(`\n[RealtimeDevAgent] command: ${command}\n\n`));
+
+        const exitCode = await new Promise((resolve) => {
+          const child = spawn('/bin/sh', ['-lc', command], {
+            cwd,
+            env: process.env,
+            stdio: ['ignore', 'pipe', 'pipe'],
+          });
+          session.child = child;
+
+          child.stdout.on('data', (chunk) => {
+            writeEmitter.fire(terminalText(String(chunk)));
+          });
+
+          child.stderr.on('data', (chunk) => {
+            writeEmitter.fire(terminalText(String(chunk)));
+          });
+
+          child.on('error', (error) => {
+            writeEmitter.fire(terminalText(`[RealtimeDevAgent] falha ao iniciar comando: ${error.message}\n`));
+            resolve(1);
+          });
+
+          child.on('close', (code) => {
+            resolve(typeof code === 'number' ? code : 1);
+          });
+        });
+
+        session.child = null;
+        session.busy = false;
+        writeEmitter.fire(terminalText(`\n[RealtimeDevAgent] exit code: ${exitCode}\n`));
+        writeEmitter.fire(terminalText('[RealtimeDevAgent] terminal pronto para o proximo comando.\n'));
+        return exitCode;
       }
-      await new Promise((resolve) => setTimeout(resolve, 250));
-    }
-    return null;
+    };
+
+    session.terminal = vscode.window.createTerminal({
+      name: 'Realtime Dev Agent',
+      pty: session,
+      isTransient: false,
+    });
+
+    return session;
   }
 
   async function applyTerminalTask(document, issue) {
     const key = issueKey(document, issue);
+    const fingerprint = terminalIssueFingerprint(document, issue);
     const action = issue.action || {};
     const command = String(action.command || '').trim();
     if (!command) {
@@ -741,44 +786,33 @@ function activate(context) {
       return true;
     }
 
+    if (attemptedTerminalTasks.has(fingerprint)) {
+      return true;
+    }
+
     const cwd = String(action.cwd || '').trim()
       || (vscode.workspace.getWorkspaceFolder(document.uri)
         ? vscode.workspace.getWorkspaceFolder(document.uri).uri.fsPath
         : path.dirname(document.fileName));
     const triggerText = issueTriggerText(document, issue);
-    const statusFile = terminalStatusFile();
-    const scriptFile = terminalScriptFile();
     const terminalKey = cwd || '__default__';
-    fs.writeFileSync(scriptFile, terminalScriptContents(command, cwd, statusFile), { mode: 0o755 });
-    let terminal = activeTerminals.get(terminalKey);
-    if (!terminal || terminal.exitStatus) {
-      terminal = vscode.window.createTerminal({
-        name: 'Realtime Dev Agent',
-        cwd,
-        isTransient: false,
-      });
-      activeTerminals.set(terminalKey, terminal);
+    let session = activeTerminalSessions.get(terminalKey);
+    if (!session || !session.terminal) {
+      session = createTerminalSession(cwd);
+      activeTerminalSessions.set(terminalKey, session);
     }
 
     pendingTerminalTasks.set(key, {
       startedAt: Date.now(),
-      statusFile,
-      scriptFile,
     });
-    terminal.show(false);
-    setTimeout(() => {
-      terminal.sendText(terminalWrappedCommand(scriptFile), true);
-    }, 80);
+    attemptedTerminalTasks.set(fingerprint, {
+      startedAt: Date.now(),
+    });
+    session.terminal.show(false);
     output.appendLine(`[RealtimeDevAgent] Executando no terminal do VS Code: ${command}`);
 
     try {
-      const exitCode = await waitForTerminalExit(statusFile, 10 * 60 * 1000);
-      if (exitCode === null) {
-        output.appendLine('[RealtimeDevAgent] Timeout ao aguardar a acao de terminal no VS Code');
-        output.show(true);
-        return true;
-      }
-
+      const exitCode = await session.run(command);
       if (exitCode !== 0) {
         output.appendLine(`[RealtimeDevAgent] Acao de terminal falhou com codigo ${exitCode}`);
         output.show(true);
@@ -792,13 +826,9 @@ function activate(context) {
       }
       return true;
     } finally {
-      pendingTerminalTasks.delete(key);
-      if (fs.existsSync(statusFile)) {
-        fs.rmSync(statusFile, { force: true });
-      }
-      if (fs.existsSync(scriptFile)) {
-        fs.rmSync(scriptFile, { force: true });
-      }
+      pendingTerminalTasks.set(key, {
+        finishedAt: Date.now(),
+      });
     }
   }
 
