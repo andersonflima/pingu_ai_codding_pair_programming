@@ -14,6 +14,40 @@ Agente de pair programming em tempo real com foco em revisao automatica, comenta
 - Vim ou Neovim para o plugin Vim
 - VS Code 1.85+ para a extensao
 
+## Validacao
+
+O repositorio agora possui validadores locais para reduzir regressao no runtime do agente e nas integracoes de editor.
+
+Matriz do agente baseada nas fixtures de `anget_test/`:
+
+```bash
+npm run validate:matrix
+```
+
+Integracoes de editor:
+
+```bash
+npm run validate:editors
+```
+
+Para incluir tambem o empacotamento real da extensao do VS Code:
+
+```bash
+PINGU_VALIDATE_PACKAGE=1 npm run validate:editors
+```
+
+Tudo de uma vez:
+
+```bash
+npm run validate:all
+```
+
+Se voce quiser validar tambem a suite externa em `~/snippets/agent_tests`, rode:
+
+```bash
+PINGU_EXTERNAL_FIXTURES_DIR="$HOME/snippets/agent_tests" node scripts/validate_agent_matrix.js
+```
+
 ## Credenciais e variaveis de ambiente
 
 O agente possui dois modos de operacao:
