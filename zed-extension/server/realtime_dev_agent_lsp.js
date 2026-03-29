@@ -1,14 +1,19 @@
 #!/usr/bin/env node
 'use strict';
 
+const path = require('path');
+const { spawn } = require('child_process');
 const { fileURLToPath, pathToFileURL } = require('url');
 const { analyzeText } = require('../../lib/analyzer');
 
 const documents = new Map();
 const issuesByUri = new Map();
+const pendingClientRequests = new Map();
+const activeTerminalTasks = new Map();
 
 let messageBuffer = Buffer.alloc(0);
 let shutdownRequested = false;
+let nextClientRequestId = 1;
 
 process.stdin.on('data', (chunk) => {
   messageBuffer = Buffer.concat([messageBuffer, chunk]);
@@ -55,11 +60,23 @@ function flushMessages() {
 }
 
 function handleMessage(message) {
+  if (!message || typeof message !== 'object') {
+    return;
+  }
+
+  if (!message.method && Object.prototype.hasOwnProperty.call(message, 'id')) {
+    handleClientResponse(message);
+    return;
+  }
+
   if (message.method === 'initialize') {
     sendResponse(message.id, {
       capabilities: {
         textDocumentSync: 1,
         codeActionProvider: true,
+        executeCommandProvider: {
+          commands: ['realtimeDevAgent.runTerminalTask'],
+        },
       },
       serverInfo: {
         name: 'realtime-dev-agent-lsp',
@@ -131,9 +148,27 @@ function handleMessage(message) {
     return;
   }
 
+  if (message.method === 'workspace/executeCommand') {
+    const params = message.params || {};
+    if (params.command === 'realtimeDevAgent.runTerminalTask') {
+      executeTerminalTask(Array.isArray(params.arguments) ? params.arguments[0] : null);
+      sendResponse(message.id, null);
+      return;
+    }
+  }
+
   if (typeof message.id !== 'undefined') {
     sendResponse(message.id, null);
   }
+}
+
+function handleClientResponse(message) {
+  const callback = pendingClientRequests.get(message.id);
+  if (!callback) {
+    return;
+  }
+  pendingClientRequests.delete(message.id);
+  callback(message);
 }
 
 function upsertDocument(uri, text, version) {
@@ -192,7 +227,7 @@ function buildCodeActions(params) {
   const range = params.range || null;
 
   return issues
-    .filter((issue) => issueProducesWorkspaceEdit(issue))
+    .filter((issue) => issueProducesCodeAction(issue))
     .filter((issue) => issueIntersectsRange(liveDocument, issue, range))
     .map((issue) => buildCodeAction(liveDocument, issue))
     .filter(Boolean);
@@ -200,6 +235,9 @@ function buildCodeActions(params) {
 
 function buildCodeAction(document, issue) {
   const action = issueAction(issue);
+  if (isTerminalAction(action)) {
+    return buildTerminalCodeAction(document, issue, action);
+  }
   const edit = buildWorkspaceEdit(document, issue, action);
   if (!edit) {
     return null;
@@ -209,6 +247,30 @@ function buildCodeAction(document, issue) {
     title: `Realtime Dev Agent: ${issue.suggestion || issue.message}`,
     kind: 'quickfix',
     edit,
+  };
+}
+
+function buildTerminalCodeAction(document, issue, action) {
+  const payload = {
+    uri: document.uri,
+    command: String(action.command || '').trim(),
+    cwd: String(action.cwd || '').trim() || path.dirname(uriToFilePath(document.uri)),
+    line: Number(issue.line || 1),
+    triggerText: issueTriggerText(document, issue),
+    removeTrigger: Boolean(action.remove_trigger),
+  };
+  if (!payload.command) {
+    return null;
+  }
+
+  return {
+    title: `Realtime Dev Agent: ${issue.suggestion || issue.message}`,
+    kind: 'quickfix',
+    command: {
+      title: `Realtime Dev Agent: ${issue.suggestion || issue.message}`,
+      command: 'realtimeDevAgent.runTerminalTask',
+      arguments: [payload],
+    },
   };
 }
 
@@ -309,10 +371,13 @@ function buildWorkspaceEdit(document, issue, action) {
   return null;
 }
 
-function issueProducesWorkspaceEdit(issue) {
+function issueProducesCodeAction(issue) {
   const action = issueAction(issue);
-  if (!action || action.op === 'run_command') {
+  if (!action) {
     return false;
+  }
+  if (action.op === 'run_command') {
+    return Boolean(action.command);
   }
   if (action.op === 'write_file') {
     return Boolean(action.target_file && issue.snippet);
@@ -339,6 +404,7 @@ function issueAction(issue) {
   const defaults = {
     comment_task: { op: 'replace_line' },
     context_file: { op: 'write_file' },
+    terminal_task: { op: 'run_command' },
     unit_test: { op: 'write_file' },
     missing_dependency: { op: 'insert_before' },
     moduledoc: { op: 'insert_before' },
@@ -358,8 +424,19 @@ function issueAction(issue) {
   return defaults[String(issue && issue.kind || '')] || { op: 'insert_before' };
 }
 
+function isTerminalAction(action) {
+  return Boolean(action && action.op === 'run_command' && String(action.command || '').trim() !== '');
+}
+
 function issueLineIndex(issue) {
   return Math.max(0, Number(issue && issue.line || 1) - 1);
+}
+
+function issueTriggerText(document, issue) {
+  const lines = splitDocumentLines(document.text);
+  const lineIndex = issueLineIndex(issue);
+  const boundedLineIndex = Math.max(0, Math.min(lineIndex, Math.max(lines.length - 1, 0)));
+  return lines[boundedLineIndex] || '';
 }
 
 function diagnosticSeverity(severity) {
@@ -439,6 +516,169 @@ function uriToFilePath(uri) {
     return fileURLToPath(uri);
   }
   return String(uri || '');
+}
+
+function sendRequest(method, params, callback) {
+  const id = nextClientRequestId;
+  nextClientRequestId += 1;
+  if (typeof callback === 'function') {
+    pendingClientRequests.set(id, callback);
+  }
+  writeMessage({
+    jsonrpc: '2.0',
+    id,
+    method,
+    params,
+  });
+}
+
+function executeTerminalTask(payload) {
+  if (!payload || typeof payload !== 'object') {
+    return;
+  }
+
+  const command = String(payload.command || '').trim();
+  const cwd = String(payload.cwd || '').trim() || process.cwd();
+  const uri = String(payload.uri || '').trim();
+  const line = Number(payload.line || 1);
+  const triggerText = String(payload.triggerText || '');
+  const removeTrigger = Boolean(payload.removeTrigger);
+  if (!command) {
+    return;
+  }
+
+  const taskKey = [uri || '__no-uri__', line, command].join('|');
+  if (activeTerminalTasks.has(taskKey)) {
+    sendNotification('window/logMessage', {
+      type: 3,
+      message: `[RealtimeDevAgent/Zed] acao de terminal ja esta em execucao: ${command}`,
+    });
+    return;
+  }
+
+  sendNotification('window/logMessage', {
+    type: 3,
+    message: `[RealtimeDevAgent/Zed] terminal conectado em ${cwd}`,
+  });
+  sendNotification('window/logMessage', {
+    type: 3,
+    message: `[RealtimeDevAgent/Zed] command: ${command}`,
+  });
+
+  const child = spawn('/bin/sh', ['-lc', command], {
+    cwd,
+    env: process.env,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  activeTerminalTasks.set(taskKey, child);
+
+  child.stdout.on('data', (chunk) => {
+    sendNotification('window/logMessage', {
+      type: 3,
+      message: String(chunk),
+    });
+  });
+
+  child.stderr.on('data', (chunk) => {
+    sendNotification('window/logMessage', {
+      type: 1,
+      message: String(chunk),
+    });
+  });
+
+  child.on('error', (error) => {
+    activeTerminalTasks.delete(taskKey);
+    sendNotification('window/logMessage', {
+      type: 1,
+      message: `[RealtimeDevAgent/Zed] falha ao iniciar comando: ${String(error && error.message || error)}`,
+    });
+  });
+
+  child.on('close', (exitCode) => {
+    activeTerminalTasks.delete(taskKey);
+    sendNotification('window/logMessage', {
+      type: exitCode === 0 ? 3 : 1,
+      message: `[RealtimeDevAgent/Zed] exit code: ${typeof exitCode === 'number' ? exitCode : 1}`,
+    });
+    sendNotification('window/logMessage', {
+      type: 3,
+      message: '[RealtimeDevAgent/Zed] terminal pronto para o proximo comando.',
+    });
+
+    if (exitCode === 0 && removeTrigger && uri) {
+      requestTriggerRemoval(uri, line, triggerText);
+    }
+  });
+}
+
+function requestTriggerRemoval(uri, line, triggerText) {
+  const document = documents.get(uri);
+  if (!document) {
+    return;
+  }
+
+  const edit = buildTriggerRemovalEdit(document, line, triggerText);
+  if (!edit) {
+    return;
+  }
+
+  sendRequest('workspace/applyEdit', {
+    label: 'Realtime Dev Agent terminal task cleanup',
+    edit,
+  }, (response) => {
+    const applied = Boolean(response && response.result && response.result.applied);
+    if (!applied) {
+      return;
+    }
+    applyTriggerRemovalToDocument(uri, line, triggerText);
+    analyzeAndPublish(uri);
+  });
+}
+
+function buildTriggerRemovalEdit(document, line, triggerText) {
+  const lines = splitDocumentLines(document.text);
+  const targetIndex = findTriggerLineIndex(lines, line, triggerText);
+  if (targetIndex === -1) {
+    return null;
+  }
+
+  return {
+    changes: {
+      [document.uri]: [
+        {
+          range: fullLineRange(lines, targetIndex),
+          newText: '',
+        },
+      ],
+    },
+  };
+}
+
+function applyTriggerRemovalToDocument(uri, line, triggerText) {
+  const document = documents.get(uri);
+  if (!document) {
+    return;
+  }
+
+  const lines = splitDocumentLines(document.text);
+  const targetIndex = findTriggerLineIndex(lines, line, triggerText);
+  if (targetIndex === -1) {
+    return;
+  }
+
+  lines.splice(targetIndex, 1);
+  upsertDocument(uri, lines.join('\n'), document.version);
+}
+
+function findTriggerLineIndex(lines, line, triggerText) {
+  const expectedIndex = Math.max(0, Number(line || 1) - 1);
+  if (expectedIndex < lines.length && lines[expectedIndex] === triggerText) {
+    return expectedIndex;
+  }
+  if (!triggerText) {
+    return -1;
+  }
+  return lines.findIndex((entry) => entry === triggerText);
 }
 
 function sendNotification(method, params) {

@@ -348,11 +348,7 @@ Pre-requisito:
 - suporte para JavaScript, TypeScript, React, Python, Elixir, Go, Rust, C, Lua, Dockerfile, YAML, Terraform, Markdown e Mermaid
 - diagnostics em tempo real via language server local
 - quick fixes para sugestoes baseadas em snippet no proprio arquivo
-
-### Limitacao atual no Zed
-
-- a integracao completa com execucao automatica de terminal continua mais madura hoje no Vim/Neovim e no VS Code
-- no Zed, a base ativa atual cobre diagnosticos continuos e quick fixes, mas a parte de acoes de terminal ainda precisa evoluir
+- `terminal_task` via code action com execucao local em background e logs em tempo real pelo language server
 
 ## Comandos da extensao VS Code
 
@@ -387,9 +383,14 @@ Pre-requisito:
 
 ## Paridade por editor
 
-- Vim/Neovim: modo mais completo hoje, com analise continua, auto-fix, painel e acoes de terminal.
+- Vim/Neovim: analise continua, auto-fix, painel e acoes de terminal.
 - VS Code: analise continua ao abrir, focar, editar e salvar arquivos, com auto-fix e terminal integrado.
-- Zed: base ativa via dev extension com snippets, diagnostics em tempo real e quick fixes locais. A paridade total com acoes de terminal ainda esta em evolucao.
+- Zed: analise continua, quick fixes para `comment_task`, `context_file` e `unit_test`, e `terminal_task` executavel via code action com logs em tempo real.
+
+## Contrato de paridade
+
+- O contrato formal de paridade entre LazyVim, VS Code e Zed fica em `scripts/editor_parity_contract.js`.
+- `npm run validate:editors` agora valida esse contrato e reprova qualquer regressao de capacidade obrigatoria entre os editores.
 
 ## Como funciona
 

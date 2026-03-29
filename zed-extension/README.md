@@ -27,9 +27,10 @@ Escopo atual desta extensao:
 - snippets para linguagens e formatos suportados pelo agente
 - diagnostics em tempo real via language server local
 - code actions para aplicacao de sugestoes baseadas em snippet dentro do proprio arquivo
+- code action de `terminal_task` com execucao local em background e logs em tempo real
 - instalacao local como dev extension
 
-Limitacao atual:
+Observacao:
 
-- a extensao do Zed ainda nao executa automaticamente acoes de terminal como o fluxo do Vim/Neovim e do VS Code
-- `context_file` e `unit_test` aparecem como diagnostico e quick fix, mas a base ativa no Zed ainda esta em evolucao
+- `context_file` e `unit_test` continuam sendo aplicados por quick fix no proprio arquivo
+- `terminal_task` no Zed usa code action e logs do language server, enquanto Vim/Neovim e VS Code usam terminal visivel do editor
