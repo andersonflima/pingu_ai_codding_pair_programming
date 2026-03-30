@@ -91,8 +91,8 @@ O runtime local usa perfis de linguagem versionados com snippets offline e boas 
 - JavaScript, TypeScript e React: funcoes simples, funcoes aritmeticas, retornos literais, componentes e fluxos de dado, CRUD inicial, testes e acoes de terminal.
 - Python: funcoes simples, funcoes aritmeticas, retornos literais, dado aleatorio, CRUD inicial, testes e acoes de terminal.
 - Elixir: funcoes simples, funcoes aritmeticas, retornos literais, dado aleatorio, CRUD inicial, encapsulamento em modulo, testes e acoes de terminal.
-- Go, Rust, C, Lua e Vimscript: funcoes utilitarias, funcoes aritmeticas, retornos literais, testes iniciais e acoes de terminal conforme o perfil da linguagem.
-- Terraform, YAML, Dockerfile, Markdown e Mermaid: snippets estruturados, correcoes de contrato, testes de contrato e contexto persistente.
+- Go, Rust, Ruby, C, Lua, Shell e Vimscript: funcoes utilitarias, funcoes aritmeticas, retornos literais, scripts ou testes iniciais e acoes de terminal conforme o perfil da linguagem.
+- Terraform, TOML, YAML, Dockerfile, Markdown e Mermaid: snippets estruturados, correcoes de contrato, testes de contrato e contexto persistente.
 
 O contexto `**` agora registra no blueprint as boas praticas e a cobertura offline da linguagem ativa, para o agente seguir esse contrato ao continuar a implementacao.
 
@@ -283,7 +283,7 @@ Acoes de Git:
 - Quando um arquivo novo ainda nao tiver teste correspondente, o agente cria o teste base na pasta de testes ja existente.
 - Quando o arquivo ja possuir teste base, o agente procura metodos ainda sem cobertura e cria testes complementares.
 - `unit_test` agora faz parte do auto-fix padrao do plugin Vim/Neovim, entao o arquivo de teste passa a ser criado automaticamente quando a sugestao for detectada.
-- O suporte atual cobre testes nativos para `React`, `Node.js`, `Elixir`, `Rust`, `Go`, `Python`, `C`, `Lua` e `.vim`.
+- O suporte atual cobre testes nativos para `React`, `Node.js`, `Elixir`, `Rust`, `Go`, `Python`, `Ruby`, `C`, `Lua` e `.vim`.
 - Para `Dockerfile`, `docker-compose.yml`, `docker-compose.yaml`, `compose.yml`, `compose.yaml`, `Markdown` (`.md`) e `Mermaid` (`.mmd` e `.mermaid`), o agente gera testes de contrato em shell dentro de `tests/`.
 - Em projetos `Go` sem `go.mod` e `Rust` sem `Cargo.toml`, o agente usa fallback de contrato em shell para nao bloquear a validacao automatica.
 

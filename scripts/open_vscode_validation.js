@@ -16,6 +16,9 @@ const defaultFixtureFiles = [
   'anget_test/javascript/src/04_context_blueprint.js',
   'anget_test/javascript/src/06_unit_contract.js',
   'anget_test/react/src/01_d20_prompt.tsx',
+  'anget_test/ruby/lib/01_d20_prompt.rb',
+  'anget_test/shell/01_comment_prompt.sh',
+  'anget_test/toml/config.toml',
   'anget_test/terraform/main.tf',
 ];
 

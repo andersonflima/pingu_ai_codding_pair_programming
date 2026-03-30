@@ -22,6 +22,7 @@ function runNodeChecks() {
     'lib/analyzer.js',
     'lib/issue-kinds.js',
     'lib/generation.js',
+    'lib/generation-blueprint.js',
     'lib/generation-comment-task.js',
     'lib/generation-dependencies.js',
     'lib/generation-react.js',

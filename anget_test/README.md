@@ -16,7 +16,7 @@ Cobertura desta suite:
 
 Estrutura:
 
-- `javascript/`, `typescript/`, `react/`, `python/`, `elixir/`, `go/`, `rust/`, `c/`, `lua/`, `vim/`
+- `javascript/`, `typescript/`, `react/`, `python/`, `elixir/`, `go/`, `rust/`, `ruby/`, `c/`, `lua/`, `vim/`, `shell/`, `toml/`
 - `docker/`, `compose/`, `markdown/`, `mermaid/`, `terraform/`
 - `syntax/` para cenarios de autocorrecao
 
@@ -39,6 +39,6 @@ Esse comando abre a workspace de validacao e varios arquivos da suite em uma uni
 
 Arquivos de referencia:
 
-- `01_*.{js,ts,tsx,py,ex,go,rs,c,lua,vim}`: prompts simples
-- `02_*.{js,ts,tsx,py,ex,go,rs,c,lua,vim}`: prompts avancados ou contratos publicos
+- `01_*.{js,ts,tsx,py,ex,go,rs,rb,c,lua,vim,sh}`: prompts simples
+- `02_*.{js,ts,tsx,py,ex,go,rs,rb,c,lua,vim,sh}`: prompts avancados, contratos publicos ou acoes operacionais
 - `03_*`: terminal, escape de marcador ou blueprint
