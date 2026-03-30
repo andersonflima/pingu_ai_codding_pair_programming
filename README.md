@@ -4,133 +4,420 @@
   <img src="./assets/pingu.png" alt="Pingu, a cara do Pingu - Dev Agent" width="240" />
 </p>
 
-<p align="center">Pingu e a identidade visual do Pingu - Dev Agent.</p>
+Pingu e um agente de pair programming em tempo real orientado a arquivo e editor. Ele nao foi desenhado como um chat generico. Ele observa o buffer atual, encontra problemas e pedidos explicitos no proprio codigo, gera snippets idiomaticos por linguagem, cria contexto persistente, sugere ou cria testes, injeta dependencias faltantes e executa acoes de terminal com politica de risco.
 
-Agente de pair programming em tempo real com foco em revisao automatica, comentarios de manutencao, geracao de codigo, dependencias e testes unitarios por linguagem.
+O projeto funciona hoje em `Vim/Neovim`, `VS Code` e `Zed`, com runtime local e cobertura offline por linguagem. Isso significa que uma parte grande do fluxo funciona sem API key.
 
-## Requisitos
+## O que o Pingu faz
 
-- Node.js no PATH
-- Vim ou Neovim para o plugin Vim
-- VS Code 1.85+ para a extensao
+- Analisa o arquivo atual em tempo real e publica diagnosticos orientados a manutencao.
+- Interpreta comentarios acionaveis para gerar codigo no proprio arquivo.
+- Cria `context_file` a partir de blueprints descritos no comentario.
+- Gera ou complementa testes quando `tests/` ou `test/` ja existem no projeto.
+- Detecta dependencias faltantes quando o snippet gerado exige imports, `use`, `require` ou `#include`.
+- Executa `terminal_task` com inferencia por stack e politica de risco configuravel.
+- Expoe follow-up acionavel para continuar o pareamento sem sair do arquivo.
+- Mantem um contrato de paridade entre `LazyVim`, `VS Code` e `Zed`.
 
-## Validacao
+## O que o Pingu melhora para quem usa
 
-O repositorio agora possui validadores locais para reduzir regressao no runtime do agente e nas integracoes de editor.
+- Reduz troca de contexto: o pedido nasce no comentario do codigo e a resposta volta para o proprio arquivo.
+- Acelera scaffolding: funcoes, estruturas, blueprints e testes saem sem interromper o fluxo.
+- Diminui repeticao: imports, snippets base, comentarios de manutencao e testes complementares deixam de ser trabalho manual.
+- Mantem consistencia arquitetural: o contexto `**` registra regras de stack e de arquitetura para orientar geracoes futuras.
+- Torna o loop de review mais curto: o agente analisa, sugere, aplica, remove o gatilho e reanalisa.
+- Funciona bem em ambiente local: boa parte das capacidades ja esta no runtime offline.
 
-Matriz do agente baseada nas fixtures de `anget_test/`:
+## O que o Pingu nao e
 
-```bash
-npm run validate:matrix
+- Nao e um chat generico de perguntas soltas.
+- Nao substitui decisao arquitetural do time.
+- Nao promete gerar qualquer coisa em qualquer linguagem sem contrato de capacidade.
+- Nao cria testes automaticamente em projeto sem `tests/` ou `test/`.
+
+## Como o loop funciona
+
+1. Voce abre um arquivo suportado em `Vim/Neovim`, `VS Code` ou `Zed`.
+2. O Pingu analisa o buffer em abertura, foco, edicao e `save`, conforme o editor.
+3. Quando encontra um comentario acionavel, ele transforma isso em uma issue do tipo:
+   - `comment_task`
+   - `context_file`
+   - `unit_test`
+   - `terminal_task`
+4. O editor aplica a acao automaticamente ou via quick fix, dependendo do fluxo.
+5. Quando a acao termina com sucesso, a linha gatilho e removida.
+6. O arquivo e reanalisado para continuar o pareamento.
+
+## Tipos de comentario acionavel
+
+### `:` gera ou ajusta codigo
+
+Use o prefixo de comentario da linguagem seguido de `:`:
+
+```javascript
+//: funcao soma
 ```
 
-Integracoes de editor:
-
-```bash
-npm run validate:editors
+```python
+#: implementar funcao para calcular total do pedido
 ```
 
-Abrir a suite manual do VS Code em uma unica janela, com varios arquivos:
-
-```bash
-npm run open:vscode:validation
+```lua
+--: cria modulo billing com funcoes listar e criar
 ```
 
-Para incluir tambem o empacotamento real da extensao do VS Code:
+Em linguagens com comentario de bloco, o Pingu tambem entende:
 
-```bash
-PINGU_VALIDATE_PACKAGE=1 npm run validate:editors
+```c
+/* funcao dice que retorna um numero random de um dado de 20 lados */
 ```
 
-Tudo de uma vez:
+### `**` cria contexto persistente e pode gerar scaffold
 
-```bash
-npm run validate:all
+```javascript
+// ** bff para crud de usuario
 ```
 
-Se voce quiser validar tambem a suite externa em `~/snippets/agent_tests`, rode:
-
-```bash
-PINGU_EXTERNAL_FIXTURES_DIR="$HOME/snippets/agent_tests" node scripts/validate_agent_matrix.js
+```lua
+-- ** projeto existente usa onion architecture, controllers finos e casos de uso puros
 ```
 
-Para recriar do zero a suite externa em `~/snippets/agent_test`, rode:
+### `*` executa acao de terminal
 
-```bash
-npm run rebuild:external-agent-test
+```javascript
+//* rodar testes
 ```
 
-Para validar a suite externa usando `vim` e `vscode`, rode:
-
-```bash
-npm run validate:external-editors
+```python
+# * listar arquivos do projeto
 ```
 
-O validador externo usa workspaces temporarios por caso para evitar contaminacao de estado e grava o resumo final em:
-
-```bash
-~/snippets/agent_test/editor-validation-report.json
+```lua
+-- * executar este arquivo
 ```
 
-Para abrir a suite externa inteira no VS Code, reuse a mesma janela:
+### Marcadores escapados
 
-```bash
-npm run open:vscode:external-validation
+Se voce quiser manter o comentario literal e impedir a acao do agente, use as variantes escapadas:
+
+- `\s:`
+- `\s*`
+- `\s**`
+
+## Exemplos reais de uso e output
+
+### 1. Geracao simples de funcao em JavaScript
+
+Entrada:
+
+```javascript
+//: funcao soma
 ```
 
-## Credenciais e variaveis de ambiente
+Output gerado:
 
-O agente possui dois modos de operacao:
-
-- Modo local: usa apenas a logica embarcada no projeto e nao exige chave de API.
-- Modo remoto: quando o agente passar a usar um provedor de LLM externo, a credencial precisara estar disponivel no environment antes de abrir o editor.
-
-### Regra pratica
-
-- Se o agente estiver rodando apenas com as heuristicas locais deste repositorio, nenhuma chave de API e obrigatoria.
-- Se o agente estiver configurado para chamar um provedor externo, a chave deve estar exportada no ambiente do processo.
-
-### Exemplos de variaveis comuns
-
-- `OPENAI_API_KEY`
-- `ANTHROPIC_API_KEY`
-- `GEMINI_API_KEY`
-
-### Exemplo no shell
-
-```bash
-export OPENAI_API_KEY="sua_chave_aqui"
+```javascript
+/**
+ * Orquestra o comportamento principal de soma
+ * @param {*} a Parametro de entrada do fluxo.
+ * @param {*} b Parametro de entrada do fluxo.
+ * @returns {*} Valor calculado conforme a regra principal da funcao.
+ */
+function soma(a, b) {
+  // Retorna o resultado consolidado desta funcao.
+  return a + b
+}
 ```
 
-### Importante
+O que melhora aqui:
 
-- Vim, Neovim e VS Code herdam as variaveis de ambiente no momento em que sao iniciados.
-- Se voce adicionar ou alterar a chave depois que o editor ja estiver aberto, reinicie o editor para o agente receber o novo environment.
-- Nunca commite credenciais no repositorio.
+- a funcao ja nasce com nome util
+- a assinatura vem coerente com a intencao
+- a documentacao minima de manutencao ja entra junto
 
-## Cobertura offline por linguagem
+### 2. Funcao com comentario de bloco em C
 
-O runtime local usa perfis de linguagem versionados com snippets offline e boas praticas por stack. Isso permite gerar codigo util sem depender de API key.
+Entrada:
 
-O contrato declarativo canonico por linguagem agora fica em `lib/language-capabilities.js`. Esse arquivo centraliza extensoes, intents de `/:`, features por editor, capacidades offline e boas praticas, enquanto `lib/language-profiles.js` apenas deriva a visao operacional consumida pelo runtime.
+```c
+/* funcao dice que retorna um numero random de um dado de 20 lados */
+```
 
-- JavaScript, TypeScript e React: funcoes simples, funcoes aritmeticas, retornos literais, componentes e fluxos de dado, CRUD inicial, testes e acoes de terminal.
-- Python: funcoes simples, funcoes aritmeticas, retornos literais, dado aleatorio, CRUD inicial, testes e acoes de terminal.
-- Elixir: funcoes simples, funcoes aritmeticas, retornos literais, dado aleatorio, CRUD inicial, encapsulamento em modulo, testes e acoes de terminal.
-- Go, Rust, Ruby, C, Lua, Shell e Vimscript: funcoes utilitarias, funcoes aritmeticas, retornos literais, scripts ou testes iniciais e acoes de terminal conforme o perfil da linguagem.
-- Terraform, TOML, YAML, Dockerfile, Markdown e Mermaid: snippets estruturados, correcoes de contrato, testes de contrato e contexto persistente.
+Output gerado no arquivo:
 
-O contexto `**` agora registra no blueprint as boas praticas e a cobertura offline da linguagem ativa, para o agente seguir esse contrato ao continuar a implementacao.
+```c
+int dice(void) {
+  // Retorna o resultado consolidado desta funcao.
+  return (rand() % 20) + 1;
+}
+```
+
+Output complementar de dependencia:
+
+```c
+#include <stdlib.h>
+```
+
+O que melhora aqui:
+
+- o comentario de bloco passa a funcionar como pedido acionavel
+- o retorno fica consistente com a semantica de `d20`
+- o agente detecta o `#include` faltante
+
+### 3. Blueprint de contexto com scaffold inicial
+
+Entrada:
+
+```javascript
+// ** bff para crud de usuario
+```
+
+Outputs tipicos:
+
+- atualiza `.gitignore` para ignorar `.realtime-dev-agent/`
+- cria `.realtime-dev-agent/contexts/bff-crud-usuario.md`
+- cria scaffold inicial em `src/` seguindo Onion Architecture
+
+Arquivos tipicos gerados:
+
+```text
+.realtime-dev-agent/contexts/bff-crud-usuario.md
+src/domain/entities/usuario.js
+src/domain/repositories/usuario-repository.js
+src/application/use-cases/list-usuarios.js
+src/application/use-cases/get-usuario-by-id.js
+src/application/use-cases/create-usuario.js
+src/application/use-cases/update-usuario.js
+src/application/use-cases/delete-usuario.js
+src/infrastructure/repositories/in-memory-usuario-repository.js
+src/interfaces/http/controllers/usuario-controller.js
+src/interfaces/http/routes/usuario-routes.js
+src/main/factories/usuario-crud-factory.js
+```
+
+O que melhora aqui:
+
+- o time registra contexto arquitetural duravel
+- o agente passa a usar esse contrato nas proximas geracoes
+- o bootstrap de um BFF CRUD deixa de ser trabalho repetitivo
+
+### 4. Acao de terminal no VS Code
+
+Entrada:
+
+```javascript
+//* rodar testes
+```
+
+Output esperado no terminal integrado:
+
+```text
+[RealtimeDevAgent] command: npm test
+...
+[RealtimeDevAgent] exit code: 0
+[RealtimeDevAgent] terminal pronto para o proximo comando.
+```
+
+Comportamento esperado:
+
+- o terminal integrado abre
+- o comando e inferido pelo contexto do projeto
+- a linha gatilho e removida quando o processo termina com sucesso
+
+### 5. Follow-up acionavel
+
+Quando o editor encontra um problema elegivel, o Pingu pode inserir um follow-up logo abaixo do trecho atual.
+
+Exemplo de output:
+
+```javascript
+// : Use um ticket ou comentario estruturado para pedir a proxima alteracao aqui
+```
+
+O que melhora aqui:
+
+- o pareamento continua no proprio arquivo
+- o desenvolvedor nao precisa lembrar a sintaxe do marcador
+- o editor vira a superficie principal de colaboracao com o agente
+
+### 6. Diagnosticos de manutencao
+
+Mesmo sem comentario acionavel, o Pingu pode propor manutencao.
+
+Exemplo em Python:
+
+Entrada:
+
+```python
+def soma(a, b):
+    return a + b
+```
+
+Output tipico:
+
+- `function_doc`
+- `flow_comment`
+
+Snippets esperados:
+
+```python
+# Orquestra o comportamento principal de soma
+# a: parametro de entrada do fluxo.
+# b: parametro de entrada do fluxo.
+# Retorno: Valor calculado conforme a regra principal da funcao.
+```
+
+```python
+    # Retorna o resultado consolidado desta funcao.
+```
+
+## O que o `:` consegue construir
+
+O parser do `:` ja entende intencao explicita e tenta gerar estrutura idiomatica por linguagem.
+
+Categorias suportadas:
+
+- `function`
+- `crud`
+- `ui`
+- `test`
+- `comment`
+- `enum`
+- `class`
+- `interface` ou `type`
+- `struct`
+- `module` ou `namespace`
+- `object`
+- `collection`
+- `variable`
+- `script`
+
+Quando uma estrutura equivalente ja existir no arquivo, o agente tenta evitar duplicacao.
+
+## Cobertura por linguagem
+
+O contrato declarativo canonico fica em `lib/language-capabilities.js`. Esse arquivo define extensoes, `editorFeatures`, `commentTaskIntents`, capacidades offline e boas praticas da linguagem.
+
+Resumo pratico:
+
+- JavaScript, TypeScript e React:
+  `comment_task`, `context_file`, `unit_test`, `terminal_task`
+  funcoes, CRUD, UI, enum, class, interface/type, module, objeto, colecao e variavel
+- Python:
+  `comment_task`, `unit_test`, `terminal_task`
+  funcoes, Enum, class, module, object, collection e variable
+- Elixir:
+  `comment_task`, `unit_test`, `terminal_task`
+  funcoes, `defmodule`, contratos com `@type`, enums por atoms e CRUD inicial
+- Go:
+  `comment_task`, `unit_test`, `terminal_task`
+  funcoes, `struct`, `interface`, enum tipado, module e object
+- Rust:
+  `comment_task`, `unit_test`, `terminal_task`
+  funcoes, `struct`, `trait`, `enum`, `mod`, object e collection
+- Ruby:
+  `comment_task`, `unit_test`, `terminal_task`
+  funcoes, `class`, `module`, `Struct`, hash e enum equivalente
+- C:
+  `comment_task`, `unit_test`, `terminal_task`
+  funcoes, `struct`, `enum` e contratos simples
+- Lua:
+  `comment_task`, `unit_test`, `terminal_task`
+  funcoes, modulos, tabelas, enums equivalentes e CRUD inicial
+- Vimscript:
+  `comment_task`, `unit_test`, `terminal_task`
+  funcoes, namespace local, dicionarios e helpers de automacao
+- Shell:
+  `comment_task`, `terminal_task`
+  funcoes, scripts, colecoes simples e enums equivalentes
+- Terraform:
+  `comment_task`, `context_file`, `terminal_task`
+  snippets estruturados, `required_version` e blueprint de contexto
+- YAML:
+  `comment_task`, `context_file`, `unit_test`, `terminal_task`
+  configuracao estruturada e testes de contrato
+- Markdown:
+  `comment_task`, `context_file`, `unit_test`
+  documentos e testes de contrato
+- Mermaid:
+  `comment_task`, `context_file`, `unit_test`
+  diagramas e testes de contrato
+- Dockerfile:
+  `comment_task`, `unit_test`, `terminal_task`
+  contrato de `WORKDIR`, snippets operacionais e testes
+- TOML:
+  `comment_task`, `context_file`
+  configuracao e secoes estruturadas
+
+## Regras de testes automaticos
+
+- O agente so gera testes automaticamente quando o projeto ja possui `tests/` ou `test/`.
+- Se nem `tests/` nem `test/` existirem, ele nao cria a pasta por conta propria.
+- Quando o arquivo ainda nao tem teste correspondente, ele cria o teste base.
+- Quando o arquivo ja tem teste base, ele tenta gerar testes complementares para comportamento novo.
+- Para `Dockerfile`, `compose`, `Markdown` e `Mermaid`, o agente gera testes de contrato em shell dentro de `tests/`.
+
+## Como o terminal e inferido
+
+O Pingu tenta escolher o comando mais natural para o projeto e para a linguagem:
+
+- Node.js: `npm test`, `npm run dev`, `npm run build`, `npm run lint`, `npm run format`
+- Elixir: `mix test`, `mix run`, `mix compile`, `mix format`
+- Go: `go test ./...`, `go run`, `go build ./...`, `gofmt -w`
+- Rust: `cargo test`, `cargo run`, `cargo build`, `cargo fmt`, `cargo clippy`
+- Python: `python -m pytest`, `python3 -m pytest`, `python arquivo.py`, `python3 arquivo.py`, `python -m py_compile`, `python3 -m py_compile`
+- Ruby: `ruby arquivo.rb` ou testes quando `test/` existir
+- Vimscript: `nvim --headless -u NONE -i NONE -S arquivo +qa!`
+- Comandos genericos de leitura: `pwd`, `ls -la`, `git status`, `git diff`
+
+## Como o Pingu aparece em cada editor
+
+### Vim / Neovim
+
+- analise continua
+- painel do agente
+- auto-fix
+- `terminal_task`
+- follow-up no painel
+
+Atalhos principais:
+
+- `<leader>i`: analisa o arquivo atual
+- `<leader>ia`: abre ou fecha o painel
+- `<Tab>`, `i` ou `a`: aplica a sugestao selecionada
+- `f`: insere follow-up acionavel
+- `r`: reanalisa
+- `q`: fecha o painel
+
+### VS Code
+
+- analisa ao abrir, focar, editar e salvar
+- publica diagnosticos
+- auto-fix para `comment_task`, `context_file` e `unit_test`
+- usa terminal integrado para `terminal_task`
+- expoe follow-up via code action
+
+Comandos:
+
+- `Pingu - Dev Agent: Analyze Current File`
+- `Pingu - Dev Agent: Toggle Realtime Analysis`
+
+### Zed
+
+- diagnosticos em tempo real via language server local
+- quick fixes para `comment_task`, `context_file` e `unit_test`
+- `terminal_task` executavel via code action
+- follow-up acionavel via code action
 
 ## Instalacao via GitHub no Vim
 
-O repositorio agora expõe `plugin/` e `autoload/` na raiz, entao pode ser instalado direto por URL do GitHub em gerenciadores comuns.
+O repositorio expoe `plugin/` e `autoload/` na raiz, entao pode ser instalado direto do GitHub.
 
-### lazy.nvim
+### `lazy.nvim`
 
 ```lua
 {
-  "andersonflima/pingo_ai_codding_pair_programming",
+  "andersonflima/pingu_ai_codding_pair_programming",
   config = function()
     vim.g.realtime_dev_agent_start_on_editor_enter = 1
     vim.g.realtime_dev_agent_open_window_on_start = 1
@@ -141,287 +428,60 @@ O repositorio agora expõe `plugin/` e `autoload/` na raiz, entao pode ser insta
 }
 ```
 
-### vim-plug
+### `vim-plug`
 
 ```vim
-Plug 'andersonflima/pingo_ai_codding_pair_programming'
+Plug 'andersonflima/pingu_ai_codding_pair_programming'
 ```
-
-### Atalhos padrao no Vim
-
-- `<leader>i`: dispara analise do arquivo atual
-- `<leader>ia`: abre ou fecha a janela do agente
 
 ### Startup automatico no Vim
 
-- O agente inicia automaticamente no primeiro buffer suportado da sessao.
-- O painel abre sozinho no startup por padrao.
-- Para manter o agente ligado sem abrir o painel: `let g:realtime_dev_agent_open_window_on_start = 0`
-- Para desligar o startup automatico: `let g:realtime_dev_agent_start_on_editor_enter = 0`
+- inicia no primeiro buffer suportado
+- abre o painel por padrao
+- `let g:realtime_dev_agent_open_window_on_start = 0` mantem o agente ativo sem abrir painel
+- `let g:realtime_dev_agent_start_on_editor_enter = 0` desliga o startup automatico
 
-### Atalhos do painel do agente no Vim
+### Terminal no Vim / Neovim
 
-- `<Tab>`, `i` ou `a`: aplica a sugestao selecionada no codigo
-- `<CR>`: navega ate o item no arquivo
-- `f`: insere um follow-up acionavel para o agente
-- `r`: reanalisa o arquivo atual
-- `q`: fecha o painel
-
-### Comentarios acionaveis
-
-- Comentarios com `:` geram ou ajustam codigo no proprio arquivo.
-- Comentarios com `**` criam contexto persistente para o agente e podem gerar estrutura inicial de projeto conforme o blueprint descrito.
-- Comentarios com `*` executam acoes de terminal inferidas pelo contexto do projeto.
-- O `/:` agora tem parser explicito de intencao e sabe construir estruturas nativas da linguagem quando o pedido mencionar `enum`, `class`, `interface/type`, `struct`, `module/namespace`, `objeto/mapa`, `variavel/constante` e `lista/colecao`.
-- Quando uma estrutura equivalente ja existir no arquivo, o agente evita duplicar a geracao do `/:`.
-- O agente remove a linha do comentario acionavel depois da aplicacao bem-sucedida da acao.
-- Instrucoes incompletas, como `funcao que` ou `function that`, sao ignoradas para evitar geracao imprecisa.
-- Para desligar a execucao de terminal: `let g:realtime_dev_agent_terminal_actions_enabled = 0`
-- Para limitar risco de terminal no Vim/Neovim: `let g:realtime_dev_agent_terminal_risk_mode = 'safe'`, `let g:realtime_dev_agent_terminal_risk_mode = 'workspace_write'` ou `let g:realtime_dev_agent_terminal_risk_mode = 'all'`
-- No Neovim, o backend do terminal e escolhido automaticamente: terminal do VS Code em `vscode-neovim`, `ToggleTerm` quando `:TermExec` existir e split nativa como fallback.
-- Para forcar o backend no Vim/Neovim: `let g:realtime_dev_agent_terminal_strategy = 'vscode'`, `let g:realtime_dev_agent_terminal_strategy = 'toggleterm'`, `let g:realtime_dev_agent_terminal_strategy = 'native'` ou `let g:realtime_dev_agent_terminal_strategy = 'background'`
-- O modo `background` abre o terminal, inicia o comando e devolve o foco ao editor, mantendo o output visivel em tempo real durante a execucao.
-
-### Capacidades do `/:`
-
-- JavaScript, TypeScript e React: funcao, CRUD, UI, enum, class, interface/type, module, objeto, constante e colecao.
-- Python: funcao, Enum, class, TypedDict, dataclass, dict, lista e modulos utilitarios.
-- Elixir: funcao, defmodule, defstruct, contratos com `@type`, enums por atoms e CRUD inicial.
-- Go: funcao, `struct`, `interface`, enums tipados, modulos/servicos e mapas.
-- Rust: funcao, `struct`, `trait`, `enum`, `mod` e HashMap inicial.
-- Ruby: funcao, `class`, `module`, `Struct`, hash, enum congelado e testes iniciais.
-- C: funcao, `struct`, `enum` e contratos simples de callback.
-- Lua, Vimscript e Shell: funcoes, modulos utilitarios, tabelas/mapas, enums equivalentes e scripts iniciais.
-- Terraform, TOML, YAML, Dockerfile, Markdown e Mermaid: snippets estruturados e contratos de configuracao ou documentacao.
-
-### Exemplos de geracao com `:`
-
-```lua
--- : complete user crud
-```
-
-```javascript
-// : create login form component
-```
-
-```python
-# : implementar funcao para calcular total do pedido
-```
-
-```lua
--- : funcao de soma
-```
-
-```javascript
-// : funcao que recebe um numero e soma + 10 e retorna
-```
-
-```vim
-" : adicionar comando para recarregar configuracao
-```
-
-### Exemplos de contexto com `**`
-
-Criar contexto persistente para um projeto existente:
-
-```lua
--- ** projeto existente usa onion architecture, controllers finos e casos de uso puros
-```
-
-Criar blueprint com scaffolding inicial:
-
-```javascript
-// ** bff para crud de usuario
-```
-
-Comportamento do `**`:
-
-- cria arquivos em `.realtime-dev-agent/contexts/`
-- atualiza o `.gitignore` para ignorar `.realtime-dev-agent/`
-- remove a linha do comentario depois da aplicacao
-- quando o blueprint for de `bff + crud`, pode criar estrutura inicial em Onion Architecture
-
-### Exemplos de acoes de terminal com `*`
-
-Rodar testes do projeto:
-
-```lua
--- * rodar testes do projeto
-```
-
-```lua
--- * run my tests
-```
-
-```javascript
-// * executar testes
-```
-
-```python
-# * rodar test
-```
-
-Formatar o codigo ou o projeto:
-
-```lua
--- * formatar arquivo atual
-```
-
-```javascript
-// * rodar format
-```
-
-```elixir
-# * mix format
-```
-
-Executar o arquivo atual:
-
-```lua
--- * executar este arquivo
-```
-
-```javascript
-// * rodar este arquivo
-```
-
-```python
-# * executar arquivo atual
-```
-
-Rodar build ou lint:
-
-```javascript
-// * rodar build do projeto
-```
-
-```rust
-// * rodar lint
-```
-
-```go
-// * compilar projeto
-```
-
-Acoes de Git:
-
-```lua
--- * git status
-```
-
-```javascript
-// * git diff
-```
-
-```python
-# * commit: feat: adiciona fluxo automatico do agente
-```
-
-### Regras de testes unitarios automaticos
-
-- O agente so gera testes automaticamente quando o projeto ja possuir a pasta `tests/` ou `test/`.
-- Se nem `tests/` nem `test/` existirem, o agente nao cria a pasta e nao gera testes unitarios.
-- Quando um arquivo novo ainda nao tiver teste correspondente, o agente cria o teste base na pasta de testes ja existente.
-- Quando o arquivo ja possuir teste base, o agente procura metodos ainda sem cobertura e cria testes complementares.
-- `unit_test` agora faz parte do auto-fix padrao do plugin Vim/Neovim, entao o arquivo de teste passa a ser criado automaticamente quando a sugestao for detectada.
-- O suporte atual cobre testes nativos para `React`, `Node.js`, `Elixir`, `Rust`, `Go`, `Python`, `Ruby`, `C`, `Lua` e `.vim`.
-- Para `Dockerfile`, `docker-compose.yml`, `docker-compose.yaml`, `compose.yml`, `compose.yaml`, `Markdown` (`.md`) e `Mermaid` (`.mmd` e `.mermaid`), o agente gera testes de contrato em shell dentro de `tests/`.
-- Em projetos `Go` sem `go.mod` e `Rust` sem `Cargo.toml`, o agente usa fallback de contrato em shell para nao bloquear a validacao automatica.
-
-Exemplo de fluxo:
-
-```lua
-function retornar_valor()
-  return "anderson"
-end
-```
-
-Se `tests/` existir e `retornar_valor` ainda nao estiver coberta, o agente cria um arquivo como:
-
-```lua
-tests/teste_lua_spec.lua
-```
-
-Se depois surgir um metodo novo no mesmo arquivo, o agente cria um teste complementar para o metodo descoberto.
-
-### Como o agente infere o comando
-
-- Em projetos Node.js, o agente procura `package.json` e usa scripts como `test`, `dev`, `start`, `build`, `lint` e `format`.
-- Em projetos Elixir, o agente usa comandos como `mix test`, `mix run`, `mix compile` e `mix format`.
-- Em projetos Go, o agente usa `go test ./...`, `go run`, `go build ./...` e `gofmt -w`.
-- Em projetos Rust, o agente usa `cargo test`, `cargo run`, `cargo build`, `cargo fmt` e `cargo clippy`.
-- Em projetos Python, o agente usa `python -m pytest`, `python arquivo.py` e `python -m py_compile`.
-- Para comentarios de Git, o agente pode executar `git status`, `git diff` e `git add -A && git commit -m ...`.
+- `let g:realtime_dev_agent_terminal_actions_enabled = 0` desliga `terminal_task`
+- `let g:realtime_dev_agent_terminal_risk_mode = 'safe'`
+- `let g:realtime_dev_agent_terminal_risk_mode = 'workspace_write'`
+- `let g:realtime_dev_agent_terminal_risk_mode = 'all'`
+- `let g:realtime_dev_agent_terminal_strategy = 'vscode'`
+- `let g:realtime_dev_agent_terminal_strategy = 'toggleterm'`
+- `let g:realtime_dev_agent_terminal_strategy = 'native'`
+- `let g:realtime_dev_agent_terminal_strategy = 'background'`
 
 ## Instalacao via GitHub no VS Code
 
-A extensao VS Code fica empacotada como `VSIX` direto pelo GitHub Actions.
+### Instalar a partir de release
 
-### Instalar a partir de um release do GitHub
-
-1. Baixe o arquivo `pingu-dev-agent.vsix` em `Releases`.
+1. Baixe `pingu-dev-agent.vsix` na pagina de `Releases`.
 2. Instale com:
 
 ```bash
 code --install-extension pingu-dev-agent.vsix
 ```
 
-### Empacotar localmente a partir do clone
+### Empacotar localmente
 
 ```bash
 npm run package:vscode
-code --install-extension pingu-dev-agent.vsix
+code --install-extension ./pingu-dev-agent.vsix --force
 ```
 
-### Validacao manual do agente no VS Code
+### Problema comum ao instalar pelo CLI
 
-Use uma unica janela com varias abas da suite:
+Se o `code --install-extension` falhar com algo como `uv_cwd` ou `getcwd: cannot access parent directories`, o problema nao e da extensao. O terminal atual esta em um diretorio invalido.
+
+Rode a instalacao a partir de um diretorio existente:
 
 ```bash
-npm run open:vscode:validation
+cd ~
+code --install-extension /caminho/absoluto/para/pingu-dev-agent.vsix --force
 ```
 
-Se quiser escolher arquivos especificos, passe tudo no mesmo comando para manter a reutilizacao da janela:
-
-```bash
-npm run open:vscode:validation -- \
-  anget_test/javascript/src/01_comment_simple.js \
-  anget_test/javascript/src/03_terminal_task.js \
-  anget_test/react/src/01_d20_prompt.tsx
-```
-
-Esse fluxo usa `--reuse-window` e a workspace `anget_test/realtime-dev-agent-validation.code-workspace`, evitando a abertura de varias janelas do VS Code.
-
-## Instalacao local no Zed
-
-O suporte atual para Zed fica em [zed-extension/](./zed-extension) e entrega snippets com uma base de language server local para manter o agente ativo com diagnosticos em tempo real.
-
-### Instalar como dev extension no Zed
-
-1. Abra `zed: extensions`
-2. Clique em `Install Dev Extension`
-3. Selecione a pasta `zed-extension/` deste repositorio
-
-Pre-requisito:
-
-- `node` no PATH para o language server local
-- toolchain Rust instalada para o Zed compilar a dev extension
-
-### O que esta disponivel no Zed hoje
-
-- snippets para comentarios `:`, `*` e `**`
-- variantes escapadas como `\s:` e `\s*`
-- suporte para JavaScript, TypeScript, React, Python, Elixir, Go, Rust, C, Lua, Dockerfile, YAML, Terraform, Markdown e Mermaid
-- diagnostics em tempo real via language server local
-- quick fixes para sugestoes baseadas em snippet no proprio arquivo
-- `terminal_task` via code action com execucao local em background e logs em tempo real pelo language server
-
-## Comandos da extensao VS Code
-
-- `Pingu - Dev Agent: Analyze Current File`
-- `Pingu - Dev Agent: Toggle Realtime Analysis`
-
-## Configuracoes do VS Code
+### Configuracoes do VS Code
 
 - `realtimeDevAgent.enabled`
 - `realtimeDevAgent.nodePath`
@@ -435,48 +495,135 @@ Pre-requisito:
 - `realtimeDevAgent.autoFixEnabled`
 - `realtimeDevAgent.autoFixKinds`
 
-### Terminal no VS Code
+### Modos de risco do terminal no VS Code
 
-- Comentarios com `*` abrem o terminal integrado do VS Code quando a acao inferida for executavel.
-- Exemplo: `-- * run my tests` cria um terminal visivel, executa o comando de teste inferido e remove a linha gatilho quando o processo termina com sucesso.
-- A execucao no VS Code preserva o foco no editor e deixa o output visivel em tempo real no terminal integrado.
-- `realtimeDevAgent.terminalRiskMode = safe` permite apenas comandos de leitura.
-- `realtimeDevAgent.terminalRiskMode = workspace_write` permite tambem testes, build, formatacao, installs e execucao local.
-- `realtimeDevAgent.terminalRiskMode = all` libera tambem comandos classificados como destrutivos.
-- O Zed segue a mesma politica via environment: `PINGU_TERMINAL_RISK_MODE=safe|workspace_write|all`.
+- `safe`: apenas comandos de leitura
+- `workspace_write`: leitura, testes, build, formatacao, install e execucao local
+- `all`: inclui comandos classificados como destrutivos
 
-### Auto-fix no VS Code
+## Instalacao local no Zed
 
-- A extensao roda em tempo real quando `realtimeDevAgent.enabled` estiver ativo.
-- Por padrao, abertura de arquivo, troca de foco, mudancas de buffer e `save` disparam nova analise.
-- Comentarios acionaveis como `//:`, `#:`, `--:` e equivalentes agora sao autoaplicados pela extensao.
-- Arquivos de contexto `**` e testes gerados em `test/` ou `tests/` tambem podem ser criados automaticamente no VS Code.
-- Diagnosticos do VS Code tambem expõem code action para inserir follow-up acionavel logo abaixo do problema atual.
+O suporte do Zed fica em [zed-extension/](./zed-extension).
 
-## Paridade por editor
+### Instalar como dev extension
 
-- Vim/Neovim: analise continua, auto-fix, painel e acoes de terminal.
-- VS Code: analise continua ao abrir, focar, editar e salvar arquivos, com auto-fix, terminal integrado e follow-up acionavel via code action.
-- Zed: analise continua, quick fixes para `comment_task`, `context_file` e `unit_test`, `terminal_task` executavel via code action com logs em tempo real e follow-up acionavel.
+1. Abra `zed: extensions`
+2. Clique em `Install Dev Extension`
+3. Selecione a pasta `zed-extension/`
+
+Pre-requisitos:
+
+- `node` no PATH
+- toolchain Rust instalada para o Zed compilar a extensao
+
+## Credenciais e variaveis de ambiente
+
+O agente tem dois modos:
+
+- Modo local: usa o runtime embarcado neste repositorio e nao exige API key.
+- Modo remoto: quando um provedor externo for acoplado ao fluxo, a credencial precisa estar no ambiente antes de abrir o editor.
+
+Variaveis comuns:
+
+- `OPENAI_API_KEY`
+- `ANTHROPIC_API_KEY`
+- `GEMINI_API_KEY`
+
+Exemplo:
+
+```bash
+export OPENAI_API_KEY="sua_chave_aqui"
+```
+
+Importante:
+
+- Vim, Neovim e VS Code herdam variaveis de ambiente no momento em que sao iniciados
+- se a chave mudar depois que o editor ja estiver aberto, reinicie o editor
+- nunca commite credenciais
+
+## Validacao
+
+O repositorio possui validadores locais para segurar regressao do runtime e da paridade entre editores.
+
+### Matriz do agente
+
+```bash
+npm run validate:matrix
+```
+
+### Integracoes de editor
+
+```bash
+npm run validate:editors
+```
+
+### Incluir tambem o empacotamento real da extensao do VS Code
+
+```bash
+PINGU_VALIDATE_PACKAGE=1 npm run validate:editors
+```
+
+### Rodar tudo de uma vez
+
+```bash
+npm run validate:all
+```
+
+### Recriar a suite externa em `~/snippets/agent_test`
+
+```bash
+npm run rebuild:external-agent-test
+```
+
+### Validar a suite externa em `vim` e `vscode`
+
+```bash
+npm run validate:external-editors
+```
+
+### Abrir a suite manual do VS Code
+
+```bash
+npm run open:vscode:validation
+```
+
+### Abrir a suite externa inteira no VS Code
+
+```bash
+npm run open:vscode:external-validation
+```
+
+O resumo da suite externa fica em:
+
+```bash
+~/snippets/agent_test/editor-validation-report.json
+```
 
 ## Contrato de paridade
 
-- O contrato formal de paridade entre LazyVim, VS Code e Zed fica em `scripts/editor_parity_contract.js`.
-- O contrato declarativo de capacidades por linguagem fica em `lib/language-capabilities.js`.
-- `npm run validate:editors` agora valida esse contrato e reprova qualquer regressao de capacidade obrigatoria entre os editores.
-- `npm run validate:matrix` agora valida tambem a consistencia entre o registry declarativo e a matriz de fixtures.
+- `scripts/editor_parity_contract.js` define o contrato formal entre `LazyVim`, `VS Code` e `Zed`
+- `lib/language-capabilities.js` define o contrato declarativo por linguagem
+- `npm run validate:editors` quebra quando uma feature obrigatoria de editor regride
+- `npm run validate:matrix` quebra quando o registry declarativo e a matriz de fixtures saem de sincronia
 
-## Como funciona
+## Como funciona internamente
 
-- O runtime principal continua em `realtime_dev_agent.js`.
-- O plugin Vim chama o runtime em modo `vim` e aplica correcoes diretamente no buffer, em arquivos de teste ou no terminal visivel do editor.
-- A extensao VS Code chama o mesmo runtime em modo `json`, publica diagnosticos no editor e executa `terminal_task` no terminal integrado quando habilitado.
+- `realtime_dev_agent.js`: CLI do runtime principal
+- `lib/analyzer.js`: analise e emissao de issues
+- `lib/generation*.js`: geracao de snippets, blueprints, testes, dependencias e terminal tasks
+- `lib/language-capabilities.js`: contrato declarativo de linguagem
+- `vscode/`: runtime da extensao VS Code
+- `vim/`, `plugin/`, `autoload/`: runtime do plugin Vim / Neovim
+- `zed-extension/`: extensao do Zed com language server local
 
 ## Estrutura principal
 
-- `realtime_dev_agent.js`: CLI do agente
+- `realtime_dev_agent.js`: entrada CLI do agente
 - `lib/`: analise, geracao e suporte
-- `vim/`: implementacao original do plugin Vim
-- `plugin/` e `autoload/`: wrappers para instalacao direta por GitHub no Vim
 - `vscode/`: extensao VS Code
-- `.github/workflows/vscode-package.yml`: empacotamento e release da extensao
+- `vim/`: implementacao principal do plugin Vim
+- `plugin/` e `autoload/`: wrappers para instalacao direta no Vim
+- `zed-extension/`: extensao do Zed
+- `anget_test/`: fixtures de validacao
+- `scripts/`: validadores, smokes e tooling de suporte
+- `.github/workflows/vscode-package.yml`: empacotamento e release da extensao VS Code
