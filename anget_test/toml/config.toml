@@ -1,1 +1,4 @@
 #: cria variavel chamada timeout com valor 30
+[server]
+port = 3000
+enabled = true

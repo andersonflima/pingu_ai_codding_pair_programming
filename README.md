@@ -12,9 +12,10 @@ O projeto funciona hoje em `Vim/Neovim`, `VS Code` e `Zed`, com runtime local e 
 
 - Analisa o arquivo atual em tempo real e publica diagnosticos orientados a manutencao.
 - Interpreta comentarios acionaveis para gerar codigo no proprio arquivo.
-- Cria `context_file` a partir de blueprints descritos no comentario.
+- Cria `context_file` a partir de blueprints descritos no comentario, com scaffold nativo nas stacks principais.
 - Gera ou complementa testes quando `tests/` ou `test/` ja existem no projeto.
 - Detecta dependencias faltantes quando o snippet gerado exige imports, `use`, `require` ou `#include`.
+- Tenta inserir imports e includes na fronteira correta do arquivo em vez de simplesmente despejar tudo na linha do comentario.
 - Executa `terminal_task` com inferencia por stack e politica de risco configuravel.
 - Expoe follow-up acionavel para continuar o pareamento sem sair do arquivo.
 - Mantem um contrato de paridade entre `LazyVim`, `VS Code` e `Zed`.
@@ -81,6 +82,16 @@ Em linguagens com comentario de bloco, o Pingu tambem entende:
 ```lua
 -- ** projeto existente usa onion architecture, controllers finos e casos de uso puros
 ```
+
+Quando o blueprint descreve um fluxo de BFF CRUD, o scaffold nativo hoje e mais forte em:
+
+- `JavaScript` e `TypeScript`
+- `Python`
+- `Go`
+- `Rust`
+- `Elixir`
+- `Ruby`
+- `C`
 
 ### `*` executa acao de terminal
 
@@ -176,7 +187,7 @@ Outputs tipicos:
 
 - atualiza `.gitignore` para ignorar `.realtime-dev-agent/`
 - cria `.realtime-dev-agent/contexts/bff-crud-usuario.md`
-- cria scaffold inicial em `src/` seguindo Onion Architecture
+- cria scaffold inicial seguindo Onion Architecture e o source root da stack atual
 
 Arquivos tipicos gerados:
 
@@ -193,6 +204,17 @@ src/infrastructure/repositories/in-memory-usuario-repository.js
 src/interfaces/http/controllers/usuario-controller.js
 src/interfaces/http/routes/usuario-routes.js
 src/main/factories/usuario-crud-factory.js
+```
+
+Exemplo equivalente em Python:
+
+```text
+.realtime-dev-agent/contexts/bff-crud-usuario.md
+app/domain/usuario.py
+app/domain/usuario_repository.py
+app/application/create_usuario.py
+app/infrastructure/in_memory_usuario_repository.py
+app/main/build_usuario_crud.py
 ```
 
 O que melhora aqui:
@@ -304,50 +326,50 @@ Resumo pratico:
   `comment_task`, `context_file`, `unit_test`, `terminal_task`
   funcoes, CRUD, UI, enum, class, interface/type, module, objeto, colecao e variavel
 - Python:
-  `comment_task`, `unit_test`, `terminal_task`
+  `comment_task`, `context_file`, `unit_test`, `terminal_task`
   funcoes, Enum, class, module, object, collection e variable
 - Elixir:
-  `comment_task`, `unit_test`, `terminal_task`
+  `comment_task`, `context_file`, `unit_test`, `terminal_task`
   funcoes, `defmodule`, contratos com `@type`, enums por atoms e CRUD inicial
 - Go:
-  `comment_task`, `unit_test`, `terminal_task`
+  `comment_task`, `context_file`, `unit_test`, `terminal_task`
   funcoes, `struct`, `interface`, enum tipado, module e object
 - Rust:
-  `comment_task`, `unit_test`, `terminal_task`
+  `comment_task`, `context_file`, `unit_test`, `terminal_task`
   funcoes, `struct`, `trait`, `enum`, `mod`, object e collection
 - Ruby:
-  `comment_task`, `unit_test`, `terminal_task`
+  `comment_task`, `context_file`, `unit_test`, `terminal_task`
   funcoes, `class`, `module`, `Struct`, hash e enum equivalente
 - C:
-  `comment_task`, `unit_test`, `terminal_task`
+  `comment_task`, `context_file`, `unit_test`, `terminal_task`
   funcoes, `struct`, `enum` e contratos simples
 - Lua:
-  `comment_task`, `unit_test`, `terminal_task`
+  `comment_task`, `context_file`, `unit_test`, `terminal_task`
   funcoes, modulos, tabelas, enums equivalentes e CRUD inicial
 - Vimscript:
-  `comment_task`, `unit_test`, `terminal_task`
+  `comment_task`, `context_file`, `unit_test`, `terminal_task`
   funcoes, namespace local, dicionarios e helpers de automacao
 - Shell:
-  `comment_task`, `terminal_task`
+  `comment_task`, `context_file`, `unit_test`, `terminal_task`
   funcoes, scripts, colecoes simples e enums equivalentes
 - Terraform:
-  `comment_task`, `context_file`, `terminal_task`
-  snippets estruturados, `required_version` e blueprint de contexto
+  `comment_task`, `context_file`, `unit_test`, `terminal_task`
+  snippets estruturados, `required_version`, blueprint de contexto e testes de contrato
 - YAML:
   `comment_task`, `context_file`, `unit_test`, `terminal_task`
   configuracao estruturada e testes de contrato
 - Markdown:
-  `comment_task`, `context_file`, `unit_test`
-  documentos e testes de contrato
+  `comment_task`, `context_file`, `unit_test`, `terminal_task`
+  documentos, terminal acionavel por comentario e testes de contrato
 - Mermaid:
-  `comment_task`, `context_file`, `unit_test`
-  diagramas e testes de contrato
+  `comment_task`, `context_file`, `unit_test`, `terminal_task`
+  diagramas, terminal acionavel por comentario e testes de contrato
 - Dockerfile:
-  `comment_task`, `unit_test`, `terminal_task`
-  contrato de `WORKDIR`, snippets operacionais e testes
+  `comment_task`, `context_file`, `unit_test`, `terminal_task`
+  contrato de `WORKDIR`, contexto persistente, snippets operacionais e testes
 - TOML:
-  `comment_task`, `context_file`
-  configuracao e secoes estruturadas
+  `comment_task`, `context_file`, `unit_test`, `terminal_task`
+  configuracao, secoes estruturadas, testes de contrato e terminal por comentario
 
 ## Regras de testes automaticos
 

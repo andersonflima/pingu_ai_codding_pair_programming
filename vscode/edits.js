@@ -1,5 +1,7 @@
 'use strict';
 
+const { resolvePreferredInsertBeforeLine } = require('../lib/snippet-placement');
+
 function createEditRuntime(deps) {
   const {
     fs,
@@ -169,7 +171,14 @@ function createEditRuntime(deps) {
       return false;
     }
 
-    const insertionLine = op === 'insert_after' ? lineIndex + 1 : lineIndex;
+    const resolvedInsertBeforeLine = op === 'insert_before'
+      ? resolvePreferredInsertBeforeLine(
+        Array.from({ length: document.lineCount }, (_, index) => document.lineAt(index).text),
+        lineIndex,
+        snippetLines,
+      )
+      : lineIndex;
+    const insertionLine = op === 'insert_after' ? lineIndex + 1 : resolvedInsertBeforeLine;
     const lookahead = Math.max(
       0,
       Number(action.lookahead ?? action.dedupeLookahead ?? (snippetLines.length + 4)) || 0,
@@ -274,7 +283,12 @@ function createEditRuntime(deps) {
         : `${snippetText}\n`;
       edit.insert(liveDocument.uri, insertionPosition, insertionText);
     } else {
-      edit.insert(liveDocument.uri, new vscode.Position(boundedLineIndex, 0), `${snippetText}\n`);
+      const insertBeforeLineIndex = resolvePreferredInsertBeforeLine(
+        Array.from({ length: liveDocument.lineCount }, (_, index) => liveDocument.lineAt(index).text),
+        boundedLineIndex,
+        snippetLines,
+      );
+      edit.insert(liveDocument.uri, new vscode.Position(insertBeforeLineIndex, 0), `${snippetText}\n`);
     }
     return vscode.workspace.applyEdit(edit);
   }

@@ -52,6 +52,7 @@ const fixtureCases = [
   ['anget_test/vim/autoload/04_unit_contract.vim', ['unit_test']],
   ['anget_test/shell/01_comment_prompt.sh', ['comment_task']],
   ['anget_test/shell/02_terminal_task.sh', ['terminal_task']],
+  ['anget_test/shell/03_unit_contract.sh', ['unit_test']],
   ['anget_test/docker/Dockerfile.prompt', ['comment_task', 'unit_test']],
   ['anget_test/docker/Dockerfile', ['unit_test']],
   ['anget_test/compose/docker-compose.yml', ['unit_test']],
@@ -59,9 +60,9 @@ const fixtureCases = [
   ['anget_test/markdown/README.md', ['unit_test']],
   ['anget_test/mermaid/prompt.mmd', ['comment_task']],
   ['anget_test/mermaid/diagram.mmd', ['unit_test']],
-  ['anget_test/toml/config.toml', ['comment_task']],
+  ['anget_test/toml/config.toml', ['comment_task', 'unit_test']],
   ['anget_test/terraform/prompt.tf', ['comment_task']],
-  ['anget_test/terraform/main.tf', ['terraform_required_version']],
+  ['anget_test/terraform/main.tf', ['terraform_required_version', 'unit_test']],
   ['anget_test/yaml/prompt.yaml', ['comment_task']],
   ['anget_test/yaml/config.yaml', ['unit_test']],
   ['anget_test/syntax/javascript_extra_delimiter.js', ['syntax_extra_delimiter']],
@@ -70,7 +71,46 @@ const fixtureCases = [
   ['anget_test/syntax/markdown_unclosed_fence.md', ['syntax_missing_delimiter']],
 ];
 
+const syntheticContextBlueprintCases = [
+  ['python', 'python/context_blueprint.py', '# ** contexto de projeto para billing'],
+  ['elixir', 'elixir/context_blueprint.ex', '# ** contexto de projeto para billing'],
+  ['go', 'go/context_blueprint.go', '// ** contexto de projeto para billing'],
+  ['rust', 'rust/context_blueprint.rs', '// ** contexto de projeto para billing'],
+  ['ruby', 'ruby/context_blueprint.rb', '# ** contexto de projeto para billing'],
+  ['lua', 'lua/context_blueprint.lua', '-- ** contexto de projeto para billing'],
+  ['vim', 'vim/context_blueprint.vim', '" ** contexto de projeto para billing'],
+  ['c', 'c/context_blueprint.c', '// ** contexto de projeto para billing'],
+  ['terraform', 'terraform/context_blueprint.tf', '# ** contexto de projeto para billing'],
+  ['yaml', 'yaml/context_blueprint.yaml', '# ** contexto de projeto para billing'],
+  ['markdown', 'markdown/context_blueprint.md', '<!-- ** contexto de projeto para billing -->'],
+  ['mermaid', 'mermaid/context_blueprint.mmd', '%% ** contexto de projeto para billing'],
+  ['dockerfile', 'docker/context_blueprint.Dockerfile', '# ** contexto de projeto para billing'],
+  ['shell', 'shell/context_blueprint.sh', '# ** contexto de projeto para billing'],
+  ['toml', 'toml/context_blueprint.toml', '# ** contexto de projeto para billing'],
+].map(([profileId, relativeSourcePath, content]) =>
+  buildSyntheticCase(`synthetic:${profileId}:context-file`, relativeSourcePath, `${content}\n`, ['context_file']));
+
+const syntheticTerminalCases = [
+  ['markdown', 'markdown/terminal_task.md', '<!-- * listar arquivos do projeto -->'],
+  ['mermaid', 'mermaid/terminal_task.mmd', '%% * listar arquivos do projeto'],
+  ['toml', 'toml/terminal_task.toml', '# * listar arquivos do projeto'],
+].map(([profileId, relativeSourcePath, content]) =>
+  buildSyntheticCase(`synthetic:${profileId}:terminal-task`, relativeSourcePath, `${content}\n`, ['terminal_task']));
+
+const syntheticNativeBlueprintScaffoldCases = [
+  ['python', 'python/bff_context_blueprint.py', '# ** bff para crud de usuario', ['from dataclasses import dataclass, replace']],
+  ['go', 'go/bff_context_blueprint.go', '// ** bff para crud de usuario', ['type Usuario struct {']],
+  ['rust', 'rust/bff_context_blueprint.rs', '// ** bff para crud de usuario', ['pub struct Usuario {']],
+  ['elixir', 'elixir/bff_context_blueprint.ex', '# ** bff para crud de usuario', ['defmodule UsuarioCrud.Domain.Usuario do']],
+  ['ruby', 'ruby/bff_context_blueprint.rb', '# ** bff para crud de usuario', ['module UsuarioCrud']],
+  ['c', 'c/bff_context_blueprint.c', '// ** bff para crud de usuario', ['#ifndef USUARIO_H']],
+].map(([profileId, relativeSourcePath, content, expectedSnippetIncludes]) =>
+  buildSyntheticCase(`synthetic:${profileId}:context-scaffold`, relativeSourcePath, `${content}\n`, ['context_file'], expectedSnippetIncludes));
+
 const syntheticCases = [
+  ...syntheticContextBlueprintCases,
+  ...syntheticTerminalCases,
+  ...syntheticNativeBlueprintScaffoldCases,
   buildSyntheticCase(
     'synthetic:elixir:public-contracts',
     'elixir/public_contracts.ex',
@@ -229,9 +269,9 @@ const syntheticCases = [
   buildSyntheticCase(
     'synthetic:javascript:object-structure',
     'javascript/object_structure.js',
-    '//: cria objeto pedido com id, nome e status\n',
+    '//: cria objeto pedido com campos id, nome e status\n',
     ['comment_task'],
-    ['const pedido = {', 'status: "ativo",'],
+    ['const pedido = {', 'id: 1,', 'status: "ativo",'],
   ),
   buildSyntheticCase(
     'synthetic:javascript:block-comment-d20-function',
@@ -648,8 +688,20 @@ function runCapabilityRegistryValidation() {
       profileFailures.push('terminal_task declarado sem capacidade offline correspondente');
     }
 
+    if ((entry.editorFeatures || []).includes('context_file') && !(entry.offlineCapabilities || []).includes('context_blueprint')) {
+      profileFailures.push('context_file declarado sem capacidade offline context_blueprint');
+    }
+
     if ((entry.editorFeatures || []).includes('unit_test') && entry.unitTestStyle === 'none') {
       profileFailures.push('unit_test declarado com unitTestStyle none');
+    }
+
+    if ((entry.editorFeatures || []).includes('unit_test')) {
+      const hasUnitTestCapability = (entry.offlineCapabilities || []).includes('unit_test_generation')
+        || (entry.offlineCapabilities || []).includes('contract_test_generation');
+      if (!hasUnitTestCapability) {
+        profileFailures.push('unit_test declarado sem capacidade offline de teste correspondente');
+      }
     }
 
     if (entry.id !== 'default' && !fixturePresenceByProfile.has(entry.id)) {
@@ -673,6 +725,9 @@ function runCapabilityRegistryValidation() {
     }
     if ((entry.editorFeatures || []).includes('unit_test') && !fixtureKinds.has('unit_test')) {
       profileFailures.push('sem fixture unit_test para o perfil');
+    }
+    if ((entry.editorFeatures || []).includes('context_file') && !fixtureKinds.has('context_file')) {
+      profileFailures.push('sem fixture context_file para o perfil');
     }
     if ((entry.editorFeatures || []).includes('comment_task') && !fixtureKinds.has('comment_task')) {
       profileFailures.push('sem fixture comment_task para o perfil');

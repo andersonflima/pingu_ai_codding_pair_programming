@@ -7,6 +7,7 @@ const { fileURLToPath, pathToFileURL } = require('url');
 const { analyzeText } = require('../../lib/analyzer');
 const { buildFollowUpComment } = require('../../lib/follow-up');
 const { resolveIssueAction, supportsFollowUp, supportsQuickFix } = require('../../lib/issue-kinds');
+const { resolvePreferredInsertBeforeLine } = require('../../lib/snippet-placement');
 const {
   isTerminalRiskAllowed,
   normalizeTerminalRiskMode,
@@ -369,11 +370,12 @@ function buildWorkspaceEdit(document, issue, action) {
   }
 
   if (action.op === 'insert_before') {
+    const insertBeforeLineIndex = resolvePreferredInsertBeforeLine(lines, boundedLineIndex, snippetLines);
     return {
       changes: {
         [uri]: [
           {
-            range: zeroRange(boundedLineIndex, 0),
+            range: zeroRange(insertBeforeLineIndex, 0),
             newText: `${snippetText}\n`,
           },
         ],
