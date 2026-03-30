@@ -1,11 +1,19 @@
 'use strict';
 
+const {
+  isTerminalRiskAllowed,
+  normalizeTerminalRiskMode,
+  resolveTerminalRisk,
+  terminalRiskBlockMessage,
+} = require('../lib/terminal-risk');
+
 function createTerminalRuntime(deps) {
   const {
     path,
     spawn,
     vscode,
     analyzeDocument,
+    getTerminalRiskMode,
     isTerminalActionsEnabled,
     issueActionIdentity,
     issueKey,
@@ -77,6 +85,18 @@ function createTerminalRuntime(deps) {
 
   function terminalText(value) {
     return String(value || '').replace(/\r?\n/g, '\r\n');
+  }
+
+  function resolveActionRisk(uri, action) {
+    const mode = normalizeTerminalRiskMode(
+      typeof getTerminalRiskMode === 'function' ? getTerminalRiskMode(uri) : 'workspace_write',
+    );
+    const risk = resolveTerminalRisk(action);
+    return {
+      mode,
+      risk,
+      allowed: isTerminalRiskAllowed(mode, risk.level),
+    };
   }
 
   function createTerminalSession(cwd) {
@@ -161,6 +181,13 @@ function createTerminalRuntime(deps) {
     const action = resolveIssueAction(issue);
     const command = String(action.command || '').trim();
     if (!command) {
+      return false;
+    }
+
+    const actionRisk = resolveActionRisk(document.uri, action);
+    if (!actionRisk.allowed) {
+      output.appendLine(`[RealtimeDevAgent] ${terminalRiskBlockMessage(command, actionRisk.mode, actionRisk.risk)}`);
+      output.show(true);
       return false;
     }
 

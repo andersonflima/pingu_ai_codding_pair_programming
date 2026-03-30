@@ -728,6 +728,52 @@ function! s:issue_terminal_strategy() abort
   return 'native'
 endfunction
 
+function! s:issue_terminal_risk_mode() abort
+  let l:mode = trim(get(g:, 'realtime_dev_agent_terminal_risk_mode', 'workspace_write'))
+  if empty(l:mode)
+    return 'workspace_write'
+  endif
+  let l:mode = tolower(l:mode)
+  if l:mode ==# 'destructive'
+    return 'all'
+  endif
+  if index(['safe', 'workspace_write', 'all'], l:mode) == -1
+    return 'workspace_write'
+  endif
+  return l:mode
+endfunction
+
+function! s:issue_terminal_risk_rank(level) abort
+  let l:normalized = tolower(trim(a:level))
+  if l:normalized ==# 'safe'
+    return 0
+  endif
+  if l:normalized ==# 'workspace_write'
+    return 1
+  endif
+  return 2
+endfunction
+
+function! s:issue_terminal_risk(action) abort
+  let l:risk = get(a:action, 'risk', {})
+  if type(l:risk) != v:t_dict
+    return {
+          \ 'level': 'workspace_write',
+          \ 'summary': 'acao de terminal local sem classificacao explicita'
+          \ }
+  endif
+
+  let l:level = tolower(trim(get(l:risk, 'level', 'workspace_write')))
+  if index(['safe', 'workspace_write', 'destructive'], l:level) == -1
+    let l:level = 'workspace_write'
+  endif
+
+  return {
+        \ 'level': l:level,
+        \ 'summary': trim(get(l:risk, 'summary', 'acao de terminal inferida pelo agente'))
+        \ }
+endfunction
+
 function! s:issue_terminal_refocus_code(winid) abort
   if a:winid > 0 && win_gotoid(a:winid)
     call s:remember_code_window(a:winid)
@@ -988,6 +1034,21 @@ function! s:apply_issue_run_command(issue, keep_focus_code) abort
   let l:command = get(l:action, 'command', '')
   if empty(l:command)
     echomsg '[RealtimeDevAgent] Comando de terminal ausente para esta sugestao'
+    return v:false
+  endif
+
+  let l:risk_mode = s:issue_terminal_risk_mode()
+  let l:risk = s:issue_terminal_risk(l:action)
+  if s:issue_terminal_risk_rank(l:risk.level) > s:issue_terminal_risk_rank(l:risk_mode)
+    echohl WarningMsg
+    echomsg printf(
+          \ '[RealtimeDevAgent] Comando bloqueado pelo modo de risco "%s": %s (%s - %s)',
+          \ l:risk_mode,
+          \ l:command,
+          \ l:risk.level,
+          \ l:risk.summary
+          \ )
+    echohl None
     return v:false
   endif
 

@@ -7,6 +7,12 @@ const { fileURLToPath, pathToFileURL } = require('url');
 const { analyzeText } = require('../../lib/analyzer');
 const { buildFollowUpComment } = require('../../lib/follow-up');
 const { resolveIssueAction, supportsFollowUp, supportsQuickFix } = require('../../lib/issue-kinds');
+const {
+  isTerminalRiskAllowed,
+  normalizeTerminalRiskMode,
+  resolveTerminalRisk,
+  terminalRiskBlockMessage,
+} = require('../../lib/terminal-risk');
 
 const documents = new Map();
 const issuesByUri = new Map();
@@ -319,6 +325,7 @@ function buildTerminalCodeAction(document, issue, action) {
     command: String(action.command || '').trim(),
     cwd: String(action.cwd || '').trim() || path.dirname(uriToFilePath(document.uri)),
     line: Number(issue.line || 1),
+    risk: resolveTerminalRisk(action),
     triggerText: issueTriggerText(document, issue),
     removeTrigger: Boolean(action.remove_trigger),
   };
@@ -587,6 +594,18 @@ function executeTerminalTask(payload) {
   const triggerText = String(payload.triggerText || '');
   const removeTrigger = Boolean(payload.removeTrigger);
   if (!command) {
+    return;
+  }
+
+  const riskMode = normalizeTerminalRiskMode(
+    process.env.PINGU_TERMINAL_RISK_MODE || process.env.REALTIME_DEV_AGENT_TERMINAL_RISK_MODE || 'workspace_write',
+  );
+  const risk = resolveTerminalRisk(payload);
+  if (!isTerminalRiskAllowed(riskMode, risk.level)) {
+    sendNotification('window/logMessage', {
+      type: 2,
+      message: `[RealtimeDevAgent/Zed] ${terminalRiskBlockMessage(command, riskMode, risk)}`,
+    });
     return;
   }
 

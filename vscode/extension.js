@@ -49,6 +49,10 @@ function activate(context) {
     return configuration(uri).get('terminalActionsEnabled', true);
   }
 
+  function terminalRiskMode(uri) {
+    return configuration(uri).get('terminalRiskMode', 'workspace_write');
+  }
+
   function refreshStatusBar() {
     const enabled = isEnabled();
     statusBar.text = enabled ? '$(pulse) Pingu Agent' : '$(circle-slash) Pingu Agent';
@@ -168,6 +172,7 @@ function activate(context) {
     spawn,
     vscode,
     analyzeDocument,
+    getTerminalRiskMode: terminalRiskMode,
     isTerminalActionsEnabled,
     issueActionIdentity: editRuntime.issueActionIdentity,
     issueKey: editRuntime.issueKey,

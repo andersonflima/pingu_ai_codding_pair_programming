@@ -170,12 +170,27 @@ Plug 'andersonflima/pingo_ai_codding_pair_programming'
 - Comentarios com `:` geram ou ajustam codigo no proprio arquivo.
 - Comentarios com `**` criam contexto persistente para o agente e podem gerar estrutura inicial de projeto conforme o blueprint descrito.
 - Comentarios com `*` executam acoes de terminal inferidas pelo contexto do projeto.
+- O `/:` agora tem parser explicito de intencao e sabe construir estruturas nativas da linguagem quando o pedido mencionar `enum`, `class`, `interface/type`, `struct`, `module/namespace`, `objeto/mapa`, `variavel/constante` e `lista/colecao`.
+- Quando uma estrutura equivalente ja existir no arquivo, o agente evita duplicar a geracao do `/:`.
 - O agente remove a linha do comentario acionavel depois da aplicacao bem-sucedida da acao.
 - Instrucoes incompletas, como `funcao que` ou `function that`, sao ignoradas para evitar geracao imprecisa.
 - Para desligar a execucao de terminal: `let g:realtime_dev_agent_terminal_actions_enabled = 0`
+- Para limitar risco de terminal no Vim/Neovim: `let g:realtime_dev_agent_terminal_risk_mode = 'safe'`, `let g:realtime_dev_agent_terminal_risk_mode = 'workspace_write'` ou `let g:realtime_dev_agent_terminal_risk_mode = 'all'`
 - No Neovim, o backend do terminal e escolhido automaticamente: terminal do VS Code em `vscode-neovim`, `ToggleTerm` quando `:TermExec` existir e split nativa como fallback.
 - Para forcar o backend no Vim/Neovim: `let g:realtime_dev_agent_terminal_strategy = 'vscode'`, `let g:realtime_dev_agent_terminal_strategy = 'toggleterm'`, `let g:realtime_dev_agent_terminal_strategy = 'native'` ou `let g:realtime_dev_agent_terminal_strategy = 'background'`
 - O modo `background` abre o terminal, inicia o comando e devolve o foco ao editor, mantendo o output visivel em tempo real durante a execucao.
+
+### Capacidades do `/:`
+
+- JavaScript, TypeScript e React: funcao, CRUD, UI, enum, class, interface/type, module, objeto, constante e colecao.
+- Python: funcao, Enum, class, TypedDict, dataclass, dict, lista e modulos utilitarios.
+- Elixir: funcao, defmodule, defstruct, contratos com `@type`, enums por atoms e CRUD inicial.
+- Go: funcao, `struct`, `interface`, enums tipados, modulos/servicos e mapas.
+- Rust: funcao, `struct`, `trait`, `enum`, `mod` e HashMap inicial.
+- Ruby: funcao, `class`, `module`, `Struct`, hash, enum congelado e testes iniciais.
+- C: funcao, `struct`, `enum` e contratos simples de callback.
+- Lua, Vimscript e Shell: funcoes, modulos utilitarios, tabelas/mapas, enums equivalentes e scripts iniciais.
+- Terraform, TOML, YAML, Dockerfile, Markdown e Mermaid: snippets estruturados e contratos de configuracao ou documentacao.
 
 ### Exemplos de geracao com `:`
 
@@ -414,6 +429,7 @@ Pre-requisito:
 - `realtimeDevAgent.realtimeOnChange`
 - `realtimeDevAgent.changeDebounceMs`
 - `realtimeDevAgent.terminalActionsEnabled`
+- `realtimeDevAgent.terminalRiskMode`
 - `realtimeDevAgent.autoFixEnabled`
 - `realtimeDevAgent.autoFixKinds`
 
@@ -422,6 +438,10 @@ Pre-requisito:
 - Comentarios com `*` abrem o terminal integrado do VS Code quando a acao inferida for executavel.
 - Exemplo: `-- * run my tests` cria um terminal visivel, executa o comando de teste inferido e remove a linha gatilho quando o processo termina com sucesso.
 - A execucao no VS Code preserva o foco no editor e deixa o output visivel em tempo real no terminal integrado.
+- `realtimeDevAgent.terminalRiskMode = safe` permite apenas comandos de leitura.
+- `realtimeDevAgent.terminalRiskMode = workspace_write` permite tambem testes, build, formatacao, installs e execucao local.
+- `realtimeDevAgent.terminalRiskMode = all` libera tambem comandos classificados como destrutivos.
+- O Zed segue a mesma politica via environment: `PINGU_TERMINAL_RISK_MODE=safe|workspace_write|all`.
 
 ### Auto-fix no VS Code
 

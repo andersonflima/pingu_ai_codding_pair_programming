@@ -241,6 +241,11 @@ if !exists('g:realtime_dev_agent_terminal_actions_enabled')
   let g:realtime_dev_agent_terminal_actions_enabled = 1
 endif
 
+if !exists('g:realtime_dev_agent_terminal_risk_mode')
+  " safe: somente leitura; workspace_write: permite escrita local; all: libera tudo.
+  let g:realtime_dev_agent_terminal_risk_mode = 'workspace_write'
+endif
+
 if !exists('g:realtime_dev_agent_terminal_height')
   " Altura da split usada para exibir a execucao de comandos do terminal.
   let g:realtime_dev_agent_terminal_height = 12

@@ -450,10 +450,12 @@ async function run() {
   const commentFile = path.join(workspaceRoot, 'src', 'comment.js');
   const contextFile = path.join(workspaceRoot, 'src', 'context.js');
   const terminalFile = path.join(workspaceRoot, 'src', 'terminal.js');
+  const blockedTerminalFile = path.join(workspaceRoot, 'src', 'blocked-terminal.js');
   const followUpFile = path.join(workspaceRoot, 'src', 'follow-up.js');
   fs.writeFileSync(commentFile, '//: funcao soma\n', 'utf8');
   fs.writeFileSync(contextFile, '// ** bff para crud de usuario\n', 'utf8');
   fs.writeFileSync(terminalFile, '// * rodar testes\n', 'utf8');
+  fs.writeFileSync(blockedTerminalFile, '// * commit: feat: smoke bloqueado\n', 'utf8');
   fs.writeFileSync(followUpFile, 'function revisarPedido() {\n  // TODO: revisar fluxo principal\n  return true;\n}\n', 'utf8');
 
   const vscode = createMockVscode(workspaceRoot);
@@ -486,6 +488,13 @@ async function run() {
     const terminalResult = fs.readFileSync(terminalFile, 'utf8');
     const terminalOutputFile = path.join(workspaceRoot, 'terminal-smoke-ok.txt');
     const terminalLog = vscode.__mock.terminals.map((terminal) => terminal.output).join('\n');
+
+    await vscode.workspace.getConfiguration().update('terminalRiskMode', 'safe');
+    const blockedTerminalDocument = await vscode.__mock.openFile(blockedTerminalFile);
+    vscode.__mock.setActiveDocument(blockedTerminalDocument);
+    await vscode.__mock.commands.get('realtimeDevAgent.analyzeCurrentFile')();
+    const blockedTerminalResult = fs.readFileSync(blockedTerminalFile, 'utf8');
+    const blockedTerminalLogs = vscode.__mock.outputLines.join('\n');
 
     await vscode.workspace.getConfiguration().update('autoFixEnabled', false);
     const followUpDocument = await vscode.__mock.openFile(followUpFile);
@@ -524,6 +533,10 @@ async function run() {
         sawTerminalReady: terminalLog.includes('terminal pronto para o proximo comando.'),
         sawTerminalOutput: terminalLog.includes('terminal-smoke-ok'),
       },
+      terminalRisk: {
+        preservedTrigger: blockedTerminalResult.includes('commit: feat: smoke bloqueado'),
+        blockedByRiskMode: blockedTerminalLogs.includes('Comando bloqueado pelo modo de risco'),
+      },
       followUp: {
         diagnosticsCount: followUpDiagnostics.length,
         hasFollowUpAction: Boolean(followUpAction),
@@ -541,6 +554,8 @@ async function run() {
     assert(summary.terminalTask.createdOutputFile, 'VS Code smoke: terminal_task nao executou o script de teste esperado.');
     assert(summary.terminalTask.sawTerminalReady, 'VS Code smoke: terminal_task nao sinalizou readiness do terminal.');
     assert(summary.terminalTask.sawTerminalOutput, 'VS Code smoke: terminal_task nao transmitiu o output do comando.');
+    assert(summary.terminalRisk.preservedTrigger, 'VS Code smoke: modo de risco removeu o gatilho de um comando bloqueado.');
+    assert(summary.terminalRisk.blockedByRiskMode, 'VS Code smoke: modo de risco nao sinalizou o bloqueio do comando.');
     assert(summary.followUp.diagnosticsCount > 0, 'VS Code smoke: follow-up nao encontrou diagnostico elegivel.');
     assert(summary.followUp.hasFollowUpAction, 'VS Code smoke: follow-up nao expôs code action.');
     assert(summary.followUp.insertedFollowUp, 'VS Code smoke: follow-up nao inseriu comentario acionavel.');
