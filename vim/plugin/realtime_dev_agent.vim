@@ -41,6 +41,57 @@ elseif !executable('node')
 endif
 unlet s:js_candidate
 
+function! s:issue_kind_registry_file() abort
+  let l:plugin_dir = fnamemodify(resolve(expand('<sfile>:p')), ':h')
+  let l:candidates = [
+        \ fnamemodify(l:plugin_dir . '/../../config/issue-kinds.json', ':p'),
+        \ fnamemodify(l:plugin_dir . '/../config/issue-kinds.json', ':p'),
+        \ fnamemodify(l:plugin_dir . '/../../../config/issue-kinds.json', ':p')
+        \ ]
+  for l:candidate in l:candidates
+    if filereadable(l:candidate)
+      return l:candidate
+    endif
+  endfor
+  return ''
+endfunction
+
+function! s:read_issue_kind_registry() abort
+  let l:file = s:issue_kind_registry_file()
+  if empty(l:file) || !exists('*json_decode')
+    return {}
+  endif
+
+  try
+    let l:payload = join(readfile(l:file), "\n")
+    let l:decoded = json_decode(l:payload)
+    return type(l:decoded) == v:t_dict ? l:decoded : {}
+  catch
+    return {}
+  endtry
+endfunction
+
+function! s:default_auto_fix_kinds_from_registry(registry) abort
+  if type(a:registry) != v:t_dict || empty(a:registry)
+    return []
+  endif
+
+  let l:kinds = []
+  for l:kind in sort(keys(a:registry))
+    let l:entry = get(a:registry, l:kind, {})
+    if type(l:entry) != v:t_dict || !get(l:entry, 'autoFixDefault', v:false)
+      continue
+    endif
+    call add(l:kinds, [get(l:entry, 'autoFixPriority', 999), l:kind])
+  endfor
+  call sort(l:kinds, {left, right -> left[0] == right[0] ? (left[1] ># right[1] ? 1 : -1) : (left[0] > right[0] ? 1 : -1)})
+  return map(l:kinds, 'v:val[1]')
+endfunction
+
+if !exists('g:realtime_dev_agent_issue_kind_registry')
+  let g:realtime_dev_agent_issue_kind_registry = s:read_issue_kind_registry()
+endif
+
 if !exists('g:realtime_dev_agent_extensions')
   " Lista de extensoes em branco significa qualquer arquivo rastreavel.
   " Exemplo: ['.ex', '.exs', '.js', '.tsx']
@@ -203,28 +254,34 @@ endif
 
 if !exists('g:realtime_dev_agent_auto_fix_kinds')
   " Pair mode: revisar e corrigir boas praticas automaticamente sem pausa.
-  let g:realtime_dev_agent_auto_fix_kinds = [
-        \ 'moduledoc',
-        \ 'function_spec',
-        \ 'function_doc',
-        \ 'missing_dependency',
-        \ 'functional_reassignment',
-        \ 'trailing_whitespace',
-        \ 'tabs',
-        \ 'undefined_variable',
-        \ 'debug_output',
-        \ 'comment_task',
-        \ 'context_file',
-        \ 'unit_test',
-        \ 'terminal_task',
-        \ 'syntax_missing_quote',
-        \ 'syntax_extra_delimiter',
-        \ 'syntax_missing_delimiter',
-        \ 'syntax_missing_comma',
-        \ 'markdown_title',
-        \ 'terraform_required_version',
-        \ 'dockerfile_workdir'
-        \ ]
+  let s:registry_auto_fix_kinds = s:default_auto_fix_kinds_from_registry(g:realtime_dev_agent_issue_kind_registry)
+  if !empty(s:registry_auto_fix_kinds)
+    let g:realtime_dev_agent_auto_fix_kinds = s:registry_auto_fix_kinds
+  else
+    let g:realtime_dev_agent_auto_fix_kinds = [
+          \ 'syntax_missing_quote',
+          \ 'syntax_extra_delimiter',
+          \ 'syntax_missing_delimiter',
+          \ 'syntax_missing_comma',
+          \ 'undefined_variable',
+          \ 'comment_task',
+          \ 'moduledoc',
+          \ 'function_spec',
+          \ 'function_doc',
+          \ 'functional_reassignment',
+          \ 'debug_output',
+          \ 'missing_dependency',
+          \ 'context_file',
+          \ 'unit_test',
+          \ 'terminal_task',
+          \ 'trailing_whitespace',
+          \ 'tabs',
+          \ 'markdown_title',
+          \ 'terraform_required_version',
+          \ 'dockerfile_workdir'
+          \ ]
+  endif
+  unlet! s:registry_auto_fix_kinds
 endif
 
 if !exists('g:realtime_dev_agent_auto_fix_max_per_check')

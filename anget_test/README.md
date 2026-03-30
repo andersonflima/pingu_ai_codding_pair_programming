@@ -12,6 +12,7 @@ Cobertura desta suite:
 - geracao automatica de testes quando existir `tests/` ou `test/`
 - arquivos estruturados como Dockerfile, compose, Markdown, Mermaid e Terraform
 - cenarios de correcao sintatica automatica
+- diagnosticos de manutencao, dependencias, documentacao, whitespace e tamanho de arquivo via casos sinteticos da matriz
 
 Estrutura:
 
@@ -28,9 +29,16 @@ Como validar:
 5. Para `*`, confirme se o terminal abre e executa o comando inferido.
 6. Para `**`, confirme se o agente cria `.realtime-dev-agent/contexts/` e atualiza `.gitignore`.
 
+Fluxo recomendado no VS Code:
+
+```bash
+npm run open:vscode:validation
+```
+
+Esse comando abre a workspace de validacao e varios arquivos da suite em uma unica janela do VS Code.
+
 Arquivos de referencia:
 
 - `01_*.{js,ts,tsx,py,ex,go,rs,c,lua,vim}`: prompts simples
 - `02_*.{js,ts,tsx,py,ex,go,rs,c,lua,vim}`: prompts avancados ou contratos publicos
 - `03_*`: terminal, escape de marcador ou blueprint
-

@@ -1,0 +1,184 @@
+{
+  "comment_task": {
+    "defaultAction": { "op": "replace_line" },
+    "autoFixDefault": true,
+    "autoFixPriority": 50,
+    "supportsQuickFix": true,
+    "supportsFollowUp": true
+  },
+  "context_file": {
+    "defaultAction": { "op": "write_file" },
+    "autoFixDefault": true,
+    "autoFixPriority": 130,
+    "supportsQuickFix": true,
+    "supportsFollowUp": true
+  },
+  "debug_output": {
+    "defaultAction": { "op": "replace_line" },
+    "autoFixDefault": true,
+    "autoFixPriority": 110,
+    "supportsQuickFix": true,
+    "supportsFollowUp": true
+  },
+  "dockerfile_workdir": {
+    "defaultAction": { "op": "insert_after" },
+    "autoFixDefault": true,
+    "autoFixPriority": 200,
+    "supportsQuickFix": true,
+    "supportsFollowUp": true
+  },
+  "flow_comment": {
+    "defaultAction": { "op": "insert_before" },
+    "autoFixDefault": false,
+    "autoFixPriority": 320,
+    "supportsQuickFix": true,
+    "supportsFollowUp": true
+  },
+  "function_comment": {
+    "defaultAction": { "op": "insert_before" },
+    "autoFixDefault": false,
+    "autoFixPriority": 330,
+    "supportsQuickFix": true,
+    "supportsFollowUp": true
+  },
+  "function_doc": {
+    "defaultAction": { "op": "insert_before" },
+    "autoFixDefault": true,
+    "autoFixPriority": 90,
+    "supportsQuickFix": true,
+    "supportsFollowUp": true
+  },
+  "function_spec": {
+    "defaultAction": { "op": "insert_before" },
+    "autoFixDefault": true,
+    "autoFixPriority": 80,
+    "supportsQuickFix": true,
+    "supportsFollowUp": true
+  },
+  "functional_reassignment": {
+    "defaultAction": { "op": "insert_before" },
+    "autoFixDefault": true,
+    "autoFixPriority": 100,
+    "supportsQuickFix": true,
+    "supportsFollowUp": true
+  },
+  "large_file": {
+    "defaultAction": { "op": "insert_before" },
+    "autoFixDefault": false,
+    "autoFixPriority": 210,
+    "supportsQuickFix": true,
+    "supportsFollowUp": true
+  },
+  "long_line": {
+    "defaultAction": { "op": "insert_before" },
+    "autoFixDefault": false,
+    "autoFixPriority": 190,
+    "supportsQuickFix": true,
+    "supportsFollowUp": true
+  },
+  "markdown_title": {
+    "defaultAction": { "op": "insert_before" },
+    "autoFixDefault": true,
+    "autoFixPriority": 180,
+    "supportsQuickFix": true,
+    "supportsFollowUp": true
+  },
+  "missing_dependency": {
+    "defaultAction": { "op": "insert_before" },
+    "autoFixDefault": true,
+    "autoFixPriority": 120,
+    "supportsQuickFix": true,
+    "supportsFollowUp": true
+  },
+  "moduledoc": {
+    "defaultAction": { "op": "insert_before" },
+    "autoFixDefault": true,
+    "autoFixPriority": 70,
+    "supportsQuickFix": true,
+    "supportsFollowUp": true
+  },
+  "nested_condition": {
+    "defaultAction": { "op": "insert_before" },
+    "autoFixDefault": false,
+    "autoFixPriority": 170,
+    "supportsQuickFix": true,
+    "supportsFollowUp": true
+  },
+  "syntax_extra_delimiter": {
+    "defaultAction": { "op": "replace_line" },
+    "autoFixDefault": true,
+    "autoFixPriority": 20,
+    "supportsQuickFix": true,
+    "supportsFollowUp": true
+  },
+  "syntax_missing_comma": {
+    "defaultAction": { "op": "replace_line" },
+    "autoFixDefault": true,
+    "autoFixPriority": 40,
+    "supportsQuickFix": true,
+    "supportsFollowUp": true
+  },
+  "syntax_missing_delimiter": {
+    "defaultAction": { "op": "insert_after", "dedupeLookahead": 6 },
+    "autoFixDefault": true,
+    "autoFixPriority": 30,
+    "supportsQuickFix": true,
+    "supportsFollowUp": true
+  },
+  "syntax_missing_quote": {
+    "defaultAction": { "op": "replace_line" },
+    "autoFixDefault": true,
+    "autoFixPriority": 10,
+    "supportsQuickFix": true,
+    "supportsFollowUp": true
+  },
+  "tabs": {
+    "defaultAction": { "op": "replace_line" },
+    "autoFixDefault": true,
+    "autoFixPriority": 160,
+    "supportsQuickFix": true,
+    "supportsFollowUp": true
+  },
+  "terraform_required_version": {
+    "defaultAction": { "op": "insert_before" },
+    "autoFixDefault": true,
+    "autoFixPriority": 190,
+    "supportsQuickFix": true,
+    "supportsFollowUp": true
+  },
+  "terminal_task": {
+    "defaultAction": { "op": "run_command" },
+    "autoFixDefault": true,
+    "autoFixPriority": 150,
+    "supportsQuickFix": true,
+    "supportsFollowUp": true
+  },
+  "todo_fixme": {
+    "defaultAction": { "op": "insert_before" },
+    "autoFixDefault": false,
+    "autoFixPriority": 165,
+    "supportsQuickFix": true,
+    "supportsFollowUp": true
+  },
+  "trailing_whitespace": {
+    "defaultAction": { "op": "replace_line" },
+    "autoFixDefault": true,
+    "autoFixPriority": 155,
+    "supportsQuickFix": true,
+    "supportsFollowUp": true
+  },
+  "undefined_variable": {
+    "defaultAction": { "op": "replace_line" },
+    "autoFixDefault": true,
+    "autoFixPriority": 45,
+    "supportsQuickFix": true,
+    "supportsFollowUp": true
+  },
+  "unit_test": {
+    "defaultAction": { "op": "write_file" },
+    "autoFixDefault": true,
+    "autoFixPriority": 140,
+    "supportsQuickFix": true,
+    "supportsFollowUp": true
+  }
+}

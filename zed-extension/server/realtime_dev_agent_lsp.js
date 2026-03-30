@@ -5,6 +5,8 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { fileURLToPath, pathToFileURL } = require('url');
 const { analyzeText } = require('../../lib/analyzer');
+const { buildFollowUpComment } = require('../../lib/follow-up');
+const { resolveIssueAction, supportsFollowUp, supportsQuickFix } = require('../../lib/issue-kinds');
 
 const documents = new Map();
 const issuesByUri = new Map();
@@ -229,24 +231,85 @@ function buildCodeActions(params) {
   return issues
     .filter((issue) => issueProducesCodeAction(issue))
     .filter((issue) => issueIntersectsRange(liveDocument, issue, range))
-    .map((issue) => buildCodeAction(liveDocument, issue))
+    .flatMap((issue) => buildCodeActionsForIssue(liveDocument, issue))
     .filter(Boolean);
 }
 
-function buildCodeAction(document, issue) {
+function buildCodeActionsForIssue(document, issue) {
+  const actions = [];
   const action = issueAction(issue);
   if (isTerminalAction(action)) {
-    return buildTerminalCodeAction(document, issue, action);
+    actions.push(buildTerminalCodeAction(document, issue, action));
+  } else {
+    const edit = buildWorkspaceEdit(document, issue, action);
+    if (edit) {
+      actions.push({
+        title: `Realtime Dev Agent: ${issue.suggestion || issue.message}`,
+        kind: 'quickfix',
+        edit,
+      });
+    }
   }
-  const edit = buildWorkspaceEdit(document, issue, action);
+
+  const followUpAction = buildFollowUpCodeAction(document, issue);
+  if (followUpAction) {
+    actions.push(followUpAction);
+  }
+
+  return actions.filter(Boolean);
+}
+
+function buildFollowUpCodeAction(document, issue) {
+  if (!supportsFollowUp(issue && issue.kind)) {
+    return null;
+  }
+
+  const followUpComment = buildFollowUpComment(uriToFilePath(document.uri), issue);
+  if (!followUpComment) {
+    return null;
+  }
+
+  const edit = buildFollowUpWorkspaceEdit(document, issue, followUpComment);
   if (!edit) {
     return null;
   }
 
   return {
-    title: `Realtime Dev Agent: ${issue.suggestion || issue.message}`,
+    title: 'Realtime Dev Agent: Insert actionable follow-up',
     kind: 'quickfix',
     edit,
+  };
+}
+
+function buildFollowUpWorkspaceEdit(document, issue, followUpComment) {
+  const uri = document.uri;
+  const lines = splitDocumentLines(document.text);
+  const lineIndex = issueLineIndex(issue);
+  const boundedLineIndex = Math.max(0, Math.min(lineIndex, Math.max(lines.length - 1, 0)));
+  const currentLine = lines[boundedLineIndex] || '';
+
+  if (boundedLineIndex >= lines.length - 1) {
+    return {
+      changes: {
+        [uri]: [
+          {
+            range: zeroRange(boundedLineIndex, currentLine.length),
+            newText: `\n${followUpComment}`,
+          },
+        ],
+      },
+    };
+  }
+
+  return {
+    changes: {
+      [uri]: [
+        {
+          range: zeroRange(boundedLineIndex + 1, 0),
+          newText: `${followUpComment}\n`,
+        },
+      ],
+    },
   };
 }
 
@@ -372,6 +435,10 @@ function buildWorkspaceEdit(document, issue, action) {
 }
 
 function issueProducesCodeAction(issue) {
+  if (!supportsQuickFix(issue && issue.kind)) {
+    return false;
+  }
+
   const action = issueAction(issue);
   if (!action) {
     return false;
@@ -397,31 +464,7 @@ function issueIntersectsRange(document, issue, range) {
 }
 
 function issueAction(issue) {
-  if (issue && issue.action && typeof issue.action === 'object' && issue.action.op) {
-    return issue.action;
-  }
-
-  const defaults = {
-    comment_task: { op: 'replace_line' },
-    context_file: { op: 'write_file' },
-    terminal_task: { op: 'run_command' },
-    unit_test: { op: 'write_file' },
-    missing_dependency: { op: 'insert_before' },
-    moduledoc: { op: 'insert_before' },
-    function_doc: { op: 'insert_before' },
-    function_spec: { op: 'insert_before' },
-    markdown_title: { op: 'insert_before' },
-    terraform_required_version: { op: 'insert_before' },
-    dockerfile_workdir: { op: 'insert_after' },
-    trailing_whitespace: { op: 'replace_line' },
-    tabs: { op: 'replace_line' },
-    syntax_missing_quote: { op: 'replace_line' },
-    syntax_extra_delimiter: { op: 'replace_line' },
-    syntax_missing_delimiter: { op: 'insert_after' },
-    syntax_missing_comma: { op: 'replace_line' },
-  };
-
-  return defaults[String(issue && issue.kind || '')] || { op: 'insert_before' };
+  return resolveIssueAction(issue);
 }
 
 function isTerminalAction(action) {

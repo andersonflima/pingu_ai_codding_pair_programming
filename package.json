@@ -113,6 +113,7 @@
     }
   },
   "scripts": {
+    "open:vscode:validation": "node scripts/open_vscode_validation.js",
     "package:vscode": "npx @vscode/vsce package --out realtime-dev-agent.vsix",
     "validate:matrix": "node scripts/validate_agent_matrix.js",
     "validate:editors": "node scripts/validate_editor_integrations.js",

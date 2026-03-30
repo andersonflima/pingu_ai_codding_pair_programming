@@ -20,15 +20,28 @@ function runNodeChecks() {
   const files = [
     'realtime_dev_agent.js',
     'lib/analyzer.js',
+    'lib/issue-kinds.js',
     'lib/generation.js',
+    'lib/generation-comment-task.js',
+    'lib/generation-dependencies.js',
     'lib/generation-react.js',
     'lib/generation-structured.js',
+    'lib/generation-terminal-task.js',
     'lib/generation-unit-tests.js',
+    'lib/follow-up.js',
     'lib/support.js',
     'lib/language-profiles.js',
     'lib/language-snippets.js',
     'scripts/editor_parity_contract.js',
+    'scripts/nvim_functional_smoke.js',
+    'scripts/open_vscode_validation.js',
+    'scripts/vscode_extension_smoke.js',
+    'vscode/agent-process.js',
+    'vscode/code-actions.js',
+    'vscode/diagnostics.js',
+    'vscode/edits.js',
     'vscode/extension.js',
+    'vscode/terminal.js',
     'zed-extension/server/realtime_dev_agent_lsp.js',
   ];
 
@@ -44,10 +57,55 @@ function runNodeChecks() {
   });
 }
 
+function runVsCodeValidationWorkspaceDryRun() {
+  const result = run('node', ['scripts/open_vscode_validation.js', '--dry-run']);
+  const summary = {
+    name: 'vscode-validation-workspace-dry-run',
+    ok: false,
+    status: result.status,
+    stdout: result.stdout,
+    stderr: result.stderr,
+  };
+
+  if (result.status !== 0) {
+    return summary;
+  }
+
+  try {
+    const payload = JSON.parse(String(result.stdout || '{}'));
+    const workspace = path.join(repoRoot, 'anget_test', 'realtime-dev-agent-validation.code-workspace');
+    const args = Array.isArray(payload.args) ? payload.args : [];
+    const files = Array.isArray(payload.files) ? payload.files : [];
+    const ok = payload.workspaceFile === workspace
+      && args[0] === '--reuse-window'
+      && args[1] === workspace
+      && files.length > 1;
+
+    return {
+      ...summary,
+      ok,
+      status: ok ? 0 : 1,
+      stdout: JSON.stringify({
+        workspaceFile: payload.workspaceFile,
+        args,
+        files,
+      }),
+      stderr: ok ? '' : 'A abertura do VS Code precisa reutilizar a janela atual e carregar varios arquivos.',
+    };
+  } catch (error) {
+    return {
+      ...summary,
+      stderr: error.stack || error.message || String(error),
+    };
+  }
+}
+
 function runNvimSmoke() {
   const result = run('nvim', [
     '--headless',
     '-u',
+    'NONE',
+    '-i',
     'NONE',
     '+source vim/plugin/realtime_dev_agent.vim',
     '+source vim/autoload/realtime_dev_agent/internal.vim',
@@ -56,6 +114,17 @@ function runNvimSmoke() {
 
   return {
     name: 'nvim-smoke',
+    ok: result.status === 0,
+    status: result.status,
+    stdout: result.stdout,
+    stderr: result.stderr,
+  };
+}
+
+function runScriptCheck(name, scriptFile) {
+  const result = run('node', [scriptFile]);
+  return {
+    name,
     ok: result.status === 0,
     status: result.status,
     stdout: result.stdout,
@@ -187,6 +256,7 @@ function runZedLspSmoke() {
     async function runSmoke() {
       const commentUri = 'file:///tmp/realtime-dev-agent-zed-comment.js';
       const terminalUri = 'file:///tmp/realtime-dev-agent-zed-terminal.js';
+      const followUpUri = 'file:///tmp/realtime-dev-agent-zed-follow-up.js';
 
       await request('initialize', {
         processId: process.pid,
@@ -204,6 +274,19 @@ function runZedLspSmoke() {
             languageId: 'javascript',
             version: 1,
             text: '//: funcao soma\n',
+          },
+        },
+      });
+
+      send({
+        jsonrpc: '2.0',
+        method: 'textDocument/didOpen',
+        params: {
+          textDocument: {
+            uri: followUpUri,
+            languageId: 'javascript',
+            version: 1,
+            text: 'function revisarPedido() {\n  // TODO: revisar fluxo principal\n  return true;\n}\n',
           },
         },
       });
@@ -241,6 +324,15 @@ function runZedLspSmoke() {
         context: { diagnostics: diagnosticsByUri.get(terminalUri) || [] },
       });
 
+      const followUpActions = await request('textDocument/codeAction', {
+        textDocument: { uri: followUpUri },
+        range: {
+          start: { line: 1, character: 0 },
+          end: { line: 1, character: 36 },
+        },
+        context: { diagnostics: diagnosticsByUri.get(followUpUri) || [] },
+      });
+
       const commentHasEdit = Array.isArray(commentActions)
         && commentActions.some((action) => action && action.edit);
       const terminalHasCommand = Array.isArray(terminalActions)
@@ -248,6 +340,12 @@ function runZedLspSmoke() {
           action
           && action.command
           && action.command.command === 'realtimeDevAgent.runTerminalTask');
+      const followUpHasEdit = Array.isArray(followUpActions)
+        && followUpActions.some((action) =>
+          action
+          && action.title === 'Realtime Dev Agent: Insert actionable follow-up'
+          && action.edit
+          && JSON.stringify(action.edit).includes('// : '));
 
       await request('workspace/executeCommand', {
         command: 'realtimeDevAgent.runTerminalTask',
@@ -266,9 +364,16 @@ function runZedLspSmoke() {
       await new Promise((resolveDelay) => setTimeout(resolveDelay, 350));
 
       const sawCommentDiagnostics = (diagnosticsByUri.get(commentUri) || []).length > 0;
+      const sawFollowUpDiagnostics = (diagnosticsByUri.get(followUpUri) || []).length > 0;
       const sawTerminalLog = logMessages.some((message) => message.includes('zed-terminal-ok'));
       const sawTerminalReady = logMessages.some((message) => message.includes('terminal pronto para o proximo comando.'));
-      const ok = sawCommentDiagnostics && commentHasEdit && terminalHasCommand && sawTerminalLog && sawTerminalReady;
+      const ok = sawCommentDiagnostics
+        && sawFollowUpDiagnostics
+        && commentHasEdit
+        && followUpHasEdit
+        && terminalHasCommand
+        && sawTerminalLog
+        && sawTerminalReady;
 
       finalize({
         name: 'zed-lsp-smoke',
@@ -277,6 +382,8 @@ function runZedLspSmoke() {
         stdout: JSON.stringify({
           sawCommentDiagnostics,
           commentHasEdit,
+          sawFollowUpDiagnostics,
+          followUpHasEdit,
           terminalHasCommand,
           sawTerminalLog,
           sawTerminalReady,
@@ -331,7 +438,10 @@ async function main() {
   const checks = [
     ...runNodeChecks(),
     ...runParityContractChecks(),
+    runVsCodeValidationWorkspaceDryRun(),
     runNvimSmoke(),
+    runScriptCheck('nvim-functional-smoke', 'scripts/nvim_functional_smoke.js'),
+    runScriptCheck('vscode-extension-smoke', 'scripts/vscode_extension_smoke.js'),
     await runZedLspSmoke(),
   ];
 

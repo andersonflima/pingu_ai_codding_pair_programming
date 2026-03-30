@@ -15,6 +15,14 @@ let s:realtime_dev_agent_fix_guard = {}
 let s:realtime_dev_agent_window_source_winid = -1
 let s:realtime_dev_agent_started = v:false
 
+function! s:issue_kind_entry(kind) abort
+  let l:registry = get(g:, 'realtime_dev_agent_issue_kind_registry', {})
+  if type(l:registry) != v:t_dict || empty(l:registry)
+    return {}
+  endif
+  return get(l:registry, a:kind, {})
+endfunction
+
 function! s:realtime_dev_agent_script_runner() abort
   if !executable('node')
     return ''
@@ -493,34 +501,17 @@ function! s:get_buffer_issue_at_cursor() abort
 endfunction
 
 function! s:issue_default_action(kind) abort
-  if a:kind ==# 'moduledoc'
-    return {'op': 'insert_before'}
-  endif
-  if a:kind ==# 'debug_output' || a:kind ==# 'trailing_whitespace' || a:kind ==# 'tabs'
-    return {'op': 'replace_line'}
-  endif
-  if a:kind ==# 'syntax_missing_quote' || a:kind ==# 'syntax_extra_delimiter' || a:kind ==# 'syntax_missing_comma'
-    return {'op': 'replace_line'}
-  endif
-  if a:kind ==# 'comment_task'
-    return {'op': 'replace_line'}
-  endif
-  if a:kind ==# 'context_file'
-    return {'op': 'write_file'}
-  endif
-  if a:kind ==# 'terminal_task'
-    return {'op': 'run_command'}
-  endif
-  if a:kind ==# 'syntax_missing_delimiter'
-    return {'op': 'insert_after', 'dedupeLookahead': 6}
-  endif
-  if a:kind ==# 'unit_test'
-    return {'op': 'write_file'}
-  endif
-  if a:kind ==# 'undefined_variable' || a:kind ==# 'function_doc' || a:kind ==# 'function_spec'
-    return {'op': 'insert_before'}
+  let l:entry = s:issue_kind_entry(a:kind)
+  let l:action = get(l:entry, 'defaultAction', {})
+  if type(l:action) == v:t_dict && !empty(l:action) && has_key(l:action, 'op') && !empty(get(l:action, 'op', ''))
+    return copy(l:action)
   endif
   return {'op': 'insert_before'}
+endfunction
+
+function! s:issue_fix_priority(kind) abort
+  let l:entry = s:issue_kind_entry(a:kind)
+  return get(l:entry, 'autoFixPriority', 999)
 endfunction
 
 function! s:issue_effective_action(item) abort
@@ -1704,31 +1695,8 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
     return 0
   endif
 
-  let l:fix_priority = [
-        \ 'syntax_missing_quote',
-        \ 'syntax_extra_delimiter',
-        \ 'syntax_missing_delimiter',
-        \ 'syntax_missing_comma',
-        \ 'undefined_variable',
-        \ 'comment_task',
-        \ 'moduledoc',
-        \ 'function_spec',
-        \ 'function_doc',
-        \ 'functional_reassignment',
-        \ 'debug_output',
-        \ 'missing_dependency',
-        \ 'context_file',
-        \ 'unit_test',
-        \ 'terminal_task',
-        \ 'trailing_whitespace',
-        \ 'tabs',
-        \ 'todo_fixme',
-        \ 'nested_condition',
-        \ 'long_line',
-        \ 'large_file'
-        \ ]
   call sort(l:auto_candidates, {entry_a, entry_b ->
-        \ s:compare_fix_order(entry_a, entry_b, l:fix_priority)
+        \ s:compare_fix_order(entry_a, entry_b)
         \ })
 
   if mode() =~# '^i'
@@ -1803,7 +1771,7 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
   return l:applied
 endfunction
 
-function! s:compare_fix_order(entry_a, entry_b, priorities) abort
+function! s:compare_fix_order(entry_a, entry_b) abort
   let l:lnum_a = get(a:entry_a, 'lnum', 0)
   let l:lnum_b = get(a:entry_b, 'lnum', 0)
   if l:lnum_a != l:lnum_b
@@ -1812,14 +1780,8 @@ function! s:compare_fix_order(entry_a, entry_b, priorities) abort
 
   let l:kind_a = get(a:entry_a, 'kind', '')
   let l:kind_b = get(a:entry_b, 'kind', '')
-  let l:priority_a = index(a:priorities, l:kind_a)
-  let l:priority_b = index(a:priorities, l:kind_b)
-  if l:priority_a == -1
-    let l:priority_a = 999
-  endif
-  if l:priority_b == -1
-    let l:priority_b = 999
-  endif
+  let l:priority_a = s:issue_fix_priority(l:kind_a)
+  let l:priority_b = s:issue_fix_priority(l:kind_b)
 
   if l:priority_a == l:priority_b
     return 0

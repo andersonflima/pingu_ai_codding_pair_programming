@@ -4,86 +4,25 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const vscode = require('vscode');
+const { buildFollowUpComment } = require('../lib/follow-up');
+const {
+  defaultAutoFixKinds,
+  fixPriorityForKind,
+  resolveIssueAction,
+  supportsFollowUp,
+} = require('../lib/issue-kinds');
+const { runAgent } = require('./agent-process');
+const { publishDiagnostics } = require('./diagnostics');
+const { createCodeActionRuntime } = require('./code-actions');
+const { createEditRuntime } = require('./edits');
+const { createTerminalRuntime } = require('./terminal');
 
 function activate(context) {
   const diagnostics = vscode.languages.createDiagnosticCollection('realtime-dev-agent');
   const output = vscode.window.createOutputChannel('Realtime Dev Agent');
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+  const issuesByUri = new Map();
   const pendingTimers = new Map();
-  const pendingTerminalTasks = new Map();
-  const activeTerminalSessions = new Map();
-  const attemptedTerminalTasks = new Map();
-  const pendingTerminalTaskStaleMs = 30 * 1000;
-  const defaultAutoFixKinds = [
-    'moduledoc',
-    'function_spec',
-    'function_doc',
-    'missing_dependency',
-    'functional_reassignment',
-    'trailing_whitespace',
-    'tabs',
-    'undefined_variable',
-    'debug_output',
-    'comment_task',
-    'context_file',
-    'unit_test',
-    'syntax_missing_quote',
-    'syntax_extra_delimiter',
-    'syntax_missing_delimiter',
-    'syntax_missing_comma',
-    'markdown_title',
-    'terraform_required_version',
-    'dockerfile_workdir',
-  ];
-  const fixPriority = [
-    'syntax_missing_quote',
-    'syntax_extra_delimiter',
-    'syntax_missing_delimiter',
-    'syntax_missing_comma',
-    'undefined_variable',
-    'comment_task',
-    'moduledoc',
-    'function_spec',
-    'function_doc',
-    'functional_reassignment',
-    'debug_output',
-    'missing_dependency',
-    'context_file',
-    'unit_test',
-    'trailing_whitespace',
-    'tabs',
-    'todo_fixme',
-    'nested_condition',
-    'long_line',
-    'large_file',
-  ];
-  const issueDefaultActions = {
-    moduledoc: { op: 'insert_before' },
-    debug_output: { op: 'replace_line' },
-    todo_fixme: { op: 'insert_before' },
-    comment_task: { op: 'replace_line' },
-    context_file: { op: 'write_file' },
-    terminal_task: { op: 'run_command' },
-    unit_test: { op: 'write_file' },
-    syntax_missing_quote: { op: 'replace_line' },
-    syntax_extra_delimiter: { op: 'replace_line' },
-    syntax_missing_delimiter: { op: 'insert_after' },
-    syntax_missing_comma: { op: 'replace_line' },
-    markdown_title: { op: 'insert_before' },
-    terraform_required_version: { op: 'insert_before' },
-    dockerfile_workdir: { op: 'insert_after' },
-    missing_dependency: { op: 'insert_before' },
-    undefined_variable: { op: 'replace_line' },
-    trailing_whitespace: { op: 'replace_line' },
-    function_doc: { op: 'insert_before' },
-    flow_comment: { op: 'insert_before' },
-    function_spec: { op: 'insert_before' },
-    functional_reassignment: { op: 'insert_before' },
-    long_line: { op: 'insert_before' },
-    nested_condition: { op: 'insert_before' },
-    large_file: { op: 'insert_before' },
-    tabs: { op: 'replace_line' },
-  };
 
   function configuration(uri) {
     return vscode.workspace.getConfiguration('realtimeDevAgent', uri);
@@ -98,11 +37,16 @@ function activate(context) {
   }
 
   function configuredAutoFixKinds(uri) {
-    const configured = configuration(uri).get('autoFixKinds', defaultAutoFixKinds);
+    const defaults = defaultAutoFixKinds().filter((kind) => resolveIssueAction({ kind }).op !== 'run_command');
+    const configured = configuration(uri).get('autoFixKinds', defaults);
     if (!Array.isArray(configured) || configured.length === 0) {
-      return defaultAutoFixKinds;
+      return defaults;
     }
     return configured.map((item) => String(item || '').trim()).filter((item) => item !== '');
+  }
+
+  function isTerminalActionsEnabled(uri) {
+    return configuration(uri).get('terminalActionsEnabled', true);
   }
 
   function refreshStatusBar() {
@@ -128,15 +72,6 @@ function activate(context) {
     }
   }
 
-  function clearTerminalAttempts(uri) {
-    const prefix = `${uri.toString()}|`;
-    Array.from(attemptedTerminalTasks.keys()).forEach((key) => {
-      if (key.startsWith(prefix)) {
-        attemptedTerminalTasks.delete(key);
-      }
-    });
-  }
-
   function resolveScriptPath(uri) {
     const configured = configuration(uri).get('scriptPath', '').trim();
     if (!configured) {
@@ -147,25 +82,9 @@ function activate(context) {
       : path.join(context.extensionPath, configured);
   }
 
-  function createDiagnostic(document, issue) {
-    const lineIndex = Math.max(0, Math.min(document.lineCount - 1, Number(issue.line || 1) - 1));
-    const line = document.lineAt(lineIndex);
-    const range = new vscode.Range(lineIndex, 0, lineIndex, line.text.length);
-    const severity = mapSeverity(issue.severity);
-    const suffix = issue.suggestion ? ` | ${issue.suggestion}` : '';
-    const diagnostic = new vscode.Diagnostic(
-      range,
-      `${issue.kind}: ${issue.message}${suffix}`,
-      severity,
-    );
-    diagnostic.source = 'realtime-dev-agent';
-    diagnostic.code = issue.kind;
-    return diagnostic;
-  }
-
-  function publishDiagnostics(document, issues) {
-    diagnostics.set(document.uri, issues.map((issue) => createDiagnostic(document, issue)));
-  }
+  let editRuntime;
+  let terminalRuntime;
+  let codeActionRuntime;
 
   async function analyzeDocument(document, trigger) {
     if (!supportsDocument(document)) {
@@ -181,6 +100,7 @@ function activate(context) {
 
     try {
       const issues = await runAgent({
+        spawn,
         nodePath,
         scriptPath,
         sourcePath: document.fileName,
@@ -188,13 +108,13 @@ function activate(context) {
         maxLineLength,
         cwd,
       });
-      const autoFixApplied = await applyAutoFixes(document, issues);
+      const autoFixApplied = await editRuntime.applyAutoFixes(document, issues);
       if (autoFixApplied) {
         return;
       }
 
-      publishDiagnostics(document, issues);
-      const terminalTaskApplied = await applyTerminalTasks(document, issues);
+      publishDiagnostics(vscode, diagnostics, issuesByUri, document, issues);
+      const terminalTaskApplied = await terminalRuntime.applyTerminalTasks(document, issues);
       if (terminalTaskApplied) {
         return;
       }
@@ -205,6 +125,7 @@ function activate(context) {
         }
       }
     } catch (error) {
+      issuesByUri.delete(document.uri.toString());
       diagnostics.delete(document.uri);
       output.appendLine(`[RealtimeDevAgent] Falha ao analisar ${document.fileName}`);
       output.appendLine(String(error && (error.stack || error.message) || error));
@@ -231,10 +152,55 @@ function activate(context) {
     pendingTimers.set(document.uri.toString(), timer);
   }
 
+  editRuntime = createEditRuntime({
+    fs,
+    path,
+    vscode,
+    analyzeDocument,
+    configuredAutoFixKinds,
+    fixPriorityForKind,
+    isAutoFixEnabled,
+    resolveIssueAction,
+  });
+
+  terminalRuntime = createTerminalRuntime({
+    path,
+    spawn,
+    vscode,
+    analyzeDocument,
+    isTerminalActionsEnabled,
+    issueActionIdentity: editRuntime.issueActionIdentity,
+    issueKey: editRuntime.issueKey,
+    issueLineIndex: editRuntime.issueLineIndex,
+    issueTriggerText: editRuntime.issueTriggerText,
+    output,
+    removeTriggerLine: editRuntime.removeTriggerLine,
+    resolveIssueAction,
+  });
+
+  codeActionRuntime = createCodeActionRuntime({
+    buildFollowUpComment,
+    issueIntersectsRange: editRuntime.issueIntersectsRange,
+    issueLineIndex: editRuntime.issueLineIndex,
+    isEnabled,
+    issuesByUri,
+    supportsDocument,
+    supportsFollowUp,
+    vscode,
+  });
+
   context.subscriptions.push(
     diagnostics,
     output,
     statusBar,
+    vscode.languages.registerCodeActionsProvider(
+      { scheme: 'file' },
+      {
+        provideCodeActions(document, range) {
+          return codeActionRuntime.provideCodeActions(document, range);
+        },
+      },
+    ),
     vscode.commands.registerCommand('realtimeDevAgent.analyzeCurrentFile', async () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) {
@@ -276,7 +242,7 @@ function activate(context) {
       if (!supportsDocument(event.document) || !isEnabled(event.document.uri)) {
         return;
       }
-      clearTerminalAttempts(event.document.uri);
+      terminalRuntime.clearTerminalAttempts(event.document.uri);
       scheduleAnalysis(event.document);
     }),
     vscode.workspace.onDidOpenTextDocument((document) => {
@@ -293,15 +259,12 @@ function activate(context) {
     }),
     vscode.workspace.onDidCloseTextDocument((document) => {
       clearPending(document.uri);
-      clearTerminalAttempts(document.uri);
+      terminalRuntime.clearTerminalAttempts(document.uri);
+      issuesByUri.delete(document.uri.toString());
       diagnostics.delete(document.uri);
     }),
     vscode.window.onDidCloseTerminal((terminal) => {
-      Array.from(activeTerminalSessions.entries()).forEach(([key, session]) => {
-        if (session.terminal === terminal) {
-          activeTerminalSessions.delete(key);
-        }
-      });
+      terminalRuntime.handleTerminalClosed(terminal);
     }),
   );
 
@@ -316,601 +279,10 @@ function activate(context) {
   startupDocuments.forEach((document) => {
     scheduleAnalysis(document);
   });
-
-  function isTerminalIssue(issue) {
-    return Boolean(
-      issue
-      && issue.kind === 'terminal_task'
-      && issue.action
-      && issue.action.op === 'run_command'
-      && typeof issue.action.command === 'string'
-      && issue.action.command.trim() !== ''
-    );
-  }
-
-  function isTerminalActionsEnabled(uri) {
-    return configuration(uri).get('terminalActionsEnabled', true);
-  }
-
-  function issueDefaultAction(kind) {
-    return issueDefaultActions[String(kind || '')] || { op: 'insert_before' };
-  }
-
-  function issueEffectiveAction(issue) {
-    if (issue && issue.action && typeof issue.action === 'object' && issue.action.op) {
-      return issue.action;
-    }
-    return issueDefaultAction(issue && issue.kind);
-  }
-
-  function issueKey(document, issue) {
-    return [
-      document.uri.toString(),
-      Number(issue.line || 1),
-      issue.kind || '',
-      issue.message || '',
-      issueActionIdentity(issue),
-    ].join('|');
-  }
-
-  function terminalIssueFingerprint(document, issue) {
-    return [
-      document.uri.toString(),
-      Number(issue.line || 1),
-      issueActionIdentity(issue),
-      issueTriggerText(document, issue),
-    ].join('|');
-  }
-
-  function issueActionIdentity(issue) {
-    const action = issueEffectiveAction(issue);
-    if (action.op === 'write_file') {
-      return String(action.target_file || '');
-    }
-    if (action.op === 'run_command') {
-      return String(action.command || '');
-    }
-    return String(issue && issue.snippet || '');
-  }
-
-  function issueLineIndex(issue) {
-    return Math.max(0, Number(issue.line || 1) - 1);
-  }
-
-  function issueTriggerText(document, issue) {
-    const lineIndex = issueLineIndex(issue);
-    if (lineIndex >= document.lineCount) {
-      return '';
-    }
-    return document.lineAt(lineIndex).text;
-  }
-
-  function lineDeleteRange(document, lineIndex) {
-    const start = new vscode.Position(lineIndex, 0);
-    if (lineIndex < document.lineCount - 1) {
-      return new vscode.Range(start, new vscode.Position(lineIndex + 1, 0));
-    }
-    return new vscode.Range(start, new vscode.Position(lineIndex, document.lineAt(lineIndex).text.length));
-  }
-
-  function resolveTriggerDeleteRange(document, issue, triggerText) {
-    const lineIndex = issueLineIndex(issue);
-    if (lineIndex < document.lineCount && document.lineAt(lineIndex).text === triggerText) {
-      return lineDeleteRange(document, lineIndex);
-    }
-
-    if (!triggerText) {
-      return undefined;
-    }
-
-    const targetIndex = Array.from({ length: document.lineCount }, (_, index) => index)
-      .find((index) => document.lineAt(index).text === triggerText);
-    if (typeof targetIndex !== 'number') {
-      return undefined;
-    }
-
-    return lineDeleteRange(document, targetIndex);
-  }
-
-  async function removeTriggerLine(document, issue, triggerText) {
-    const liveDocument = await vscode.workspace.openTextDocument(document.uri);
-    const range = resolveTriggerDeleteRange(liveDocument, issue, triggerText);
-    if (!range) {
-      return false;
-    }
-
-    const edit = new vscode.WorkspaceEdit();
-    edit.delete(liveDocument.uri, range);
-    return vscode.workspace.applyEdit(edit);
-  }
-
-  async function removeTriggerResidue(document, triggerText) {
-    if (!triggerText) {
-      return false;
-    }
-
-    const liveDocument = await vscode.workspace.openTextDocument(document.uri);
-    for (let index = 0; index < liveDocument.lineCount; index += 1) {
-      if (liveDocument.lineAt(index).text !== triggerText) {
-        continue;
-      }
-      const edit = new vscode.WorkspaceEdit();
-      edit.delete(liveDocument.uri, lineDeleteRange(liveDocument, index));
-      return vscode.workspace.applyEdit(edit);
-    }
-
-    return false;
-  }
-
-  function splitSnippetLines(snippet) {
-    return String(snippet || '').replace(/\r\n/g, '\n').split('\n');
-  }
-
-  function detectIndent(text) {
-    const match = /^\s*/.exec(String(text || ''));
-    return match ? match[0] : '';
-  }
-
-  function commonIndentLength(lines) {
-    const nonEmpty = lines.filter((line) => String(line || '').trim() !== '');
-    if (nonEmpty.length === 0) {
-      return 0;
-    }
-
-    return nonEmpty.reduce((smallest, line) => {
-      const indentLength = detectIndent(line).length;
-      return smallest === null ? indentLength : Math.min(smallest, indentLength);
-    }, null) || 0;
-  }
-
-  function normalizeSnippetLines(snippetLines, indent) {
-    const normalized = Array.isArray(snippetLines) ? [...snippetLines] : [String(snippetLines || '')];
-    const commonIndent = commonIndentLength(normalized);
-    return normalized.map((line) => {
-      const value = String(line || '');
-      if (value === '') {
-        return '';
-      }
-      const withoutCommonIndent = commonIndent > 0 ? value.slice(commonIndent) : value;
-      return `${indent}${withoutCommonIndent}`;
-    });
-  }
-
-  function documentBlockEquals(document, startLine, snippetLines) {
-    if (startLine < 0 || startLine + snippetLines.length > document.lineCount) {
-      return false;
-    }
-
-    for (let offset = 0; offset < snippetLines.length; offset += 1) {
-      if (document.lineAt(startLine + offset).text !== snippetLines[offset]) {
-        return false;
-      }
-    }
-
-    return true;
-  }
-
-  function snippetExistsNearby(document, lineIndex, snippetLines, action, op) {
-    if (!snippetLines.length || document.lineCount === 0) {
-      return false;
-    }
-
-    const insertionLine = op === 'insert_after' ? lineIndex + 1 : lineIndex;
-    const lookahead = Math.max(
-      0,
-      Number(action.lookahead ?? action.dedupeLookahead ?? (snippetLines.length + 4)) || 0,
-    );
-    const lookbehind = Math.max(
-      0,
-      Number(action.lookbehind ?? action.dedupeLookbehind ?? (snippetLines.length + 4)) || 0,
-    );
-    const startLine = Math.max(0, insertionLine - lookbehind);
-    const endLine = Math.min(document.lineCount - snippetLines.length, insertionLine + lookahead);
-
-    for (let cursor = startLine; cursor <= endLine; cursor += 1) {
-      if (documentBlockEquals(document, cursor, snippetLines)) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  async function applyWriteFileIssue(document, issue, snippetLines) {
-    const action = issueEffectiveAction(issue);
-    const targetFile = String(action.target_file || '').trim();
-    if (!targetFile) {
-      return false;
-    }
-
-    const targetDir = path.dirname(targetFile);
-    if (action.mkdir_p) {
-      fs.mkdirSync(targetDir, { recursive: true });
-    }
-
-    fs.writeFileSync(targetFile, snippetLines.join('\n'), 'utf8');
-
-    if (action.remove_trigger) {
-      const triggerText = issueTriggerText(document, issue);
-      await removeTriggerLine(document, issue, triggerText);
-    }
-
-    return true;
-  }
-
-  async function applySnippetIssue(document, issue) {
-    const liveDocument = await vscode.workspace.openTextDocument(document.uri);
-    const action = issueEffectiveAction(issue);
-    const op = String(action.op || '');
-    const kind = String(issue.kind || '');
-    const lineIndex = issueLineIndex(issue);
-    const boundedLineIndex = Math.max(0, Math.min(lineIndex, Math.max(liveDocument.lineCount - 1, 0)));
-    const triggerText = issueTriggerText(liveDocument, issue);
-
-    if (op === 'write_file') {
-      const snippetLines = splitSnippetLines(issue.snippet || '');
-      return applyWriteFileIssue(liveDocument, issue, snippetLines);
-    }
-
-    if (op === 'run_command') {
-      return false;
-    }
-
-    if (liveDocument.lineCount === 0) {
-      return false;
-    }
-
-    const currentLine = liveDocument.lineAt(boundedLineIndex).text;
-    const indent = String(action.indent || detectIndent(currentLine));
-    const snippetRaw = kind === 'trailing_whitespace' || kind === 'syntax_extra_delimiter'
-      ? ''
-      : String(issue.snippet || '');
-    const rawSnippetLines = splitSnippetLines(snippetRaw);
-    const snippetLines = normalizeSnippetLines(rawSnippetLines, indent);
-    const snippetText = snippetLines.join('\n');
-
-    if (op === 'replace_line') {
-      if (snippetLines.length === 1 && currentLine === snippetLines[0]) {
-        return false;
-      }
-
-      const edit = new vscode.WorkspaceEdit();
-      edit.replace(liveDocument.uri, lineDeleteRange(liveDocument, boundedLineIndex), snippetText);
-      const applied = await vscode.workspace.applyEdit(edit);
-      if (applied && kind === 'comment_task') {
-        await removeTriggerResidue(liveDocument, triggerText);
-      }
-      return applied;
-    }
-
-    if (snippetExistsNearby(liveDocument, boundedLineIndex, snippetLines, action, op)) {
-      return false;
-    }
-
-    const edit = new vscode.WorkspaceEdit();
-    if (op === 'insert_after') {
-      const insertionPosition = boundedLineIndex >= liveDocument.lineCount - 1
-        ? new vscode.Position(boundedLineIndex, liveDocument.lineAt(boundedLineIndex).text.length)
-        : new vscode.Position(boundedLineIndex + 1, 0);
-      const insertionText = boundedLineIndex >= liveDocument.lineCount - 1
-        ? `\n${snippetText}`
-        : `${snippetText}\n`;
-      edit.insert(liveDocument.uri, insertionPosition, insertionText);
-    } else {
-      edit.insert(liveDocument.uri, new vscode.Position(boundedLineIndex, 0), `${snippetText}\n`);
-    }
-    return vscode.workspace.applyEdit(edit);
-  }
-
-  function compareFixCandidates(left, right) {
-    const leftKind = String(left.kind || '');
-    const rightKind = String(right.kind || '');
-    const leftIndex = fixPriority.indexOf(leftKind);
-    const rightIndex = fixPriority.indexOf(rightKind);
-    const normalizedLeftIndex = leftIndex === -1 ? fixPriority.length : leftIndex;
-    const normalizedRightIndex = rightIndex === -1 ? fixPriority.length : rightIndex;
-
-    if (normalizedLeftIndex !== normalizedRightIndex) {
-      return normalizedLeftIndex - normalizedRightIndex;
-    }
-
-    const leftLine = Number(left.line || 1);
-    const rightLine = Number(right.line || 1);
-    if (leftLine !== rightLine) {
-      return leftLine - rightLine;
-    }
-
-    return issueActionIdentity(left).localeCompare(issueActionIdentity(right));
-  }
-
-  async function applyAutoFixes(document, issues) {
-    if (!isAutoFixEnabled(document.uri)) {
-      return false;
-    }
-
-    const allowedKinds = new Set(configuredAutoFixKinds(document.uri));
-    const seen = new Set();
-    const candidates = issues.filter((issue) => {
-      const action = issueEffectiveAction(issue);
-      const kind = String(issue.kind || '');
-      if (action.op === 'run_command') {
-        return false;
-      }
-      if (!allowedKinds.has(kind)) {
-        return false;
-      }
-      if (!issue.snippet && action.op !== 'write_file' && kind !== 'trailing_whitespace' && kind !== 'syntax_extra_delimiter') {
-        return false;
-      }
-
-      const identity = issueKey(document, issue);
-      if (seen.has(identity)) {
-        return false;
-      }
-      seen.add(identity);
-      return true;
-    });
-
-    if (candidates.length === 0) {
-      return false;
-    }
-
-    candidates.sort(compareFixCandidates);
-
-    let applied = false;
-    for (const issue of candidates) {
-      const changed = await applySnippetIssue(document, issue);
-      if (changed) {
-        applied = true;
-      }
-    }
-
-    if (!applied) {
-      return false;
-    }
-
-    const refreshedDocument = await vscode.workspace.openTextDocument(document.uri);
-    await analyzeDocument(refreshedDocument, 'autofix');
-    return true;
-  }
-
-  function recyclePendingTerminalTask(key) {
-    const pendingEntry = pendingTerminalTasks.get(key);
-    if (!pendingEntry) {
-      return false;
-    }
-
-    if (!pendingEntry.finishedAt) {
-      return false;
-    }
-
-    if (Date.now() - Number(pendingEntry.finishedAt || 0) < pendingTerminalTaskStaleMs) {
-      return false;
-    }
-
-    pendingTerminalTasks.delete(key);
-    return true;
-  }
-
-  function terminalText(value) {
-    return String(value || '').replace(/\r?\n/g, '\r\n');
-  }
-
-  function createTerminalSession(cwd) {
-    const writeEmitter = new vscode.EventEmitter();
-    const closeEmitter = new vscode.EventEmitter();
-    const session = {
-      child: null,
-      terminal: null,
-      busy: false,
-      onDidWrite: writeEmitter.event,
-      onDidClose: closeEmitter.event,
-      open: () => {
-        writeEmitter.fire(terminalText(`[RealtimeDevAgent] terminal conectado em ${cwd || process.cwd()}\n`));
-      },
-      close: () => {
-        if (session.child && !session.child.killed) {
-          session.child.kill('SIGTERM');
-        }
-        closeEmitter.fire();
-      },
-      handleInput: (data) => {
-        if (data === '\x03' && session.child && !session.child.killed) {
-          session.child.kill('SIGINT');
-          writeEmitter.fire('^C\r\n');
-        }
-      },
-      async run(command) {
-        if (session.busy) {
-          writeEmitter.fire(terminalText('[RealtimeDevAgent] terminal ocupado, aguardando a execucao atual finalizar.\n'));
-          return 1;
-        }
-
-        session.busy = true;
-        writeEmitter.fire(terminalText(`\n[RealtimeDevAgent] command: ${command}\n\n`));
-
-        const exitCode = await new Promise((resolve) => {
-          const child = spawn('/bin/sh', ['-lc', command], {
-            cwd,
-            env: process.env,
-            stdio: ['ignore', 'pipe', 'pipe'],
-          });
-          session.child = child;
-
-          child.stdout.on('data', (chunk) => {
-            writeEmitter.fire(terminalText(String(chunk)));
-          });
-
-          child.stderr.on('data', (chunk) => {
-            writeEmitter.fire(terminalText(String(chunk)));
-          });
-
-          child.on('error', (error) => {
-            writeEmitter.fire(terminalText(`[RealtimeDevAgent] falha ao iniciar comando: ${error.message}\n`));
-            resolve(1);
-          });
-
-          child.on('close', (code) => {
-            resolve(typeof code === 'number' ? code : 1);
-          });
-        });
-
-        session.child = null;
-        session.busy = false;
-        writeEmitter.fire(terminalText(`\n[RealtimeDevAgent] exit code: ${exitCode}\n`));
-        writeEmitter.fire(terminalText('[RealtimeDevAgent] terminal pronto para o proximo comando.\n'));
-        return exitCode;
-      }
-    };
-
-    session.terminal = vscode.window.createTerminal({
-      name: 'Realtime Dev Agent',
-      pty: session,
-      isTransient: false,
-    });
-
-    return session;
-  }
-
-  async function applyTerminalTask(document, issue) {
-    const key = issueKey(document, issue);
-    const fingerprint = terminalIssueFingerprint(document, issue);
-    const action = issue.action || {};
-    const command = String(action.command || '').trim();
-    if (!command) {
-      return false;
-    }
-
-    if (pendingTerminalTasks.has(key) && !recyclePendingTerminalTask(key)) {
-      output.appendLine(`[RealtimeDevAgent] Acao de terminal ja esta em execucao no VS Code: ${command}`);
-      return true;
-    }
-
-    if (attemptedTerminalTasks.has(fingerprint)) {
-      return true;
-    }
-
-    const cwd = String(action.cwd || '').trim()
-      || (vscode.workspace.getWorkspaceFolder(document.uri)
-        ? vscode.workspace.getWorkspaceFolder(document.uri).uri.fsPath
-        : path.dirname(document.fileName));
-    const triggerText = issueTriggerText(document, issue);
-    const terminalKey = cwd || '__default__';
-    let session = activeTerminalSessions.get(terminalKey);
-    if (!session || !session.terminal) {
-      session = createTerminalSession(cwd);
-      activeTerminalSessions.set(terminalKey, session);
-    }
-
-    pendingTerminalTasks.set(key, {
-      startedAt: Date.now(),
-    });
-    attemptedTerminalTasks.set(fingerprint, {
-      startedAt: Date.now(),
-    });
-    session.terminal.show(false);
-    output.appendLine(`[RealtimeDevAgent] Executando no terminal do VS Code: ${command}`);
-
-    try {
-      const exitCode = await session.run(command);
-      if (exitCode !== 0) {
-        output.appendLine(`[RealtimeDevAgent] Acao de terminal falhou com codigo ${exitCode}`);
-        output.show(true);
-        return true;
-      }
-
-      const removed = await removeTriggerLine(document, issue, triggerText);
-      if (removed) {
-        const refreshedDocument = await vscode.workspace.openTextDocument(document.uri);
-        await analyzeDocument(refreshedDocument, 'terminal');
-      }
-      return true;
-    } finally {
-      pendingTerminalTasks.set(key, {
-        finishedAt: Date.now(),
-      });
-    }
-  }
-
-  async function applyTerminalTasks(document, issues) {
-    if (!isTerminalActionsEnabled(document.uri)) {
-      return false;
-    }
-
-    const terminalIssue = issues.find((issue) => isTerminalIssue(issue));
-    if (!terminalIssue) {
-      return false;
-    }
-
-    return applyTerminalTask(document, terminalIssue);
-  }
 }
 
 function deactivate() {
   return undefined;
-}
-
-function mapSeverity(severity) {
-  switch (severity) {
-    case 'error':
-      return vscode.DiagnosticSeverity.Error;
-    case 'warning':
-      return vscode.DiagnosticSeverity.Warning;
-    default:
-      return vscode.DiagnosticSeverity.Information;
-  }
-}
-
-function runAgent({ nodePath, scriptPath, sourcePath, text, maxLineLength, cwd }) {
-  return new Promise((resolve, reject) => {
-    const args = [
-      scriptPath,
-      '--stdin',
-      '--source-path',
-      sourcePath,
-      '--format',
-      'json',
-      '--max-line-length',
-      String(maxLineLength),
-    ];
-    const child = spawn(nodePath, args, {
-      cwd,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-
-    let stdout = '';
-    let stderr = '';
-
-    child.stdout.on('data', (chunk) => {
-      stdout += String(chunk);
-    });
-    child.stderr.on('data', (chunk) => {
-      stderr += String(chunk);
-    });
-    child.on('error', (error) => {
-      reject(error);
-    });
-    child.on('close', (code) => {
-      const payload = stdout.trim();
-      if (!payload) {
-        if (code === 0) {
-          resolve([]);
-          return;
-        }
-        reject(new Error(stderr || `Realtime Dev Agent terminou com codigo ${code}`));
-        return;
-      }
-
-      try {
-        const issues = JSON.parse(payload);
-        resolve(Array.isArray(issues) ? issues : []);
-      } catch (error) {
-        reject(new Error(stderr || error.message || 'Falha ao interpretar a resposta do agente'));
-      }
-    });
-
-    child.stdin.end(text);
-  });
 }
 
 module.exports = {

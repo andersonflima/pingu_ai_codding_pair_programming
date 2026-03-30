@@ -26,7 +26,11 @@ function runEditorParityContract(repoRoot) {
   const vimPlugin = readSource(repoRoot, 'vim/plugin/realtime_dev_agent.vim');
   const vimInternal = readSource(repoRoot, 'vim/autoload/realtime_dev_agent/internal.vim');
   const vscodeExtension = readSource(repoRoot, 'vscode/extension.js');
+  const vscodeEdits = readSource(repoRoot, 'vscode/edits.js');
+  const vscodeTerminal = readSource(repoRoot, 'vscode/terminal.js');
+  const vscodeCodeActions = readSource(repoRoot, 'vscode/code-actions.js');
   const zedLsp = readSource(repoRoot, 'zed-extension/server/realtime_dev_agent_lsp.js');
+  const issueKinds = JSON.parse(readSource(repoRoot, 'config/issue-kinds.json'));
 
   const checks = [
     buildCheck(
@@ -56,12 +60,14 @@ function runEditorParityContract(repoRoot) {
       'parity:lazyvim:terminal-routing',
       'lazyvim',
       'terminal_task',
-      includesAll(vimInternal, [
-        "return {'op': 'run_command'}",
-        "function! s:apply_issue_run_command_toggleterm(",
-        "function! s:apply_issue_run_command_vscode(",
-        "function! s:apply_issue_run_command_native(",
-      ]),
+      issueKinds.terminal_task
+        && issueKinds.terminal_task.defaultAction
+        && issueKinds.terminal_task.defaultAction.op === 'run_command'
+        && includesAll(vimInternal, [
+          "function! s:apply_issue_run_command_toggleterm(",
+          "function! s:apply_issue_run_command_vscode(",
+          "function! s:apply_issue_run_command_native(",
+        ]),
       'LazyVim precisa rotear terminal_task para VS Code terminal, ToggleTerm e fallback nativo.',
     ),
     buildCheck(
@@ -81,13 +87,17 @@ function runEditorParityContract(repoRoot) {
       'vscode',
       'comment_context_tests',
       includesAll(vscodeExtension, [
-        "'comment_task',",
-        "'context_file',",
-        "'unit_test',",
-        "comment_task: { op: 'replace_line' }",
-        "context_file: { op: 'write_file' }",
-        "unit_test: { op: 'write_file' }",
-      ]),
+        'createEditRuntime(',
+        'configuredAutoFixKinds(',
+      ])
+        && includesAll(vscodeEdits, [
+          'function createEditRuntime(',
+          'async function applyAutoFixes(',
+          'async function applyWriteFileIssue(',
+        ])
+        && issueKinds.comment_task.defaultAction.op === 'replace_line'
+        && issueKinds.context_file.defaultAction.op === 'write_file'
+        && issueKinds.unit_test.defaultAction.op === 'write_file',
       'VS Code precisa expor auto-fix e acoes para comment_task, context_file e unit_test.',
     ),
     buildCheck(
@@ -95,13 +105,31 @@ function runEditorParityContract(repoRoot) {
       'vscode',
       'terminal_task',
       includesAll(vscodeExtension, [
-        'function createTerminalSession(cwd) {',
-        'activeTerminalSessions',
-        'terminal conectado em',
-        'terminal pronto para o proximo comando.',
-        'applyTerminalTask(document, terminalIssue)',
-      ]),
+        'createTerminalRuntime(',
+        'terminalRuntime.applyTerminalTasks(',
+      ])
+        && includesAll(vscodeTerminal, [
+          'function createTerminalRuntime(',
+          'function createTerminalSession(cwd) {',
+          'terminal conectado em',
+          'terminal pronto para o proximo comando.',
+          'async function applyTerminalTask(document, issue) {',
+        ]),
       'VS Code precisa executar terminal_task com sessao persistente e output em tempo real.',
+    ),
+    buildCheck(
+      'parity:vscode:follow-up',
+      'vscode',
+      'follow_up',
+      includesAll(vscodeExtension, [
+        'registerCodeActionsProvider',
+        'codeActionRuntime.provideCodeActions',
+      ])
+        && includesAll(vscodeCodeActions, [
+          'function buildFollowUpCodeAction(document, issue) {',
+          'Insert actionable follow-up',
+        ]),
+      'VS Code precisa expor follow-up acionavel por code action.',
     ),
     buildCheck(
       'parity:zed:always-active',
@@ -120,11 +148,12 @@ function runEditorParityContract(repoRoot) {
       'zed',
       'comment_context_tests',
       includesAll(zedLsp, [
-        "comment_task: { op: 'replace_line' }",
-        "context_file: { op: 'write_file' }",
-        "unit_test: { op: 'write_file' }",
         'function buildWorkspaceEdit(',
-      ]),
+        'return resolveIssueAction(issue);',
+      ])
+        && issueKinds.comment_task.defaultAction.op === 'replace_line'
+        && issueKinds.context_file.defaultAction.op === 'write_file'
+        && issueKinds.unit_test.defaultAction.op === 'write_file',
       'Zed precisa aplicar comment_task, context_file e unit_test via quick fix.',
     ),
     buildCheck(
@@ -141,6 +170,17 @@ function runEditorParityContract(repoRoot) {
         'terminal pronto para o proximo comando.',
       ]),
       'Zed precisa expor terminal_task como code action executavel com logs em tempo real.',
+    ),
+    buildCheck(
+      'parity:zed:follow-up',
+      'zed',
+      'follow_up',
+      includesAll(zedLsp, [
+        'buildFollowUpCodeAction(',
+        'Insert actionable follow-up',
+        'buildFollowUpWorkspaceEdit(',
+      ]),
+      'Zed precisa expor follow-up acionavel por code action.',
     ),
   ];
 

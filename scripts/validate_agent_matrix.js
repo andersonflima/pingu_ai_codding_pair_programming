@@ -15,6 +15,8 @@ const fixtureCases = [
   ['anget_test/javascript/src/04_context_blueprint.js', ['context_file']],
   ['anget_test/javascript/src/05_escaped_marker.js', ['comment_task']],
   ['anget_test/javascript/src/06_unit_contract.js', ['unit_test']],
+  ['anget_test/javascript/src/07_escaped_terminal_task.js', ['terminal_task']],
+  ['anget_test/javascript/src/08_escaped_context_blueprint.js', ['context_file']],
   ['anget_test/typescript/src/01_comment_simple.ts', ['comment_task']],
   ['anget_test/typescript/src/02_comment_advanced.ts', ['comment_task']],
   ['anget_test/typescript/src/03_unit_contract.ts', ['unit_test']],
@@ -47,6 +49,142 @@ const fixtureCases = [
   ['anget_test/syntax/javascript_missing_comma.js', ['syntax_missing_comma']],
   ['anget_test/syntax/lua_missing_quote.lua', ['syntax_missing_quote']],
   ['anget_test/syntax/markdown_unclosed_fence.md', ['syntax_missing_delimiter']],
+];
+
+const syntheticCases = [
+  buildSyntheticCase(
+    'synthetic:elixir:public-contracts',
+    'elixir/public_contracts.ex',
+    [
+      'defmodule Billing do',
+      '  def soma(numero) do',
+      '    numero + 1',
+      '  end',
+      'end',
+    ].join('\n'),
+    ['moduledoc', 'function_doc', 'function_spec'],
+  ),
+  buildSyntheticCase(
+    'synthetic:elixir:debug-output',
+    'elixir/debug_output.ex',
+    [
+      'defmodule Billing do',
+      '  def soma(numero) do',
+      '    IO.inspect(numero)',
+      '  end',
+      'end',
+    ].join('\n'),
+    ['debug_output'],
+  ),
+  buildSyntheticCase(
+    'synthetic:elixir:undefined-variable',
+    'elixir/undefined_variable.ex',
+    [
+      'defmodule Billing do',
+      '  def soma(numero) do',
+      '    numeroo + 1',
+      '  end',
+      'end',
+    ].join('\n'),
+    ['undefined_variable'],
+    ['numero + 1'],
+  ),
+  buildSyntheticCase(
+    'synthetic:elixir:functional-reassignment',
+    'elixir/functional_reassignment.ex',
+    [
+      'defmodule Billing do',
+      '  def soma(valor) do',
+      '    valor = valor + 1',
+      '  end',
+      'end',
+    ].join('\n'),
+    ['functional_reassignment'],
+  ),
+  buildSyntheticCase(
+    'synthetic:elixir:nested-condition',
+    'elixir/nested_condition.ex',
+    [
+      'defmodule Billing do',
+      '  def valida(a, b, c, d, e) do',
+      '    if a do',
+      '      if b do',
+      '        if c do',
+      '          if d do',
+      '            if e do',
+      '              :ok',
+      '            end',
+      '          end',
+      '        end',
+      '      end',
+      '    end',
+      '  end',
+      'end',
+    ].join('\n'),
+    ['nested_condition'],
+  ),
+  buildSyntheticCase(
+    'synthetic:javascript:todo-fixme',
+    'javascript/todo_fixme.js',
+    [
+      'function processaPedido() {',
+      '  // TODO: remover atalho depois da migracao',
+      '  return true;',
+      '}',
+    ].join('\n'),
+    ['todo_fixme'],
+  ),
+  buildSyntheticCase(
+    'synthetic:javascript:function-doc',
+    'javascript/function_doc.js',
+    [
+      'function processa(usuario) {',
+      '  return usuario;',
+      '}',
+    ].join('\n'),
+    ['function_doc'],
+  ),
+  buildSyntheticCase(
+    'synthetic:javascript:flow-comment-and-missing-dependency',
+    'javascript/missing_dependency.js',
+    [
+      'function abrePool() {',
+      '  const pool = new Pool();',
+      '  return pool;',
+      '}',
+    ].join('\n'),
+    ['missing_dependency', 'flow_comment'],
+  ),
+  buildSyntheticCase(
+    'synthetic:markdown:title',
+    'docs/no_title.md',
+    'guia operacional sem titulo principal\n',
+    ['markdown_title'],
+  ),
+  buildSyntheticCase(
+    'synthetic:docker:workdir',
+    'docker/Dockerfile',
+    'FROM node:20\nCOPY . .\nRUN npm test\n',
+    ['dockerfile_workdir'],
+  ),
+  buildSyntheticCase(
+    'synthetic:javascript:trailing-whitespace-and-tabs',
+    'javascript/whitespace.js',
+    `const valor = 1;   \n\tconst outro = 2;\n`,
+    ['trailing_whitespace', 'tabs'],
+  ),
+  buildSyntheticCase(
+    'synthetic:javascript:long-line',
+    'javascript/long_line.js',
+    `const linha = '${'x'.repeat(140)}';\n`,
+    ['long_line'],
+  ),
+  buildSyntheticCase(
+    'synthetic:javascript:large-file',
+    'javascript/large_file.js',
+    Array.from({ length: 301 }, (_, index) => `const linha_${index} = ${index};`).join('\n'),
+    ['large_file'],
+  ),
 ];
 
 const snippetExpectations = {
@@ -96,17 +234,38 @@ function readFile(relativeFile) {
   return fs.readFileSync(path.join(repoRoot, relativeFile), 'utf8');
 }
 
-function analyzeFixture(relativeFile) {
-  const absoluteFile = path.join(repoRoot, relativeFile);
-  return analyzeText(absoluteFile, readFile(relativeFile), { maxLineLength: 120 });
+function buildSyntheticCase(id, relativeSourcePath, content, expectedKinds, expectedSnippetIncludes = []) {
+  return {
+    id,
+    sourcePath: path.join(repoRoot, '__synthetic__', relativeSourcePath),
+    content,
+    expectedKinds,
+    expectedSnippetIncludes,
+  };
+}
+
+function analyzeFixtureSource(sourcePath, content) {
+  return analyzeText(sourcePath, content, { maxLineLength: 120 });
+}
+
+function normalizeFixtureCases() {
+  const fileCases = fixtureCases.map(([relativeFile, expectedKinds]) => ({
+    id: relativeFile,
+    sourcePath: path.join(repoRoot, relativeFile),
+    content: readFile(relativeFile),
+    expectedKinds,
+    expectedSnippetIncludes: snippetExpectations[relativeFile] || [],
+  }));
+
+  return [...fileCases, ...syntheticCases];
 }
 
 function runFixtureMatrix() {
-  const failures = fixtureCases.reduce((accumulator, [relativeFile, expectedKinds]) => {
-    const issues = analyzeFixture(relativeFile);
+  const failures = normalizeFixtureCases().reduce((accumulator, fixture) => {
+    const issues = analyzeFixtureSource(fixture.sourcePath, fixture.content);
     const kinds = new Set(issues.map((issue) => issue.kind));
-    const missingKinds = expectedKinds.filter((kind) => !kinds.has(kind));
-    const expectedSnippets = snippetExpectations[relativeFile] || [];
+    const missingKinds = fixture.expectedKinds.filter((kind) => !kinds.has(kind));
+    const expectedSnippets = fixture.expectedSnippetIncludes || [];
     const snippetPayload = issues
       .map((issue) => String(issue.snippet || ''))
       .filter((snippet) => snippet.length > 0)
@@ -117,8 +276,9 @@ function runFixtureMatrix() {
     }
 
     return accumulator.concat({
-      relativeFile,
-      expectedKinds,
+      fixtureId: fixture.id,
+      sourcePath: fixture.sourcePath,
+      expectedKinds: fixture.expectedKinds,
       actualKinds: Array.from(kinds).sort(),
       missingKinds,
       missingSnippetIncludes,
@@ -127,13 +287,14 @@ function runFixtureMatrix() {
 
   return {
     ok: failures.length === 0,
-    total: fixtureCases.length,
+    total: normalizeFixtureCases().length,
     failures,
   };
 }
 
 function findTerminalIssue(relativeFile) {
-  return analyzeFixture(relativeFile).find((issue) => issue.kind === 'terminal_task');
+  const absoluteFile = path.join(repoRoot, relativeFile);
+  return analyzeFixtureSource(absoluteFile, readFile(relativeFile)).find((issue) => issue.kind === 'terminal_task');
 }
 
 function runCommand(command, cwd) {

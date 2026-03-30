@@ -30,6 +30,12 @@ Integracoes de editor:
 npm run validate:editors
 ```
 
+Abrir a suite manual do VS Code em uma unica janela, com varios arquivos:
+
+```bash
+npm run open:vscode:validation
+```
+
 Para incluir tambem o empacotamento real da extensao do VS Code:
 
 ```bash
@@ -326,6 +332,25 @@ npm run package:vscode
 code --install-extension realtime-dev-agent.vsix
 ```
 
+### Validacao manual do agente no VS Code
+
+Use uma unica janela com varias abas da suite:
+
+```bash
+npm run open:vscode:validation
+```
+
+Se quiser escolher arquivos especificos, passe tudo no mesmo comando para manter a reutilizacao da janela:
+
+```bash
+npm run open:vscode:validation -- \
+  anget_test/javascript/src/01_comment_simple.js \
+  anget_test/javascript/src/03_terminal_task.js \
+  anget_test/react/src/01_d20_prompt.tsx
+```
+
+Esse fluxo usa `--reuse-window` e a workspace `anget_test/realtime-dev-agent-validation.code-workspace`, evitando a abertura de varias janelas do VS Code.
+
 ## Instalacao local no Zed
 
 O suporte atual para Zed fica em [zed-extension/](./zed-extension) e entrega snippets com uma base de language server local para manter o agente ativo com diagnosticos em tempo real.
@@ -380,12 +405,13 @@ Pre-requisito:
 - Por padrao, abertura de arquivo, troca de foco, mudancas de buffer e `save` disparam nova analise.
 - Comentarios acionaveis como `//:`, `#:`, `--:` e equivalentes agora sao autoaplicados pela extensao.
 - Arquivos de contexto `**` e testes gerados em `test/` ou `tests/` tambem podem ser criados automaticamente no VS Code.
+- Diagnosticos do VS Code tambem expõem code action para inserir follow-up acionavel logo abaixo do problema atual.
 
 ## Paridade por editor
 
 - Vim/Neovim: analise continua, auto-fix, painel e acoes de terminal.
-- VS Code: analise continua ao abrir, focar, editar e salvar arquivos, com auto-fix e terminal integrado.
-- Zed: analise continua, quick fixes para `comment_task`, `context_file` e `unit_test`, e `terminal_task` executavel via code action com logs em tempo real.
+- VS Code: analise continua ao abrir, focar, editar e salvar arquivos, com auto-fix, terminal integrado e follow-up acionavel via code action.
+- Zed: analise continua, quick fixes para `comment_task`, `context_file` e `unit_test`, `terminal_task` executavel via code action com logs em tempo real e follow-up acionavel.
 
 ## Contrato de paridade
 
