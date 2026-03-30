@@ -147,7 +147,7 @@ function createTerminalRuntime(deps) {
     };
 
     session.terminal = vscode.window.createTerminal({
-      name: 'Realtime Dev Agent',
+      name: 'Pingu - Dev Agent',
       pty: session,
       isTransient: false,
     });

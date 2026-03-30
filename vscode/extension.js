@@ -19,7 +19,7 @@ const { createTerminalRuntime } = require('./terminal');
 
 function activate(context) {
   const diagnostics = vscode.languages.createDiagnosticCollection('realtime-dev-agent');
-  const output = vscode.window.createOutputChannel('Realtime Dev Agent');
+  const output = vscode.window.createOutputChannel('Pingu - Dev Agent');
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   const issuesByUri = new Map();
   const pendingTimers = new Map();
@@ -51,7 +51,7 @@ function activate(context) {
 
   function refreshStatusBar() {
     const enabled = isEnabled();
-    statusBar.text = enabled ? '$(pulse) Realtime Agent' : '$(circle-slash) Realtime Agent';
+    statusBar.text = enabled ? '$(pulse) Pingu Agent' : '$(circle-slash) Pingu Agent';
     statusBar.tooltip = enabled
       ? 'Analise em tempo real ativa'
       : 'Analise em tempo real desativada';

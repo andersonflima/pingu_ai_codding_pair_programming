@@ -1,11 +1,19 @@
 {
   "name": "realtime-dev-agent",
-  "displayName": "Realtime Dev Agent",
-  "description": "Agente de pair programming em tempo real para Vim e VS Code.",
+  "displayName": "Pingu - Dev Agent",
+  "description": "Pingu - Dev Agent: agente de pair programming em tempo real para Vim e VS Code.",
   "version": "0.1.0",
   "publisher": "andersonflima",
   "license": "MIT",
   "icon": "assets/pingu.png",
+  "keywords": [
+    "pingu",
+    "dev-agent",
+    "pair-programming",
+    "agent",
+    "vscode",
+    "vim"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/andersonflima/pingu_ai_codding_pair_programming.git"
@@ -26,15 +34,15 @@
     "commands": [
       {
         "command": "realtimeDevAgent.analyzeCurrentFile",
-        "title": "Realtime Dev Agent: Analyze Current File"
+        "title": "Pingu - Dev Agent: Analyze Current File"
       },
       {
         "command": "realtimeDevAgent.toggleRealtime",
-        "title": "Realtime Dev Agent: Toggle Realtime Analysis"
+        "title": "Pingu - Dev Agent: Toggle Realtime Analysis"
       }
     ],
     "configuration": {
-      "title": "Realtime Dev Agent",
+      "title": "Pingu - Dev Agent",
       "properties": {
         "realtimeDevAgent.enabled": {
           "type": "boolean",
@@ -114,9 +122,12 @@
   },
   "scripts": {
     "open:vscode:validation": "node scripts/open_vscode_validation.js",
-    "package:vscode": "npx @vscode/vsce package --out realtime-dev-agent.vsix",
+    "open:vscode:external-validation": "node scripts/open_vscode_validation.js --suite-dir \"$HOME/snippets/agent_test\"",
+    "package:vscode": "npx @vscode/vsce package --out pingu-dev-agent.vsix",
+    "rebuild:external-agent-test": "node scripts/rebuild_external_agent_test.js",
     "validate:matrix": "node scripts/validate_agent_matrix.js",
     "validate:editors": "node scripts/validate_editor_integrations.js",
+    "validate:external-editors": "node scripts/validate_external_editor_suite.js",
     "validate:all": "npm run validate:matrix && npm run validate:editors"
   }
 }

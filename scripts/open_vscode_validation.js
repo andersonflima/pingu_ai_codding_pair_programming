@@ -3,14 +3,18 @@
 
 const path = require('path');
 const { spawnSync } = require('child_process');
+const {
+  defaultTargetDir,
+  loadExternalManifest,
+} = require('./rebuild_external_agent_test');
 
 const repoRoot = path.resolve(__dirname, '..');
-const workspaceFile = path.join(
+const internalWorkspaceFile = path.join(
   repoRoot,
   'anget_test',
   'realtime-dev-agent-validation.code-workspace',
 );
-const defaultFixtureFiles = [
+const internalDefaultFixtureFiles = [
   'anget_test/javascript/src/01_comment_simple.js',
   'anget_test/javascript/src/03_terminal_task.js',
   'anget_test/javascript/src/04_context_blueprint.js',
@@ -31,32 +35,68 @@ function normalizeFilePath(filePath) {
 }
 
 function parseCliArguments(argv) {
-  return argv.reduce((state, argument) => {
+  const state = {
+    dryRun: false,
+    files: [],
+    suiteDir: '',
+  };
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index];
     if (argument === '--dry-run') {
-      return { ...state, dryRun: true };
+      state.dryRun = true;
+      continue;
     }
 
-    return {
-      ...state,
-      files: state.files.concat(argument),
-    };
-  }, { dryRun: false, files: [] });
+    if (argument === '--suite-dir' && argv[index + 1]) {
+      state.suiteDir = argv[index + 1];
+      index += 1;
+      continue;
+    }
+
+    if (argument.startsWith('--suite-dir=')) {
+      state.suiteDir = argument.slice('--suite-dir='.length);
+      continue;
+    }
+
+    state.files.push(argument);
+  }
+
+  return state;
 }
 
-function resolveFixtureFiles(fileArguments) {
-  const selectedFiles = fileArguments.length > 0 ? fileArguments : defaultFixtureFiles;
-  return unique(selectedFiles.map(normalizeFilePath));
+function resolveExternalWorkspaceFile(suiteDir) {
+  return path.join(path.resolve(suiteDir || defaultTargetDir), 'realtime-dev-agent-validation.code-workspace');
 }
 
-function buildVsCodeOpenArguments(fileArguments) {
-  return ['--reuse-window', workspaceFile].concat(resolveFixtureFiles(fileArguments));
+function resolveExternalFixtureFiles(suiteDir) {
+  const manifest = loadExternalManifest(suiteDir || defaultTargetDir);
+  return unique(
+    (manifest.defaultVsCodeFiles || []).map((relativePath) => path.join(path.resolve(suiteDir || defaultTargetDir), relativePath)),
+  );
 }
 
-function printDryRun(bin, args) {
+function resolveFixtureFiles(fileArguments, suiteDir) {
+  const selectedFiles = fileArguments.length > 0
+    ? fileArguments
+    : (suiteDir ? resolveExternalFixtureFiles(suiteDir) : internalDefaultFixtureFiles);
+  return unique(selectedFiles.map((filePath) => (suiteDir ? path.resolve(filePath) : normalizeFilePath(filePath))));
+}
+
+function resolveWorkspaceFile(suiteDir) {
+  return suiteDir ? resolveExternalWorkspaceFile(suiteDir) : internalWorkspaceFile;
+}
+
+function buildVsCodeOpenArguments(fileArguments, suiteDir) {
+  const workspaceFile = resolveWorkspaceFile(suiteDir);
+  return ['--reuse-window', workspaceFile].concat(resolveFixtureFiles(fileArguments, suiteDir));
+}
+
+function printDryRun(bin, args, suiteDir) {
   const payload = {
     bin,
     args,
-    workspaceFile,
+    workspaceFile: resolveWorkspaceFile(suiteDir),
     files: args.slice(2),
   };
   process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
@@ -86,10 +126,10 @@ function runVsCode(bin, args) {
 function main() {
   const cli = parseCliArguments(process.argv.slice(2));
   const vscodeBin = process.env.PINGU_VSCODE_BIN || 'code';
-  const args = buildVsCodeOpenArguments(cli.files);
+  const args = buildVsCodeOpenArguments(cli.files, cli.suiteDir);
 
   if (cli.dryRun) {
-    printDryRun(vscodeBin, args);
+    printDryRun(vscodeBin, args, cli.suiteDir);
     return;
   }
 
@@ -102,8 +142,10 @@ if (require.main === module) {
 
 module.exports = {
   buildVsCodeOpenArguments,
-  defaultFixtureFiles,
+  defaultFixtureFiles: internalDefaultFixtureFiles,
+  defaultTargetDir,
   repoRoot,
   resolveFixtureFiles,
-  workspaceFile,
+  resolveWorkspaceFile,
+  workspaceFile: internalWorkspaceFile,
 };

@@ -198,6 +198,21 @@ const syntheticCases = [
     Array.from({ length: 301 }, (_, index) => `const linha_${index} = ${index};`).join('\n'),
     ['large_file'],
   ),
+  buildSyntheticCase(
+    'synthetic:ruby:generated-comment-is-stable',
+    'ruby/generated_comment.rb',
+    [
+      '# Retorna um valor aleatorio entre 1 e 20 simulando a rolagem de um dado.',
+      '# Retorno: Numero inteiro entre 1 e 20.',
+      'def dados()',
+      '  # Executa a etapa de efeito colateral necessaria para este fluxo.',
+      '  rand(1..20)',
+      'end',
+    ].join('\n'),
+    [],
+    [],
+    ['function_doc', 'function_spec', 'syntax_missing_quote'],
+  ),
 ];
 
 const snippetExpectations = {
@@ -266,13 +281,21 @@ function readFile(relativeFile) {
   return fs.readFileSync(path.join(repoRoot, relativeFile), 'utf8');
 }
 
-function buildSyntheticCase(id, relativeSourcePath, content, expectedKinds, expectedSnippetIncludes = []) {
+function buildSyntheticCase(
+  id,
+  relativeSourcePath,
+  content,
+  expectedKinds,
+  expectedSnippetIncludes = [],
+  forbiddenKinds = [],
+) {
   return {
     id,
     sourcePath: path.join(repoRoot, '__synthetic__', relativeSourcePath),
     content,
     expectedKinds,
     expectedSnippetIncludes,
+    forbiddenKinds,
   };
 }
 
@@ -297,13 +320,15 @@ function runFixtureMatrix() {
     const issues = analyzeFixtureSource(fixture.sourcePath, fixture.content);
     const kinds = new Set(issues.map((issue) => issue.kind));
     const missingKinds = fixture.expectedKinds.filter((kind) => !kinds.has(kind));
+    const forbiddenKinds = fixture.forbiddenKinds || [];
+    const presentForbiddenKinds = forbiddenKinds.filter((kind) => kinds.has(kind));
     const expectedSnippets = fixture.expectedSnippetIncludes || [];
     const snippetPayload = issues
       .map((issue) => String(issue.snippet || ''))
       .filter((snippet) => snippet.length > 0)
       .join('\n---\n');
     const missingSnippetIncludes = expectedSnippets.filter((snippet) => !snippetPayload.includes(snippet));
-    if (missingKinds.length === 0 && missingSnippetIncludes.length === 0) {
+    if (missingKinds.length === 0 && missingSnippetIncludes.length === 0 && presentForbiddenKinds.length === 0) {
       return accumulator;
     }
 
@@ -311,9 +336,11 @@ function runFixtureMatrix() {
       fixtureId: fixture.id,
       sourcePath: fixture.sourcePath,
       expectedKinds: fixture.expectedKinds,
+      forbiddenKinds,
       actualKinds: Array.from(kinds).sort(),
       missingKinds,
       missingSnippetIncludes,
+      presentForbiddenKinds,
     });
   }, []);
 
@@ -409,4 +436,17 @@ function main() {
   process.exit(ok ? 0 : 1);
 }
 
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = {
+  fixtureCases,
+  snippetExpectations,
+  normalizeFixtureCases,
+  parseExternalDir,
+  readFile,
+  repoRoot,
+  runExternalChecks,
+  runFixtureMatrix,
+};

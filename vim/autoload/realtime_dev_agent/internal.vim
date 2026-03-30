@@ -1053,7 +1053,7 @@ function! s:apply_issue_snippet(issue, keep_focus_code) abort
       return v:false
     endif
   else
-    let l:snippet_lines = split(l:snippet_raw, '\n', 1)
+    let l:snippet_lines = split(l:snippet_raw, "\n", 1)
   endif
   if empty(l:snippet_lines)
     return v:false
@@ -1207,12 +1207,9 @@ function! s:realtime_issue_still_relevant(item, target_buf, lnum, line_content) 
       return v:true
     endif
 
-    let l:expected_lines = split(l:snippet, '
-', 1)
+    let l:expected_lines = split(l:snippet, "\n", 1)
     let l:current_lines = readfile(l:target_file, 'b')
-    return join(l:current_lines, "
-") !=# join(l:expected_lines, "
-")
+    return join(l:current_lines, "\n") !=# join(l:expected_lines, "\n")
   endif
 
   if l:op ==# 'run_command'
@@ -1235,7 +1232,7 @@ function! s:realtime_issue_still_relevant(item, target_buf, lnum, line_content) 
   endif
 
   if l:op ==# 'replace_line'
-    let l:snippet_lines = split(get(a:item, 'snippet', ''), '\n')
+    let l:snippet_lines = split(get(a:item, 'snippet', ''), "\n")
     let l:expected = ''
     for l:snippet_line in l:snippet_lines
       let l:trimmed = substitute(l:snippet_line, '^\s*', '', '')
@@ -1259,7 +1256,7 @@ function! s:realtime_issue_still_relevant(item, target_buf, lnum, line_content) 
     if empty(l:snippet)
       return v:true
     endif
-    let l:snippet_lines = split(l:snippet, '\n')
+    let l:snippet_lines = split(l:snippet, "\n")
     let l:expected = ''
     for l:snippet_line in l:snippet_lines
       let l:trimmed = substitute(l:snippet_line, '^\s*', '', '')
@@ -1908,7 +1905,7 @@ function! s:window_refresh(file, qf) abort
     endif
     if !empty(l:item_snippet)
       call add(l:lines, '    Snippet:')
-      for l:snippet_line in split(l:item_snippet, '\n')
+      for l:snippet_line in split(l:item_snippet, "\n")
         call add(l:lines, '        ' . l:snippet_line)
       endfor
     endif
@@ -1968,8 +1965,9 @@ function! s:extract_issue_snippet(raw) abort
   endif
 
   let l:snippet = trim(l:match[1])
+  let l:snippet = substitute(l:snippet, '\\\\', '__REALTIME_DEV_AGENT_BACKSLASH__', 'g')
   let l:snippet = substitute(l:snippet, '\\n', "\n", 'g')
-  let l:snippet = substitute(l:snippet, '\\\\', '\\', 'g')
+  let l:snippet = substitute(l:snippet, '__REALTIME_DEV_AGENT_BACKSLASH__', '\\', 'g')
   return l:snippet
 endfunction
 

@@ -36,6 +36,8 @@ function runNodeChecks() {
     'scripts/editor_parity_contract.js',
     'scripts/nvim_functional_smoke.js',
     'scripts/open_vscode_validation.js',
+    'scripts/rebuild_external_agent_test.js',
+    'scripts/validate_external_editor_suite.js',
     'scripts/vscode_extension_smoke.js',
     'vscode/agent-process.js',
     'vscode/code-actions.js',
@@ -134,7 +136,7 @@ function runScriptCheck(name, scriptFile) {
 }
 
 function runVsCodePackage() {
-  const outFile = path.join(repoRoot, 'realtime-dev-agent.vsix');
+  const outFile = path.join(repoRoot, 'pingu-dev-agent.vsix');
   if (fs.existsSync(outFile)) {
     fs.rmSync(outFile, { force: true });
   }
@@ -344,7 +346,7 @@ function runZedLspSmoke() {
       const followUpHasEdit = Array.isArray(followUpActions)
         && followUpActions.some((action) =>
           action
-          && action.title === 'Realtime Dev Agent: Insert actionable follow-up'
+          && action.title === 'Pingu - Dev Agent: Insert actionable follow-up'
           && action.edit
           && JSON.stringify(action.edit).includes('// : '));
 

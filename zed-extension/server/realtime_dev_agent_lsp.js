@@ -275,7 +275,7 @@ function buildFollowUpCodeAction(document, issue) {
   }
 
   return {
-    title: 'Realtime Dev Agent: Insert actionable follow-up',
+    title: 'Pingu - Dev Agent: Insert actionable follow-up',
     kind: 'quickfix',
     edit,
   };

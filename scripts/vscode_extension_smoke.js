@@ -499,7 +499,7 @@ async function run() {
       { diagnostics: followUpDiagnostics },
     ));
     const followUpAction = Array.isArray(followUpActions)
-      ? followUpActions.find((action) => action && action.title === 'Realtime Dev Agent: Insert actionable follow-up')
+      ? followUpActions.find((action) => action && action.title === 'Pingu - Dev Agent: Insert actionable follow-up')
       : null;
     if (followUpAction && followUpAction.edit) {
       await vscode.workspace.applyEdit(followUpAction.edit);
@@ -555,7 +555,19 @@ async function run() {
   }
 }
 
-run().catch((error) => {
-  console.error(error.stack || error.message || String(error));
-  process.exit(1);
-});
+if (require.main === module) {
+  run().catch((error) => {
+    console.error(error.stack || error.message || String(error));
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  MockRange,
+  assert,
+  createMockVscode,
+  createUri,
+  installMockVscode,
+  run,
+  splitDocumentLines,
+};

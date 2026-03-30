@@ -1,10 +1,10 @@
-# Realtime Dev Agent
+# Pingu - Dev Agent
 
 <p align="center">
-  <img src="./assets/pingu.png" alt="Pingu, a cara do Realtime Dev Agent" width="240" />
+  <img src="./assets/pingu.png" alt="Pingu, a cara do Pingu - Dev Agent" width="240" />
 </p>
 
-<p align="center">Pingu e a identidade visual do Realtime Dev Agent.</p>
+<p align="center">Pingu e a identidade visual do Pingu - Dev Agent.</p>
 
 Agente de pair programming em tempo real com foco em revisao automatica, comentarios de manutencao, geracao de codigo, dependencias e testes unitarios por linguagem.
 
@@ -52,6 +52,30 @@ Se voce quiser validar tambem a suite externa em `~/snippets/agent_tests`, rode:
 
 ```bash
 PINGU_EXTERNAL_FIXTURES_DIR="$HOME/snippets/agent_tests" node scripts/validate_agent_matrix.js
+```
+
+Para recriar do zero a suite externa em `~/snippets/agent_test`, rode:
+
+```bash
+npm run rebuild:external-agent-test
+```
+
+Para validar a suite externa usando `vim` e `vscode`, rode:
+
+```bash
+npm run validate:external-editors
+```
+
+O validador externo usa workspaces temporarios por caso para evitar contaminacao de estado e grava o resumo final em:
+
+```bash
+~/snippets/agent_test/editor-validation-report.json
+```
+
+Para abrir a suite externa inteira no VS Code, reuse a mesma janela:
+
+```bash
+npm run open:vscode:external-validation
 ```
 
 ## Credenciais e variaveis de ambiente
@@ -318,18 +342,18 @@ A extensao VS Code fica empacotada como `VSIX` direto pelo GitHub Actions.
 
 ### Instalar a partir de um release do GitHub
 
-1. Baixe o arquivo `realtime-dev-agent.vsix` em `Releases`.
+1. Baixe o arquivo `pingu-dev-agent.vsix` em `Releases`.
 2. Instale com:
 
 ```bash
-code --install-extension realtime-dev-agent.vsix
+code --install-extension pingu-dev-agent.vsix
 ```
 
 ### Empacotar localmente a partir do clone
 
 ```bash
 npm run package:vscode
-code --install-extension realtime-dev-agent.vsix
+code --install-extension pingu-dev-agent.vsix
 ```
 
 ### Validacao manual do agente no VS Code
@@ -377,8 +401,8 @@ Pre-requisito:
 
 ## Comandos da extensao VS Code
 
-- `Realtime Dev Agent: Analyze Current File`
-- `Realtime Dev Agent: Toggle Realtime Analysis`
+- `Pingu - Dev Agent: Analyze Current File`
+- `Pingu - Dev Agent: Toggle Realtime Analysis`
 
 ## Configuracoes do VS Code
 

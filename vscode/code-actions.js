@@ -40,7 +40,7 @@ function createCodeActionRuntime(deps) {
     }
 
     return {
-      title: 'Realtime Dev Agent: Insert actionable follow-up',
+      title: 'Pingu - Dev Agent: Insert actionable follow-up',
       kind: vscode.CodeActionKind && vscode.CodeActionKind.QuickFix
         ? vscode.CodeActionKind.QuickFix
         : 'quickfix',

@@ -36,7 +36,7 @@ function runAgent({ spawn, nodePath, scriptPath, sourcePath, text, maxLineLength
           resolve([]);
           return;
         }
-        reject(new Error(stderr || `Realtime Dev Agent terminou com codigo ${code}`));
+        reject(new Error(stderr || `Pingu - Dev Agent terminou com codigo ${code}`));
         return;
       }
 
