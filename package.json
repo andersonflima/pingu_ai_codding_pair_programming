@@ -1,5 +1,5 @@
 {
-  "name": "realtime-dev-agent",
+  "name": "pingu-dev-agent",
   "displayName": "Pingu - Dev Agent",
   "description": "Pingu - Dev Agent: agente de pair programming em tempo real para Vim e VS Code.",
   "version": "0.1.0",

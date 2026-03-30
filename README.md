@@ -492,6 +492,15 @@ npm run package:vscode
 code --install-extension ./pingu-dev-agent.vsix --force
 ```
 
+### Migracao do nome antigo
+
+Se voce ja instalou a extensao antiga `andersonflima.realtime-dev-agent`, o VS Code pode manter as duas instaladas ao mesmo tempo. Para ficar apenas com o nome novo:
+
+```bash
+code --uninstall-extension andersonflima.realtime-dev-agent
+code --install-extension ./pingu-dev-agent.vsix --force
+```
+
 ### Problema comum ao instalar pelo CLI
 
 Se o `code --install-extension` falhar com algo como `uv_cwd` ou `getcwd: cannot access parent directories`, o problema nao e da extensao. O terminal atual esta em um diretorio invalido.
