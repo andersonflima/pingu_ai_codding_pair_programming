@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { analyzeText } = require('../lib/analyzer');
+const { getCapabilityProfile, languageCapabilityRegistry } = require('../lib/language-capabilities');
 
 const repoRoot = path.resolve(__dirname, '..');
 
@@ -24,12 +25,16 @@ const fixtureCases = [
   ['anget_test/react/src/02_component_contract.tsx', ['unit_test']],
   ['anget_test/python/app/01_d20_prompt.py', ['comment_task']],
   ['anget_test/python/app/02_unit_contract.py', ['unit_test']],
+  ['anget_test/python/app/03_terminal_task.py', ['terminal_task']],
   ['anget_test/elixir/lib/01_d20_prompt.ex', ['comment_task']],
+  ['anget_test/elixir/lib/02_unit_contract.ex', ['unit_test']],
   ['anget_test/elixir/lib/03_terminal_task.exs', ['terminal_task']],
   ['anget_test/go/pkg/01_comment_prompt.go', ['comment_task']],
   ['anget_test/go/pkg/02_unit_contract.go', ['unit_test']],
+  ['anget_test/go/pkg/03_terminal_task.go', ['terminal_task']],
   ['anget_test/rust/src/01_comment_prompt.rs', ['comment_task']],
   ['anget_test/rust/src/math.rs', ['unit_test']],
+  ['anget_test/rust/src/03_terminal_task.rs', ['terminal_task']],
   ['anget_test/ruby/lib/01_d20_prompt.rb', ['comment_task']],
   ['anget_test/ruby/lib/02_unit_contract.rb', ['unit_test']],
   ['anget_test/ruby/lib/03_terminal_task.rb', ['terminal_task']],
@@ -57,6 +62,7 @@ const fixtureCases = [
   ['anget_test/toml/config.toml', ['comment_task']],
   ['anget_test/terraform/prompt.tf', ['comment_task']],
   ['anget_test/terraform/main.tf', ['terraform_required_version']],
+  ['anget_test/yaml/prompt.yaml', ['comment_task']],
   ['anget_test/yaml/config.yaml', ['unit_test']],
   ['anget_test/syntax/javascript_extra_delimiter.js', ['syntax_extra_delimiter']],
   ['anget_test/syntax/javascript_missing_comma.js', ['syntax_missing_comma']],
@@ -228,6 +234,13 @@ const syntheticCases = [
     ['const pedido = {', 'status: "ativo",'],
   ),
   buildSyntheticCase(
+    'synthetic:javascript:block-comment-d20-function',
+    'javascript/block_comment_d20.js',
+    '/* funcao dice que retorna um numero random de um dado de 20 lados */\n',
+    ['comment_task'],
+    ['function dice()', 'Math.floor(Math.random() * 20) + 1'],
+  ),
+  buildSyntheticCase(
     'synthetic:python:enum-structure',
     'python/enum_structure.py',
     '#: cria enum PaymentStatus com pending, paid e refunded\n',
@@ -347,6 +360,13 @@ const syntheticCases = [
     ['typedef struct Pedido {', 'const char* status;'],
   ),
   buildSyntheticCase(
+    'synthetic:c:block-comment-d20-function',
+    'c/block_comment_d20.c',
+    '/* funcao dice que retorna um numero random de um dado de 20 lados */\n',
+    ['comment_task', 'missing_dependency'],
+    ['int dice(void) {', 'return (rand() % 20) + 1;', '#include <stdlib.h>'],
+  ),
+  buildSyntheticCase(
     'synthetic:lua:module-structure',
     'lua/module_structure.lua',
     '--: cria modulo Billing com funcoes listar e criar\n',
@@ -366,6 +386,24 @@ const syntheticCases = [
     '#: cria modulo billing com funcoes listar e criar\n',
     ['comment_task'],
     ['billing_listar() {', 'billing_criar() {'],
+  ),
+  buildSyntheticCase(
+    'synthetic:terraform:terminal-task',
+    'terraform/terminal_task.tf',
+    '# * git status\n',
+    ['terminal_task'],
+  ),
+  buildSyntheticCase(
+    'synthetic:yaml:terminal-task',
+    'yaml/terminal_task.yaml',
+    '# * rodar testes do projeto\n',
+    ['terminal_task'],
+  ),
+  buildSyntheticCase(
+    'synthetic:dockerfile:terminal-task',
+    'docker/terminal_task.Dockerfile',
+    '# * git status\n',
+    ['terminal_task'],
   ),
   buildSyntheticCase(
     'synthetic:typescript:enum-structure-idempotent',
@@ -559,6 +597,104 @@ function runFixtureMatrix() {
   };
 }
 
+function runCapabilityRegistryValidation() {
+  const registry = languageCapabilityRegistry();
+  const fixtureCases = normalizeFixtureCases();
+  const ids = new Set();
+  const extensions = new Map();
+  const fixtureKindsByProfile = new Map();
+  const fixturePresenceByProfile = new Set();
+
+  fixtureCases.forEach((fixture) => {
+    const profile = getCapabilityProfile(fixture.sourcePath);
+    const kinds = new Set(fixture.expectedKinds || []);
+    fixturePresenceByProfile.add(profile.id);
+    if (!fixtureKindsByProfile.has(profile.id)) {
+      fixtureKindsByProfile.set(profile.id, new Set());
+    }
+    kinds.forEach((kind) => fixtureKindsByProfile.get(profile.id).add(kind));
+  });
+
+  const failures = registry.reduce((accumulator, entry) => {
+    const profileFailures = [];
+
+    if (ids.has(entry.id)) {
+      profileFailures.push(`id duplicado: ${entry.id}`);
+    }
+    ids.add(entry.id);
+
+    if (entry.id !== 'default' && (!Array.isArray(entry.extensions) || entry.extensions.length === 0)) {
+      profileFailures.push('linguagem sem extensoes declaradas');
+    }
+
+    (entry.extensions || []).forEach((extension) => {
+      const normalizedExtension = String(extension || '').trim().toLowerCase();
+      if (!normalizedExtension) {
+        profileFailures.push('extensao vazia');
+        return;
+      }
+      if (extensions.has(normalizedExtension)) {
+        profileFailures.push(`extensao duplicada ${normalizedExtension} com ${extensions.get(normalizedExtension)}`);
+        return;
+      }
+      extensions.set(normalizedExtension, entry.id);
+    });
+
+    if ((entry.editorFeatures || []).includes('comment_task') && (!entry.commentTaskIntents || entry.commentTaskIntents.length === 0)) {
+      profileFailures.push('comment_task declarado sem intents de comentario');
+    }
+
+    if ((entry.editorFeatures || []).includes('terminal_task') && !(entry.offlineCapabilities || []).includes('terminal_task')) {
+      profileFailures.push('terminal_task declarado sem capacidade offline correspondente');
+    }
+
+    if ((entry.editorFeatures || []).includes('unit_test') && entry.unitTestStyle === 'none') {
+      profileFailures.push('unit_test declarado com unitTestStyle none');
+    }
+
+    if (entry.id !== 'default' && !fixturePresenceByProfile.has(entry.id)) {
+      profileFailures.push('sem fixtures associadas na matriz');
+    }
+
+    const fixtureKinds = fixtureKindsByProfile.get(entry.id) || new Set();
+    if (entry.id === 'default') {
+      if (profileFailures.length === 0) {
+        return accumulator;
+      }
+
+      return accumulator.concat({
+        profileId: entry.id,
+        failures: profileFailures,
+      });
+    }
+
+    if ((entry.editorFeatures || []).includes('terminal_task') && !fixtureKinds.has('terminal_task')) {
+      profileFailures.push('sem fixture terminal_task para o perfil');
+    }
+    if ((entry.editorFeatures || []).includes('unit_test') && !fixtureKinds.has('unit_test')) {
+      profileFailures.push('sem fixture unit_test para o perfil');
+    }
+    if ((entry.editorFeatures || []).includes('comment_task') && !fixtureKinds.has('comment_task')) {
+      profileFailures.push('sem fixture comment_task para o perfil');
+    }
+
+    if (profileFailures.length === 0) {
+      return accumulator;
+    }
+
+    return accumulator.concat({
+      profileId: entry.id,
+      failures: profileFailures,
+    });
+  }, []);
+
+  return {
+    ok: failures.length === 0,
+    total: registry.length,
+    failures,
+  };
+}
+
 function findTerminalIssue(relativeFile) {
   const absoluteFile = path.join(repoRoot, relativeFile);
   return analyzeFixtureSource(absoluteFile, readFile(relativeFile)).find((issue) => issue.kind === 'terminal_task');
@@ -619,6 +755,7 @@ function parseExternalDir(argv) {
 
 function main() {
   const summary = {
+    registry: runCapabilityRegistryValidation(),
     matrix: runFixtureMatrix(),
     external: [],
   };
@@ -629,10 +766,15 @@ function main() {
   }
 
   const failingExternal = summary.external.filter((item) => !item.ok);
-  const ok = summary.matrix.ok && failingExternal.length === 0;
+  const ok = summary.registry.ok && summary.matrix.ok && failingExternal.length === 0;
 
   console.log(JSON.stringify({
     ok,
+    registry: {
+      ok: summary.registry.ok,
+      total: summary.registry.total,
+      failures: summary.registry.failures,
+    },
     matrix: {
       ok: summary.matrix.ok,
       total: summary.matrix.total,
@@ -655,6 +797,7 @@ module.exports = {
   parseExternalDir,
   readFile,
   repoRoot,
+  runCapabilityRegistryValidation,
   runExternalChecks,
   runFixtureMatrix,
 };

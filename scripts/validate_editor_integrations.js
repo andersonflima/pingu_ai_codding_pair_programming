@@ -21,6 +21,7 @@ function runNodeChecks() {
     'realtime_dev_agent.js',
     'lib/analyzer.js',
     'lib/issue-kinds.js',
+    'lib/language-capabilities.js',
     'lib/generation.js',
     'lib/generation-blueprint.js',
     'lib/generation-comment-task.js',

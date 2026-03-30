@@ -112,6 +112,8 @@ export OPENAI_API_KEY="sua_chave_aqui"
 
 O runtime local usa perfis de linguagem versionados com snippets offline e boas praticas por stack. Isso permite gerar codigo util sem depender de API key.
 
+O contrato declarativo canonico por linguagem agora fica em `lib/language-capabilities.js`. Esse arquivo centraliza extensoes, intents de `/:`, features por editor, capacidades offline e boas praticas, enquanto `lib/language-profiles.js` apenas deriva a visao operacional consumida pelo runtime.
+
 - JavaScript, TypeScript e React: funcoes simples, funcoes aritmeticas, retornos literais, componentes e fluxos de dado, CRUD inicial, testes e acoes de terminal.
 - Python: funcoes simples, funcoes aritmeticas, retornos literais, dado aleatorio, CRUD inicial, testes e acoes de terminal.
 - Elixir: funcoes simples, funcoes aritmeticas, retornos literais, dado aleatorio, CRUD inicial, encapsulamento em modulo, testes e acoes de terminal.
@@ -460,7 +462,9 @@ Pre-requisito:
 ## Contrato de paridade
 
 - O contrato formal de paridade entre LazyVim, VS Code e Zed fica em `scripts/editor_parity_contract.js`.
+- O contrato declarativo de capacidades por linguagem fica em `lib/language-capabilities.js`.
 - `npm run validate:editors` agora valida esse contrato e reprova qualquer regressao de capacidade obrigatoria entre os editores.
+- `npm run validate:matrix` agora valida tambem a consistencia entre o registry declarativo e a matriz de fixtures.
 
 ## Como funciona
 
