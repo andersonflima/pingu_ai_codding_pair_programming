@@ -425,6 +425,7 @@ function assert(condition, message) {
 async function run() {
   const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'realtime-dev-agent-vscode-'));
   fs.mkdirSync(path.join(workspaceRoot, 'src'), { recursive: true });
+  fs.mkdirSync(path.join(workspaceRoot, 'tests', 'src'), { recursive: true });
 
   fs.writeFileSync(
     path.join(workspaceRoot, 'package.json'),
@@ -452,11 +453,31 @@ async function run() {
   const terminalFile = path.join(workspaceRoot, 'src', 'terminal.js');
   const blockedTerminalFile = path.join(workspaceRoot, 'src', 'blocked-terminal.js');
   const followUpFile = path.join(workspaceRoot, 'src', 'follow-up.js');
+  const autofixFile = path.join(workspaceRoot, 'src', 'math.js');
+  const nestedTestContextFile = path.join(workspaceRoot, 'tests', 'src', 'context-from-test.js');
   fs.writeFileSync(commentFile, '//: funcao soma\n', 'utf8');
   fs.writeFileSync(contextFile, '// ** bff para crud de usuario\n', 'utf8');
   fs.writeFileSync(terminalFile, '// * rodar testes\n', 'utf8');
   fs.writeFileSync(blockedTerminalFile, '// * commit: feat: smoke bloqueado\n', 'utf8');
   fs.writeFileSync(followUpFile, 'function revisarPedido() {\n  // TODO: revisar fluxo principal\n  return true;\n}\n', 'utf8');
+  fs.writeFileSync(nestedTestContextFile, '// ** bff para crud de pedido\n', 'utf8');
+  fs.writeFileSync(
+    autofixFile,
+    [
+      '/**',
+      ' * Soma um valor base com a constante local.',
+      ' * @param {number} a Valor de entrada do calculo.',
+      ' * @returns {number} Resultado numerico final.',
+      ' */',
+      'function soma_dois(a) {',
+      '  const dois = 10;',
+      '  return a + doiis;',
+      '}',
+      '',
+      'module.exports = { soma_dois };',
+    ].join('\n'),
+    'utf8',
+  );
 
   const vscode = createMockVscode(workspaceRoot);
   const restoreLoad = installMockVscode(vscode);
@@ -515,6 +536,22 @@ async function run() {
     }
     const followUpResult = fs.readFileSync(followUpFile, 'utf8');
 
+    await vscode.workspace.getConfiguration().update('autoFixEnabled', true);
+    const autofixDocument = await vscode.__mock.openFile(autofixFile);
+    vscode.__mock.setActiveDocument(autofixDocument);
+    await vscode.__mock.commands.get('realtimeDevAgent.analyzeCurrentFile')();
+    const autofixResult = fs.readFileSync(autofixFile, 'utf8');
+    const autofixTestFile = path.join(workspaceRoot, 'tests', 'src', 'math.test.js');
+    const autofixTestContents = fs.existsSync(autofixTestFile)
+      ? fs.readFileSync(autofixTestFile, 'utf8')
+      : '';
+
+    const nestedTestContextDocument = await vscode.__mock.openFile(nestedTestContextFile);
+    vscode.__mock.setActiveDocument(nestedTestContextDocument);
+    await vscode.__mock.commands.get('realtimeDevAgent.analyzeCurrentFile')();
+    const rootContextFromTestFile = path.join(workspaceRoot, '.realtime-dev-agent', 'contexts', 'bff-crud-pedido.md');
+    const nestedContextFromTestFile = path.join(workspaceRoot, 'tests', '.realtime-dev-agent', 'contexts', 'bff-crud-pedido.md');
+
     const summary = {
       commentTask: {
         applied: commentResult.includes('function soma(a, b)'),
@@ -542,6 +579,15 @@ async function run() {
         hasFollowUpAction: Boolean(followUpAction),
         insertedFollowUp: followUpResult.includes('// : Use um ticket ou comentario estruturado'),
       },
+      scopedAutoFix: {
+        correctedUndefinedVariable: autofixResult.includes('return a + dois;'),
+        removedTypoReference: !autofixResult.includes('doiis'),
+        createdBehaviorTest: autofixTestContents.includes('assert.equal(subject.soma_dois(5), 15);'),
+      },
+      contextRootResolution: {
+        writesContextAtProjectRoot: fs.existsSync(rootContextFromTestFile),
+        avoidsNestedTestsContext: !fs.existsSync(nestedContextFromTestFile),
+      },
     };
 
     assert(summary.commentTask.applied, 'VS Code smoke: comment_task nao aplicou o snippet esperado.');
@@ -559,6 +605,11 @@ async function run() {
     assert(summary.followUp.diagnosticsCount > 0, 'VS Code smoke: follow-up nao encontrou diagnostico elegivel.');
     assert(summary.followUp.hasFollowUpAction, 'VS Code smoke: follow-up nao expôs code action.');
     assert(summary.followUp.insertedFollowUp, 'VS Code smoke: follow-up nao inseriu comentario acionavel.');
+    assert(summary.scopedAutoFix.correctedUndefinedVariable, 'VS Code smoke: undefined_variable nao corrigiu a referencia digitada errado.');
+    assert(summary.scopedAutoFix.removedTypoReference, 'VS Code smoke: typo no escopo da funcao permaneceu apos auto-fix.');
+    assert(summary.scopedAutoFix.createdBehaviorTest, 'VS Code smoke: unit_test nao gerou teste de comportamento para a funcao corrigida.');
+    assert(summary.contextRootResolution.writesContextAtProjectRoot, 'VS Code smoke: context_file disparado dentro de tests/ nao escreveu o contexto na raiz do projeto.');
+    assert(summary.contextRootResolution.avoidsNestedTestsContext, 'VS Code smoke: context_file recriou .realtime-dev-agent dentro de tests/.');
 
     console.log(JSON.stringify({
       ok: true,

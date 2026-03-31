@@ -18,6 +18,7 @@ const fixtureCases = [
   ['anget_test/javascript/src/06_unit_contract.js', ['unit_test']],
   ['anget_test/javascript/src/07_escaped_terminal_task.js', ['terminal_task']],
   ['anget_test/javascript/src/08_escaped_context_blueprint.js', ['context_file']],
+  ['anget_test/javascript/src/09_unit_behavior.js', ['unit_test']],
   ['anget_test/typescript/src/01_comment_simple.ts', ['comment_task']],
   ['anget_test/typescript/src/02_comment_advanced.ts', ['comment_task']],
   ['anget_test/typescript/src/03_unit_contract.ts', ['unit_test']],
@@ -26,6 +27,7 @@ const fixtureCases = [
   ['anget_test/python/app/01_d20_prompt.py', ['comment_task']],
   ['anget_test/python/app/02_unit_contract.py', ['unit_test']],
   ['anget_test/python/app/03_terminal_task.py', ['terminal_task']],
+  ['anget_test/python/app/main.py', ['unit_test']],
   ['anget_test/elixir/lib/01_d20_prompt.ex', ['comment_task']],
   ['anget_test/elixir/lib/02_unit_contract.ex', ['unit_test']],
   ['anget_test/elixir/lib/03_terminal_task.exs', ['terminal_task']],
@@ -194,14 +196,57 @@ const syntheticCases = [
     ['todo_fixme'],
   ),
   buildSyntheticCase(
+    'synthetic:javascript:undefined-variable',
+    'javascript/undefined_variable.js',
+    [
+      'function soma_dois(a) {',
+      '  const dois = 10;',
+      '  return a + doiis;',
+      '}',
+    ].join('\n'),
+    ['undefined_variable'],
+    ['return a + dois;'],
+  ),
+  buildSyntheticCase(
+    'synthetic:c:undefined-variable',
+    'c/undefined_variable.c',
+    [
+      'int soma_dois(int a) {',
+      '  int dois = 10;',
+      '  return a + doiis;',
+      '}',
+    ].join('\n'),
+    ['undefined_variable'],
+    ['return a + dois;'],
+  ),
+  buildSyntheticCase(
     'synthetic:javascript:function-doc',
     'javascript/function_doc.js',
     [
-      'function processa(usuario) {',
-      '  return usuario;',
+      'function soma_dois(a) {',
+      '  const dois = 10;',
+      '  return a + dois;',
       '}',
     ].join('\n'),
     ['function_doc'],
+    [
+      '@param {number} a',
+      '@returns {number}',
+    ],
+  ),
+  buildSyntheticCase(
+    'synthetic:python:function-doc',
+    'python/function_doc.py',
+    [
+      'def soma_dois(a):',
+      '    dois = 10',
+      '    return a + dois',
+    ].join('\n'),
+    ['function_doc'],
+    [
+      '#   a (int):',
+      '#   int:',
+    ],
   ),
   buildSyntheticCase(
     'synthetic:javascript:flow-comment-and-missing-dependency',
@@ -365,11 +410,46 @@ const syntheticCases = [
     ['class Pedido:', 'self.status = status'],
   ),
   buildSyntheticCase(
+    'synthetic:javascript:class-broadcast',
+    'javascript/class_broadcast.js',
+    '//: cria class RoomBroadcaster com atributo usuarios_conectados_a_rooms e metodo broadcast\n',
+    ['comment_task'],
+    ['export class RoomBroadcaster {', 'broadcast(roomId, mensagem) {', 'this.usuarios_conectados_a_rooms[roomId] ?? []'],
+  ),
+  buildSyntheticCase(
+    'synthetic:typescript:class-broadcast',
+    'typescript/class_broadcast.ts',
+    '//: cria class RoomBroadcaster com atributo usuarios_conectados_a_rooms e metodo broadcast\n',
+    ['comment_task'],
+    ['export class RoomBroadcaster {', 'broadcast(roomId: string, mensagem: string): Array<Record<string, unknown>> {'],
+  ),
+  buildSyntheticCase(
+    'synthetic:python:class-broadcast',
+    'python/class_broadcast.py',
+    '#: cria class RoomBroadcaster com atributo usuarios_conectados_a_rooms e metodo broadcast\n',
+    ['comment_task'],
+    ['class RoomBroadcaster:', 'self.usuarios_conectados_a_rooms = usuarios_conectados_a_rooms', 'def broadcast(self, room_id, mensagem):'],
+  ),
+  buildSyntheticCase(
+    'synthetic:python:class-broadcast-inferred',
+    'python/class_broadcast_inferred.py',
+    '#: cria class RoomBroadcaster completa com implementacao de broadcast\n',
+    ['comment_task'],
+    ['class RoomBroadcaster:', 'self.usuarios_conectados_a_rooms = usuarios_conectados_a_rooms', 'def broadcast(self, room_id, mensagem):'],
+  ),
+  buildSyntheticCase(
     'synthetic:elixir:module-structure',
     'elixir/module_structure.ex',
     '#: cria modulo Billing com funcoes listar e criar\n',
     ['comment_task'],
     ['defmodule Billing do', 'def listar(itens) do'],
+  ),
+  buildSyntheticCase(
+    'synthetic:elixir:class-broadcast',
+    'elixir/class_broadcast.ex',
+    '#: cria class RoomBroadcaster com atributo usuarios_conectados_a_rooms e metodo broadcast\n',
+    ['comment_task'],
+    ['defmodule RoomBroadcaster do', 'defstruct usuarios_conectados_a_rooms: %{}', 'def broadcast(%__MODULE__{usuarios_conectados_a_rooms: usuarios_conectados_a_rooms}, room_id, mensagem) do'],
   ),
   buildSyntheticCase(
     'synthetic:go:struct-structure',
@@ -379,11 +459,25 @@ const syntheticCases = [
     ['type Pedido struct {', 'Status string'],
   ),
   buildSyntheticCase(
+    'synthetic:go:class-broadcast',
+    'go/class_broadcast.go',
+    '//: cria class RoomBroadcaster com atributo usuarios_conectados_a_rooms e metodo broadcast\n',
+    ['comment_task'],
+    ['type RoomBroadcaster struct {', 'UsuariosConectadosARooms map[string][]string', 'func (service *RoomBroadcaster) Broadcast(roomID string, mensagem string) []string {'],
+  ),
+  buildSyntheticCase(
     'synthetic:rust:interface-structure',
     'rust/interface_structure.rs',
     '//: cria interface Validador com metodos validar e sincronizar\n',
     ['comment_task'],
     ['pub trait Validador {', 'fn validar(&self) -> bool;'],
+  ),
+  buildSyntheticCase(
+    'synthetic:rust:class-broadcast',
+    'rust/class_broadcast.rs',
+    '//: cria class RoomBroadcaster com atributo usuarios_conectados_a_rooms e metodo broadcast\n',
+    ['comment_task'],
+    ['pub struct RoomBroadcaster {', 'pub fn broadcast(&self, room_id: &str, mensagem: &str) -> Vec<String> {'],
   ),
   buildSyntheticCase(
     'synthetic:ruby:class-structure',
@@ -393,11 +487,25 @@ const syntheticCases = [
     ['class Pedido', '@status = status'],
   ),
   buildSyntheticCase(
+    'synthetic:ruby:class-broadcast',
+    'ruby/class_broadcast.rb',
+    '#: cria class RoomBroadcaster com atributo usuarios_conectados_a_rooms e metodo broadcast\n',
+    ['comment_task'],
+    ['class RoomBroadcaster', '@usuarios_conectados_a_rooms = usuarios_conectados_a_rooms', 'def broadcast(room_id, mensagem)'],
+  ),
+  buildSyntheticCase(
     'synthetic:c:struct-structure',
     'c/struct_structure.c',
     '//: cria struct Pedido com id, nome e status\n',
     ['comment_task'],
     ['typedef struct Pedido {', 'const char* status;'],
+  ),
+  buildSyntheticCase(
+    'synthetic:c:class-broadcast',
+    'c/class_broadcast.c',
+    '//: cria class RoomBroadcaster com atributo usuarios_conectados_a_rooms e metodo broadcast\n',
+    ['comment_task'],
+    ['typedef int (*RoomBroadcasterBroadcastFn)(void* usuario, const char* mensagem);', 'int RoomBroadcaster_broadcast(RoomBroadcaster* self, const char* room_id, const char* mensagem) {'],
   ),
   buildSyntheticCase(
     'synthetic:c:block-comment-d20-function',
@@ -414,6 +522,13 @@ const syntheticCases = [
     ['local Billing = {}', 'function Billing.listar(itens)'],
   ),
   buildSyntheticCase(
+    'synthetic:lua:class-broadcast',
+    'lua/class_broadcast.lua',
+    '--: cria class RoomBroadcaster com atributo usuarios_conectados_a_rooms e metodo broadcast\n',
+    ['comment_task'],
+    ['local RoomBroadcaster = {}', 'function RoomBroadcaster:broadcast(room_id, mensagem)', 'self.usuarios_conectados_a_rooms[room_id] or {}'],
+  ),
+  buildSyntheticCase(
     'synthetic:vim:namespace-structure',
     'vim/namespace_structure.vim',
     '": cria namespace billing com funcoes listar e criar\n',
@@ -421,11 +536,25 @@ const syntheticCases = [
     ['function! s:billing_listar(itens) abort', 'function! s:billing_criar(payload) abort'],
   ),
   buildSyntheticCase(
+    'synthetic:vim:class-broadcast',
+    'vim/class_broadcast.vim',
+    '": cria class RoomBroadcaster com atributo usuarios_conectados_a_rooms e metodo broadcast\n',
+    ['comment_task'],
+    ['function! s:room_broadcaster_new(attrs) abort', 'function! s:room_broadcaster_broadcast(instancia, room_id, mensagem) abort'],
+  ),
+  buildSyntheticCase(
     'synthetic:shell:module-structure',
     'shell/module_structure.sh',
     '#: cria modulo billing com funcoes listar e criar\n',
     ['comment_task'],
     ['billing_listar() {', 'billing_criar() {'],
+  ),
+  buildSyntheticCase(
+    'synthetic:shell:class-broadcast',
+    'shell/class_broadcast.sh',
+    '#: cria class RoomBroadcaster com atributo usuarios_conectados_a_rooms e metodo broadcast\n',
+    ['comment_task'],
+    ['create_room_broadcaster() {', 'room_broadcaster_broadcast() {', 'local room_var="ROOM_$(printf'],
   ),
   buildSyntheticCase(
     'synthetic:terraform:terminal-task',
@@ -514,6 +643,14 @@ const snippetExpectations = {
     'def dados()',
     'random.randint(1, 20)',
   ],
+  'anget_test/python/app/02_unit_contract.py': [
+    'subject = load_subject()',
+    'self.assertEqual(subject.dados(), 20)',
+  ],
+  'anget_test/python/app/main.py': [
+    'subject = importlib.import_module("app.main")',
+    'self.assertEqual(subject.soma(5), 15)',
+  ],
   'anget_test/elixir/lib/01_d20_prompt.ex': [
     'def dados() do',
     'Enum.random(1..20)',
@@ -560,6 +697,9 @@ const snippetExpectations = {
   'anget_test/terraform/prompt.tf': [
     'terraform {',
     'required_version = ">= 1.5.0"',
+  ],
+  'anget_test/javascript/src/09_unit_behavior.js': [
+    'assert.equal(subject.soma_dois(5), 15);',
   ],
 };
 

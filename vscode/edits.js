@@ -343,8 +343,12 @@ function createEditRuntime(deps) {
 
     candidates.sort(compareFixCandidates);
 
+    const inlineCandidates = candidates.filter((issue) => resolveIssueAction(issue).op !== 'write_file');
+    const deferredWriteCandidates = candidates.filter((issue) => resolveIssueAction(issue).op === 'write_file');
+    const batch = inlineCandidates.length > 0 ? inlineCandidates : deferredWriteCandidates;
+
     let applied = false;
-    for (const issue of candidates) {
+    for (const issue of batch) {
       const changed = await applySnippetIssue(document, issue);
       if (changed) {
         applied = true;
