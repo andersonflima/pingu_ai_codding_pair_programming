@@ -15,10 +15,10 @@ const internalWorkspaceFile = path.join(
   'realtime-dev-agent-validation.code-workspace',
 );
 const internalDefaultFixtureFiles = [
-  'anget_test/javascript/src/01_comment_simple.js',
-  'anget_test/javascript/src/03_terminal_task.js',
-  'anget_test/javascript/src/04_context_blueprint.js',
-  'anget_test/javascript/src/06_unit_contract.js',
+  'anget_test/javascript/src/criar_funcao_soma.js',
+  'anget_test/javascript/src/criar_grafo_direcionado.js',
+  'anget_test/javascript/src/criar_bff_crud_usuarios.js',
+  'anget_test/javascript/src/refatorar_para_programacao_funcional.js',
   'anget_test/react/src/01_d20_prompt.tsx',
   'anget_test/ruby/lib/01_d20_prompt.rb',
   'anget_test/shell/01_comment_prompt.sh',

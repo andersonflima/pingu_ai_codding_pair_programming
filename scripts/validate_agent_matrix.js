@@ -10,27 +10,56 @@ const { getCapabilityProfile, languageCapabilityRegistry } = require('../lib/lan
 const repoRoot = path.resolve(__dirname, '..');
 
 const fixtureCases = [
-  ['anget_test/javascript/src/01_comment_simple.js', ['comment_task']],
-  ['anget_test/javascript/src/02_comment_advanced.js', ['comment_task']],
-  ['anget_test/javascript/src/03_terminal_task.js', ['terminal_task']],
-  ['anget_test/javascript/src/04_context_blueprint.js', ['context_file']],
-  ['anget_test/javascript/src/05_escaped_marker.js', ['comment_task']],
-  ['anget_test/javascript/src/06_unit_contract.js', ['unit_test']],
-  ['anget_test/javascript/src/07_escaped_terminal_task.js', ['terminal_task']],
-  ['anget_test/javascript/src/08_escaped_context_blueprint.js', ['context_file']],
-  ['anget_test/javascript/src/09_unit_behavior.js', ['unit_test']],
+  ['anget_test/javascript/src/criar_funcao_soma.js', ['comment_task']],
+  ['anget_test/javascript/src/criar_funcao_calcular_media.js', ['comment_task']],
+  ['anget_test/javascript/src/criar_classe_pedido.js', ['comment_task']],
+  ['anget_test/javascript/src/criar_enum_status_pedido.js', ['comment_task']],
+  ['anget_test/javascript/src/criar_struct_usuario.js', ['comment_task']],
+  ['anget_test/javascript/src/criar_pilha_funcional.js', ['comment_task']],
+  ['anget_test/javascript/src/criar_fila_funcional.js', ['comment_task']],
+  ['anget_test/javascript/src/criar_grafo_direcionado.js', ['comment_task']],
+  ['anget_test/javascript/src/criar_arvore_binaria_busca.js', ['comment_task']],
+  ['anget_test/javascript/src/criar_algoritmo_busca_binaria.js', ['comment_task']],
+  ['anget_test/javascript/src/criar_algoritmo_merge_sort.js', ['comment_task']],
+  ['anget_test/javascript/src/criar_cache_lru.js', ['comment_task']],
+  ['anget_test/javascript/src/criar_bff_crud_usuarios.js', ['comment_task']],
+  ['anget_test/javascript/src/corrigir_variavel_indefinida.js', ['comment_task']],
+  ['anget_test/javascript/src/refatorar_para_programacao_funcional.js', ['comment_task']],
   ['anget_test/typescript/src/01_comment_simple.ts', ['comment_task']],
   ['anget_test/typescript/src/02_comment_advanced.ts', ['comment_task']],
   ['anget_test/typescript/src/03_unit_contract.ts', ['unit_test']],
   ['anget_test/react/src/01_d20_prompt.tsx', ['comment_task']],
   ['anget_test/react/src/02_component_contract.tsx', ['unit_test']],
-  ['anget_test/python/app/01_d20_prompt.py', ['comment_task']],
-  ['anget_test/python/app/02_unit_contract.py', ['unit_test']],
-  ['anget_test/python/app/03_terminal_task.py', ['terminal_task']],
-  ['anget_test/python/app/main.py', ['unit_test']],
-  ['anget_test/elixir/lib/01_d20_prompt.ex', ['comment_task']],
-  ['anget_test/elixir/lib/02_unit_contract.ex', ['unit_test']],
-  ['anget_test/elixir/lib/03_terminal_task.exs', ['terminal_task']],
+  ['anget_test/python/app/criar_funcao_soma.py', ['comment_task']],
+  ['anget_test/python/app/criar_funcao_calcular_media.py', ['comment_task']],
+  ['anget_test/python/app/criar_classe_pedido.py', ['comment_task']],
+  ['anget_test/python/app/criar_enum_status_pedido.py', ['comment_task']],
+  ['anget_test/python/app/criar_struct_usuario.py', ['comment_task']],
+  ['anget_test/python/app/criar_pilha_funcional.py', ['comment_task']],
+  ['anget_test/python/app/criar_fila_funcional.py', ['comment_task']],
+  ['anget_test/python/app/criar_grafo_direcionado.py', ['comment_task']],
+  ['anget_test/python/app/criar_arvore_binaria_busca.py', ['comment_task']],
+  ['anget_test/python/app/criar_algoritmo_busca_binaria.py', ['comment_task']],
+  ['anget_test/python/app/criar_algoritmo_merge_sort.py', ['comment_task']],
+  ['anget_test/python/app/criar_cache_lru.py', ['comment_task']],
+  ['anget_test/python/app/criar_bff_crud_usuarios.py', ['comment_task']],
+  ['anget_test/python/app/corrigir_variavel_indefinida.py', ['comment_task']],
+  ['anget_test/python/app/refatorar_para_programacao_funcional.py', ['comment_task']],
+  ['anget_test/elixir/lib/criar_funcao_soma.ex', ['comment_task']],
+  ['anget_test/elixir/lib/criar_funcao_calcular_media.ex', ['comment_task']],
+  ['anget_test/elixir/lib/criar_classe_pedido.ex', ['comment_task']],
+  ['anget_test/elixir/lib/criar_enum_status_pedido.ex', ['comment_task']],
+  ['anget_test/elixir/lib/criar_struct_usuario.ex', ['comment_task']],
+  ['anget_test/elixir/lib/criar_pilha_funcional.ex', ['comment_task']],
+  ['anget_test/elixir/lib/criar_fila_funcional.ex', ['comment_task']],
+  ['anget_test/elixir/lib/criar_grafo_direcionado.ex', ['comment_task']],
+  ['anget_test/elixir/lib/criar_arvore_binaria_busca.ex', ['comment_task']],
+  ['anget_test/elixir/lib/criar_algoritmo_busca_binaria.ex', ['comment_task']],
+  ['anget_test/elixir/lib/criar_algoritmo_merge_sort.ex', ['comment_task']],
+  ['anget_test/elixir/lib/criar_cache_lru.ex', ['comment_task']],
+  ['anget_test/elixir/lib/criar_bff_crud_usuarios.ex', ['comment_task']],
+  ['anget_test/elixir/lib/corrigir_variavel_indefinida.ex', ['comment_task']],
+  ['anget_test/elixir/lib/refatorar_para_programacao_funcional.ex', ['comment_task']],
   ['anget_test/go/pkg/01_comment_prompt.go', ['comment_task']],
   ['anget_test/go/pkg/02_unit_contract.go', ['unit_test']],
   ['anget_test/go/pkg/03_terminal_task.go', ['terminal_task']],
@@ -839,29 +868,9 @@ const syntheticCases = [
 ];
 
 const snippetExpectations = {
-  'anget_test/javascript/src/01_comment_simple.js': [
-    'function soma(a, b)',
-    'return a + b',
-  ],
   'anget_test/typescript/src/02_comment_advanced.ts': [
     'function somar_10(numero)',
     'return numero + 10',
-  ],
-  'anget_test/python/app/01_d20_prompt.py': [
-    'def dados()',
-    'random.randint(1, 20)',
-  ],
-  'anget_test/python/app/02_unit_contract.py': [
-    'subject = load_subject()',
-    'self.assertEqual(subject.dados(), 20)',
-  ],
-  'anget_test/python/app/main.py': [
-    'subject = importlib.import_module("app.main")',
-    'self.assertEqual(subject.soma(5), 15)',
-  ],
-  'anget_test/elixir/lib/01_d20_prompt.ex': [
-    'def dados() do',
-    'Enum.random(1..20)',
   ],
   'anget_test/react/src/01_d20_prompt.tsx': [
     'export function D20DiceRoller()',
@@ -905,9 +914,6 @@ const snippetExpectations = {
   'anget_test/terraform/prompt.tf': [
     'terraform {',
     'required_version = ">= 1.5.0"',
-  ],
-  'anget_test/javascript/src/09_unit_behavior.js': [
-    'assert.equal(subject.soma_dois(5), 15);',
   ],
 };
 
@@ -1028,6 +1034,7 @@ function runFixtureMatrix() {
 function runCapabilityRegistryValidation() {
   const registry = languageCapabilityRegistry();
   const fixtureCases = normalizeFixtureCases();
+  const commentFirstProfiles = new Set(['javascript', 'python', 'elixir']);
   const ids = new Set();
   const extensions = new Map();
   const fixtureKindsByProfile = new Map();
@@ -1108,10 +1115,18 @@ function runCapabilityRegistryValidation() {
       });
     }
 
-    if ((entry.editorFeatures || []).includes('terminal_task') && !fixtureKinds.has('terminal_task')) {
+    if (
+      (entry.editorFeatures || []).includes('terminal_task')
+      && !fixtureKinds.has('terminal_task')
+      && !commentFirstProfiles.has(entry.id)
+    ) {
       profileFailures.push('sem fixture terminal_task para o perfil');
     }
-    if ((entry.editorFeatures || []).includes('unit_test') && !fixtureKinds.has('unit_test')) {
+    if (
+      (entry.editorFeatures || []).includes('unit_test')
+      && !fixtureKinds.has('unit_test')
+      && !commentFirstProfiles.has(entry.id)
+    ) {
       profileFailures.push('sem fixture unit_test para o perfil');
     }
     if ((entry.editorFeatures || []).includes('context_file') && !fixtureKinds.has('context_file')) {

@@ -1,1 +1,0 @@
-// \s: funcao soma
