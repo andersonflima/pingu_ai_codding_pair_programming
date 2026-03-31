@@ -114,6 +114,12 @@ const syntheticCases = [
   ...syntheticTerminalCases,
   ...syntheticNativeBlueprintScaffoldCases,
   buildSyntheticCase(
+    'synthetic:javascript:triple-colon-context',
+    'javascript/context_triple_colon.js',
+    '//::: contexto de projeto para billing\n',
+    ['context_file'],
+  ),
+  buildSyntheticCase(
     'synthetic:elixir:public-contracts',
     'elixir/public_contracts.ex',
     [
@@ -319,11 +325,28 @@ const syntheticCases = [
     ['const pedido = {', 'id: 1,', 'status: "ativo",'],
   ),
   buildSyntheticCase(
-    'synthetic:javascript:block-comment-d20-function',
+    'synthetic:javascript:double-colon-d20-function',
     'javascript/block_comment_d20.js',
-    '/* funcao dice que retorna um numero random de um dado de 20 lados */\n',
+    '//:: funcao dice que retorna um numero random de um dado de 20 lados\n',
     ['comment_task'],
     ['function dice()', 'Math.floor(Math.random() * 20) + 1'],
+  ),
+  buildSyntheticCase(
+    'synthetic:javascript:jsdoc-not-actionable',
+    'javascript/jsdoc_not_actionable.js',
+    [
+      '/**',
+      ' * Soma dois numeros para o dominio de faturamento.',
+      ' * @param {number} a',
+      ' * @param {number} b',
+      ' */',
+      'function soma(a, b) {',
+      '  return a + b;',
+      '}',
+    ].join('\n'),
+    [],
+    [],
+    ['comment_task'],
   ),
   buildSyntheticCase(
     'synthetic:python:enum-structure',
@@ -522,9 +545,9 @@ const syntheticCases = [
     ['typedef int (*RoomBroadcasterBroadcastFn)(void* usuario, const char* mensagem);', 'int RoomBroadcaster_broadcast(RoomBroadcaster* self, const char* room_id, const char* mensagem) {'],
   ),
   buildSyntheticCase(
-    'synthetic:c:block-comment-d20-function',
+    'synthetic:c:double-colon-d20-function',
     'c/block_comment_d20.c',
-    '/* funcao dice que retorna um numero random de um dado de 20 lados */\n',
+    '//:: funcao dice que retorna um numero random de um dado de 20 lados\n',
     ['comment_task', 'missing_dependency'],
     ['int dice(void) {', 'return (rand() % 20) + 1;', '#include <stdlib.h>'],
   ),

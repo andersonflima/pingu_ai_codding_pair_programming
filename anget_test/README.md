@@ -4,11 +4,11 @@ Esta pasta serve para validar manualmente e por script as capacidades do Realtim
 
 Cobertura desta suite:
 
-- comentarios acionaveis simples com `:`
-- comentarios acionaveis avancados com `:`
-- comentarios com marcador escapado `\s:`, `\s*` e `\s**`
+- comentarios acionaveis simples com `:` e `::`
+- comentarios acionaveis avancados com `:` e `::`
+- comentarios com marcador escapado `\s:`, `\s::`, `\s*`, `\s**` e `\s:::`
 - acoes de terminal com `*`
-- criacao de contexto e blueprint com `**`
+- criacao de contexto e blueprint com `**` e `:::`
 - geracao automatica de testes quando existir `tests/` ou `test/`
 - arquivos estruturados como Dockerfile, compose, Markdown, Mermaid e Terraform
 - cenarios de correcao sintatica automatica
@@ -27,7 +27,7 @@ Como validar:
 3. Verifique se o comentario foi removido e se a acao esperada foi aplicada.
 4. Para arquivos de contrato, confirme se o agente gera o teste dentro da pasta `tests/` ou `test/`.
 5. Para `*`, confirme se o terminal abre e executa o comando inferido.
-6. Para `**`, confirme se o agente cria `.realtime-dev-agent/contexts/` e atualiza `.gitignore`.
+6. Para `**` ou `:::`, confirme se o agente cria `.realtime-dev-agent/contexts/` e atualiza `.gitignore`.
 
 Fluxo recomendado no VS Code:
 

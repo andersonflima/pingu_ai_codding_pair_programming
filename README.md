@@ -51,12 +51,18 @@ O projeto funciona hoje em `Vim/Neovim`, `VS Code` e `Zed`, com runtime local e 
 
 ## Tipos de comentario acionavel
 
-### `:` gera ou ajusta codigo
+### `:` ou `::` gera ou ajusta codigo
 
 Use o prefixo de comentario da linguagem seguido de `:`:
 
 ```javascript
 //: funcao soma
+```
+
+Em linguagens com comentario `//`, o formato recomendado para evitar ambiguidade com bloco e JSDoc e `//::`:
+
+```javascript
+//:: funcao soma
 ```
 
 ```python
@@ -67,16 +73,22 @@ Use o prefixo de comentario da linguagem seguido de `:`:
 --: cria modulo billing com funcoes listar e criar
 ```
 
-Em linguagens com comentario de bloco, o Pingu tambem entende:
+Para comentario de bloco, use marcador explicito dentro do bloco (`/*::`), em vez de texto livre:
 
 ```c
-/* funcao dice que retorna um numero random de um dado de 20 lados */
+/*:: funcao dice que retorna um numero random de um dado de 20 lados */
 ```
 
-### `**` cria contexto persistente e pode gerar scaffold
+### `**` ou `:::` cria contexto persistente e pode gerar scaffold
 
 ```javascript
 // ** bff para crud de usuario
+```
+
+Formato recomendado em comentarios com `//`:
+
+```javascript
+//::: bff para crud de usuario
 ```
 
 ```lua
@@ -112,8 +124,10 @@ Quando o blueprint descreve um fluxo de BFF CRUD, o scaffold nativo hoje e mais 
 Se voce quiser manter o comentario literal e impedir a acao do agente, use as variantes escapadas:
 
 - `\s:`
+- `\s::`
 - `\s*`
 - `\s**`
+- `\s:::`
 
 ## Exemplos reais de uso e output
 
@@ -146,12 +160,12 @@ O que melhora aqui:
 - a assinatura vem coerente com a intencao
 - a documentacao minima de manutencao ja entra junto
 
-### 2. Funcao com comentario de bloco em C
+### 2. Funcao com marcador explicito em C
 
 Entrada:
 
 ```c
-/* funcao dice que retorna um numero random de um dado de 20 lados */
+//:: funcao dice que retorna um numero random de um dado de 20 lados
 ```
 
 Output gerado no arquivo:
@@ -171,7 +185,7 @@ Output complementar de dependencia:
 
 O que melhora aqui:
 
-- o comentario de bloco passa a funcionar como pedido acionavel
+- o gatilho fica explicito e menos sujeito a falso positivo em comentario livre
 - o retorno fica consistente com a semantica de `d20`
 - o agente detecta o `#include` faltante
 
@@ -180,7 +194,7 @@ O que melhora aqui:
 Entrada:
 
 ```javascript
-// ** bff para crud de usuario
+//::: bff para crud de usuario
 ```
 
 Outputs tipicos:
