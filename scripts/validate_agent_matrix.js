@@ -438,6 +438,20 @@ const syntheticCases = [
     ['class RoomBroadcaster:', 'self.usuarios_conectados_a_rooms = usuarios_conectados_a_rooms', 'def broadcast(self, room_id, mensagem):'],
   ),
   buildSyntheticCase(
+    'synthetic:python:class-realtime-chat',
+    'python/class_realtime_chat.py',
+    '#: class broadcast para fazer realtime chat com varios usuarios podendo estar na mesma room\n',
+    ['comment_task'],
+    ['class RoomBroadcaster:', 'self.usuarios_conectados_a_rooms = usuarios_conectados_a_rooms or {}', 'def join_room(self, room_id, usuario):', 'def leave_room(self, room_id, usuario):', 'def broadcast(self, room_id, mensagem):'],
+  ),
+  buildSyntheticCase(
+    'synthetic:javascript:class-realtime-chat',
+    'javascript/class_realtime_chat.js',
+    '//: class broadcast para fazer realtime chat com varios usuarios podendo estar na mesma room\n',
+    ['comment_task'],
+    ['export class RoomBroadcaster {', 'joinRoom(roomId, usuario) {', 'leaveRoom(roomId, usuario) {', 'broadcast(roomId, mensagem) {'],
+  ),
+  buildSyntheticCase(
     'synthetic:elixir:module-structure',
     'elixir/module_structure.ex',
     '#: cria modulo Billing com funcoes listar e criar\n',
@@ -555,6 +569,30 @@ const syntheticCases = [
     '#: cria class RoomBroadcaster com atributo usuarios_conectados_a_rooms e metodo broadcast\n',
     ['comment_task'],
     ['create_room_broadcaster() {', 'room_broadcaster_broadcast() {', 'local room_var="ROOM_$(printf'],
+  ),
+  buildSyntheticCase(
+    'synthetic:javascript:ai-comment-task',
+    'javascript/ai_comment_task.js',
+    '//: criar funcao gerado via ai\n',
+    ['comment_task'],
+    ['function ai_generated_task()', 'return 42;'],
+    [],
+    {
+      PINGU_COMMENT_TASK_AI_CMD: `${JSON.stringify(process.execPath)} ${JSON.stringify(path.join(repoRoot, 'scripts', 'mock_comment_task_ai.js'))}`,
+      PINGU_COMMENT_TASK_AI_TIMEOUT_MS: '4000',
+    },
+  ),
+  buildSyntheticCase(
+    'synthetic:python:ai-comment-task-with-context',
+    path.join(repoRoot, 'anget_test', 'ai_context_python', 'app', 'ai_context.py'),
+    '#: criar funcao gerado com contexto ativo\n',
+    ['comment_task'],
+    ['def criar_usuario(payload):', '"entidade": "usuario"'],
+    [],
+    {
+      PINGU_COMMENT_TASK_AI_CMD: `${JSON.stringify(process.execPath)} ${JSON.stringify(path.join(repoRoot, 'scripts', 'mock_comment_task_ai.js'))}`,
+      PINGU_COMMENT_TASK_AI_TIMEOUT_MS: '4000',
+    },
   ),
   buildSyntheticCase(
     'synthetic:terraform:terminal-task',
@@ -714,19 +752,48 @@ function buildSyntheticCase(
   expectedKinds,
   expectedSnippetIncludes = [],
   forbiddenKinds = [],
+  envOverrides = null,
 ) {
   return {
     id,
-    sourcePath: path.join(repoRoot, '__synthetic__', relativeSourcePath),
+    sourcePath: path.isAbsolute(relativeSourcePath)
+      ? relativeSourcePath
+      : path.join(repoRoot, '__synthetic__', relativeSourcePath),
     content,
     expectedKinds,
     expectedSnippetIncludes,
     forbiddenKinds,
+    envOverrides,
   };
 }
 
-function analyzeFixtureSource(sourcePath, content) {
-  return analyzeText(sourcePath, content, { maxLineLength: 120 });
+function withTemporaryEnvironment(overrides, callback) {
+  const entries = Object.entries(overrides || {});
+  if (entries.length === 0) {
+    return callback();
+  }
+
+  const previousValues = new Map(entries.map(([key]) => [key, process.env[key]]));
+  entries.forEach(([key, value]) => {
+    process.env[key] = value;
+  });
+
+  try {
+    return callback();
+  } finally {
+    previousValues.forEach((value, key) => {
+      if (typeof value === 'undefined') {
+        delete process.env[key];
+        return;
+      }
+      process.env[key] = value;
+    });
+  }
+}
+
+function analyzeFixtureSource(sourcePath, content, envOverrides = null) {
+  return withTemporaryEnvironment(envOverrides, () =>
+    analyzeText(sourcePath, content, { maxLineLength: 120 }));
 }
 
 function normalizeFixtureCases() {
@@ -743,7 +810,7 @@ function normalizeFixtureCases() {
 
 function runFixtureMatrix() {
   const failures = normalizeFixtureCases().reduce((accumulator, fixture) => {
-    const issues = analyzeFixtureSource(fixture.sourcePath, fixture.content);
+    const issues = analyzeFixtureSource(fixture.sourcePath, fixture.content, fixture.envOverrides || null);
     const kinds = new Set(issues.map((issue) => issue.kind));
     const missingKinds = fixture.expectedKinds.filter((kind) => !kinds.has(kind));
     const forbiddenKinds = fixture.forbiddenKinds || [];

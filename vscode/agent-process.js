@@ -1,6 +1,6 @@
 'use strict';
 
-function runAgent({ spawn, nodePath, scriptPath, sourcePath, text, maxLineLength, cwd }) {
+function runAgent({ spawn, nodePath, scriptPath, sourcePath, text, maxLineLength, cwd, env }) {
   return new Promise((resolve, reject) => {
     const args = [
       scriptPath,
@@ -14,6 +14,7 @@ function runAgent({ spawn, nodePath, scriptPath, sourcePath, text, maxLineLength
     ];
     const child = spawn(nodePath, args, {
       cwd,
+      env: env || process.env,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 

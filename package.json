@@ -64,6 +64,16 @@
           "default": 120,
           "description": "Limite maximo de caracteres considerado pela analise."
         },
+        "realtimeDevAgent.commentTaskAiCommand": {
+          "type": "string",
+          "default": "",
+          "description": "Comando opcional para geracao de comment_task via IA. O comando recebe JSON via stdin e deve responder JSON com snippet."
+        },
+        "realtimeDevAgent.commentTaskAiTimeoutMs": {
+          "type": "number",
+          "default": 4000,
+          "description": "Tempo maximo em milissegundos para a etapa opcional de IA em comment_task."
+        },
         "realtimeDevAgent.realtimeOnSave": {
           "type": "boolean",
           "default": true,

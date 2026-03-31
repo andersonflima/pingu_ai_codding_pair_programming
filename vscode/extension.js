@@ -86,6 +86,17 @@ function activate(context) {
       : path.join(context.extensionPath, configured);
   }
 
+  function resolveAgentEnvironment(uri) {
+    const config = configuration(uri);
+    const aiCommand = String(config.get('commentTaskAiCommand', '') || '').trim();
+    const aiTimeoutMs = Number(config.get('commentTaskAiTimeoutMs', 4000));
+    return {
+      ...process.env,
+      ...(aiCommand ? { PINGU_COMMENT_TASK_AI_CMD: aiCommand } : {}),
+      PINGU_COMMENT_TASK_AI_TIMEOUT_MS: String(Number.isFinite(aiTimeoutMs) && aiTimeoutMs > 0 ? aiTimeoutMs : 4000),
+    };
+  }
+
   let editRuntime;
   let terminalRuntime;
   let codeActionRuntime;
@@ -111,6 +122,7 @@ function activate(context) {
         text: document.getText(),
         maxLineLength,
         cwd,
+        env: resolveAgentEnvironment(document.uri),
       });
       const autoFixApplied = await editRuntime.applyAutoFixes(document, issues);
       if (autoFixApplied) {
