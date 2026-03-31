@@ -5,6 +5,10 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync, spawn } = require('child_process');
 const { runEditorParityContract } = require('./editor_parity_contract');
+const {
+  canonicalVsixPath,
+  legacyVsixPath,
+} = require('./vscode_package_meta');
 
 const repoRoot = path.resolve(__dirname, '..');
 
@@ -139,20 +143,31 @@ function runScriptCheck(name, scriptFile) {
 }
 
 function runVsCodePackage() {
-  const outFile = path.join(repoRoot, 'pingu-dev-agent.vsix');
-  if (fs.existsSync(outFile)) {
-    fs.rmSync(outFile, { force: true });
+  if (fs.existsSync(canonicalVsixPath)) {
+    fs.rmSync(canonicalVsixPath, { force: true });
+  }
+  if (fs.existsSync(legacyVsixPath)) {
+    fs.rmSync(legacyVsixPath, { force: true });
   }
   const result = run('npm', ['run', 'package:vscode']);
   const summary = {
     name: 'vscode-package',
-    ok: result.status === 0,
+    ok: result.status === 0 && fs.existsSync(canonicalVsixPath) && !fs.existsSync(legacyVsixPath),
     status: result.status,
     stdout: result.stdout,
     stderr: result.stderr,
   };
-  if (fs.existsSync(outFile)) {
-    fs.rmSync(outFile, { force: true });
+  if (!summary.ok && !fs.existsSync(canonicalVsixPath)) {
+    summary.stderr = `${summary.stderr}\nVSIX canonica nao encontrada em ${canonicalVsixPath}`.trim();
+  }
+  if (!summary.ok && fs.existsSync(legacyVsixPath)) {
+    summary.stderr = `${summary.stderr}\nVSIX legada nao deveria existir em ${legacyVsixPath}`.trim();
+  }
+  if (fs.existsSync(canonicalVsixPath)) {
+    fs.rmSync(canonicalVsixPath, { force: true });
+  }
+  if (fs.existsSync(legacyVsixPath)) {
+    fs.rmSync(legacyVsixPath, { force: true });
   }
   return summary;
 }

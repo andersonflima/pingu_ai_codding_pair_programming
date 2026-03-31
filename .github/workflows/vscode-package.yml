@@ -21,16 +21,16 @@ jobs:
           node-version: '20'
 
       - name: Build VSIX
-        run: npx --yes @vscode/vsce package --out realtime-dev-agent.vsix
+        run: npm run package:vscode
 
       - name: Upload VSIX artifact
         uses: actions/upload-artifact@v4
         with:
-          name: realtime-dev-agent-vsix
-          path: realtime-dev-agent.vsix
+          name: pingu-dev-agent-vsix
+          path: pingu-dev-agent.vsix
 
       - name: Publish VSIX to GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: realtime-dev-agent.vsix
+          files: pingu-dev-agent.vsix

@@ -133,7 +133,7 @@
   "scripts": {
     "open:vscode:validation": "node scripts/open_vscode_validation.js",
     "open:vscode:external-validation": "node scripts/open_vscode_validation.js --suite-dir \"$HOME/snippets/agent_test\"",
-    "package:vscode": "npx @vscode/vsce package --out pingu-dev-agent.vsix",
+    "package:vscode": "node scripts/package_vscode.js",
     "rebuild:external-agent-test": "node scripts/rebuild_external_agent_test.js",
     "validate:matrix": "node scripts/validate_agent_matrix.js",
     "validate:editors": "node scripts/validate_editor_integrations.js",
