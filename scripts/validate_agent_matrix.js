@@ -154,7 +154,7 @@ const syntheticCases = [
       'end',
     ].join('\n'),
     ['undefined_variable'],
-    ['numero + 1'],
+    ['numero + 1', 'pingu - correction : corrigido nome da variavel numeroo para numero'],
   ),
   buildSyntheticCase(
     'synthetic:elixir:functional-reassignment',
@@ -211,7 +211,7 @@ const syntheticCases = [
       '}',
     ].join('\n'),
     ['undefined_variable'],
-    ['return a + dois;'],
+    ['return a + dois;', 'pingu - correction : corrigido nome da variavel doiis para dois'],
   ),
   buildSyntheticCase(
     'synthetic:c:undefined-variable',
@@ -223,7 +223,47 @@ const syntheticCases = [
       '}',
     ].join('\n'),
     ['undefined_variable'],
-    ['return a + dois;'],
+    ['return a + dois;', 'pingu - correction : corrigido nome da variavel doiis para dois'],
+  ),
+  buildSyntheticCase(
+    'synthetic:javascript:method-inside-class',
+    'javascript/method_inside_class.js',
+    [
+      'class Main {',
+      '  //:: criar metodo soma que receba a e b e retorne a + b',
+      '}',
+    ].join('\n'),
+    ['comment_task'],
+    ['soma(a, b) {'],
+    [],
+    null,
+    ['function soma(a, b) {'],
+  ),
+  buildSyntheticCase(
+    'synthetic:python:method-inside-class',
+    'python/method_inside_class.py',
+    [
+      'class Main:',
+      '    #:: criar metodo soma que receba a e b e retorne a + b',
+    ].join('\n'),
+    ['comment_task'],
+    ['def soma(self, a, b):'],
+  ),
+  buildSyntheticCase(
+    'synthetic:javascript:non-actionable-correction-format',
+    'javascript/non_actionable_correction_format.js',
+    '//:: corrigir o metodo abaixo e adicionar comentario no formato:\n',
+    [],
+    [],
+    ['comment_task'],
+  ),
+  buildSyntheticCase(
+    'synthetic:python:non-actionable-pingu-correction',
+    'python/non_actionable_pingu_correction.py',
+    '#:: pingu - correction : corrigido uso de user para u, pois o iterador valido e u\n',
+    [],
+    [],
+    ['comment_task'],
   ),
   buildSyntheticCase(
     'synthetic:javascript:function-doc',
@@ -777,6 +817,7 @@ function buildSyntheticCase(
   expectedSnippetIncludes = [],
   forbiddenKinds = [],
   envOverrides = null,
+  forbiddenSnippetIncludes = [],
 ) {
   return {
     id,
@@ -788,6 +829,7 @@ function buildSyntheticCase(
     expectedSnippetIncludes,
     forbiddenKinds,
     envOverrides,
+    forbiddenSnippetIncludes,
   };
 }
 
@@ -840,12 +882,19 @@ function runFixtureMatrix() {
     const forbiddenKinds = fixture.forbiddenKinds || [];
     const presentForbiddenKinds = forbiddenKinds.filter((kind) => kinds.has(kind));
     const expectedSnippets = fixture.expectedSnippetIncludes || [];
+    const forbiddenSnippetIncludes = fixture.forbiddenSnippetIncludes || [];
     const snippetPayload = issues
       .map((issue) => String(issue.snippet || ''))
       .filter((snippet) => snippet.length > 0)
       .join('\n---\n');
     const missingSnippetIncludes = expectedSnippets.filter((snippet) => !snippetPayload.includes(snippet));
-    if (missingKinds.length === 0 && missingSnippetIncludes.length === 0 && presentForbiddenKinds.length === 0) {
+    const presentForbiddenSnippetIncludes = forbiddenSnippetIncludes.filter((snippet) => snippetPayload.includes(snippet));
+    if (
+      missingKinds.length === 0
+      && missingSnippetIncludes.length === 0
+      && presentForbiddenKinds.length === 0
+      && presentForbiddenSnippetIncludes.length === 0
+    ) {
       return accumulator;
     }
 
@@ -858,6 +907,8 @@ function runFixtureMatrix() {
       missingKinds,
       missingSnippetIncludes,
       presentForbiddenKinds,
+      forbiddenSnippetIncludes,
+      presentForbiddenSnippetIncludes,
     });
   }, []);
 
