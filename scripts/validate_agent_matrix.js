@@ -250,6 +250,7 @@ const syntheticCases = [
     ].join('\n'),
     ['function_doc'],
     [
+      '# ---',
       '#   a (int):',
       '#   int:',
     ],
