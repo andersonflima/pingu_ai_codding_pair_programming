@@ -307,6 +307,7 @@ function buildIssueFix(currentPayload) {
   const issueKind = String(issue.kind || '');
   const source = String(currentPayload.content || '');
   const lineText = String(currentPayload.issueContext && currentPayload.issueContext.lineText || '');
+  const lowerExtension = String(currentPayload.extension || path.extname(String(currentPayload.sourceFile || '')) || '').toLowerCase();
 
   if (issueKind === 'moduledoc') {
     return {
@@ -341,15 +342,17 @@ function buildIssueFix(currentPayload) {
     const unknown = extractBetween(issue.message, "'", "'");
     const replacement = resolveUndefinedVariableReplacement(currentPayload, unknown, extractBetween(issue.suggestion, "'", "'"));
     const fixedLine = replaceToken(lineText, unknown, replacement);
+    const commentPrefix = commentPrefixForExtension(lowerExtension);
+    const indent = ' '.repeat(countLeadingSpaces(lineText));
     const rewritten = replaceLineInSource(source, Number(issue.line || 1), [
-      `    # pingu - correction : corrigido nome da variavel ${unknown} para ${replacement}, pois ${replacement} e o identificador valido no escopo atual.`,
+      `${indent}${commentPrefix} pingu - correction : corrigido nome da variavel ${unknown} para ${replacement}, pois ${replacement} e o identificador valido no escopo atual.`,
       fixedLine,
     ]);
     return rewriteFileResult(currentPayload, rewritten);
   }
 
   if (issueKind === 'debug_output') {
-    const cleanedLine = inferDebugReplacementLine(source, lineText);
+    const cleanedLine = inferDebugReplacementLine(source, lineText, lowerExtension);
     const rewritten = replaceLineInSource(source, Number(issue.line || 1), [cleanedLine]);
     return rewriteFileResult(currentPayload, rewritten);
   }
@@ -641,6 +644,14 @@ function replaceLineInSource(source, lineNumber, replacementLines) {
 }
 
 function rewriteCalculatorContextContract(currentPayload) {
+  const lowerExtension = String(currentPayload.extension || path.extname(String(currentPayload.sourceFile || '')) || '').toLowerCase();
+  if (isJavaScriptExtension(lowerExtension)) {
+    return rewriteJavaScriptCalculatorContextContract(currentPayload);
+  }
+  return rewriteElixirCalculatorContextContract(currentPayload);
+}
+
+function rewriteElixirCalculatorContextContract(currentPayload) {
   const source = String(currentPayload.content || '');
   const issue = currentPayload.issue || {};
   const preferredExpression = String(issue.contextHint && issue.contextHint.preferredReturnExpression || '').trim();
@@ -686,6 +697,57 @@ function rewriteCalculatorContextContract(currentPayload) {
   return source;
 }
 
+function rewriteJavaScriptCalculatorContextContract(currentPayload) {
+  const source = String(currentPayload.content || '');
+  const issue = currentPayload.issue || {};
+  const preferredExpression = String(issue.contextHint && issue.contextHint.preferredReturnExpression || '').trim();
+  const lines = source.split('\n');
+  const startIndex = Math.max(0, Number(issue.line || 1) - 1);
+
+  let depth = 0;
+  let functionStart = -1;
+  let functionEnd = -1;
+  for (let index = startIndex; index < lines.length; index += 1) {
+    const current = String(lines[index] || '');
+    if (functionStart < 0 && (
+      /^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+[A-Za-z_][A-Za-z0-9_]*\s*\([^)]*\)\s*\{/.test(current)
+      || /^\s*(?:export\s+)?(?:const|let|var)\s+[A-Za-z_][A-Za-z0-9_]*\s*=\s*(?:async\s*)?\([^)]*\)\s*=>\s*\{/.test(current)
+      || (/^\s*(?:async\s+)?[A-Za-z_][A-Za-z0-9_]*\s*\([^)]*\)\s*\{/.test(current) && !/^\s*(?:if|for|while|switch|catch|with)\b/.test(current))
+    )) {
+      functionStart = index;
+      depth = blockDeltaJavaScript(current);
+      continue;
+    }
+    if (functionStart >= 0) {
+      depth += blockDeltaJavaScript(current);
+      if (depth <= 0 && /^\s*}\s*;?\s*$/.test(current.trim())) {
+        functionEnd = index;
+        break;
+      }
+    }
+  }
+
+  if (functionStart < 0 || functionEnd < 0) {
+    return source;
+  }
+
+  const expression = preferredExpression || inferExpressionFromJavaScriptFunction(lines.slice(functionStart, functionEnd + 1));
+  if (!expression) {
+    return source;
+  }
+
+  for (let index = functionEnd - 1; index > functionStart; index -= 1) {
+    const trimmed = String(lines[index] || '').trim();
+    if (/^(?:return\s+)?(?:true|false)\s*;?\s*$/.test(trimmed)) {
+      const indentation = String(lines[index] || '').match(/^\s*/);
+      lines[index] = `${indentation ? indentation[0] : ''}return ${expression};`;
+      return lines.join('\n');
+    }
+  }
+
+  return source;
+}
+
 function inferExpressionFromFunction(functionLines) {
   const lines = Array.isArray(functionLines) ? functionLines : [];
   for (let index = lines.length - 1; index >= 0; index -= 1) {
@@ -701,7 +763,38 @@ function inferExpressionFromFunction(functionLines) {
   return '';
 }
 
-function inferDebugReplacementLine(source, lineText) {
+function inferExpressionFromJavaScriptFunction(functionLines) {
+  const lines = Array.isArray(functionLines) ? functionLines : [];
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const current = String(lines[index] || '').trim();
+    const assignment = current.match(/^(?:const|let|var)\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+);?$/);
+    if (!assignment) {
+      continue;
+    }
+    if (/[+\-*/]/.test(String(assignment[2] || ''))) {
+      return assignment[1];
+    }
+  }
+  return '';
+}
+
+function inferDebugReplacementLine(source, lineText, extension) {
+  const lowerExtension = String(extension || '').toLowerCase();
+  if (isJavaScriptExtension(lowerExtension)) {
+    const debugCallMatch = String(lineText || '').match(/\b(?:console\.(?:log|debug|info|warn|error)|dbg)\((.*)\)\s*;?\s*$/);
+    if (debugCallMatch && String(debugCallMatch[1] || '').trim()) {
+      return `${' '.repeat(countLeadingSpaces(lineText))}return ${String(debugCallMatch[1]).trim()};`;
+    }
+
+    const returnLine = String(source || '')
+      .split('\n')
+      .find((line) => /^\s*return\b/.test(String(line || '').trim()));
+    if (returnLine) {
+      return returnLine;
+    }
+    return `${' '.repeat(countLeadingSpaces(lineText))}return undefined;`;
+  }
+
   const variableMatch = String(lineText || '').match(/\(([^)]+)\)/);
   if (variableMatch && variableMatch[1]) {
     return `${' '.repeat(countLeadingSpaces(lineText))}${String(variableMatch[1]).trim()}`;
@@ -721,6 +814,22 @@ function resolveUndefinedVariableReplacement(currentPayload, unknown, suggested)
   const contextLines = currentPayload.issueContext && Array.isArray(currentPayload.issueContext.surroundingLines)
     ? currentPayload.issueContext.surroundingLines.map((entry) => String(entry.text || ''))
     : [];
+  const arrowBindingLine = contextLines.find((line) => /=>/.test(line));
+  if (arrowBindingLine) {
+    const tupleMatch = arrowBindingLine.match(/\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?:,\s*([A-Za-z_][A-Za-z0-9_]*)\s*)?\)\s*=>/);
+    if (tupleMatch) {
+      const tupleCandidate = [tupleMatch[1], tupleMatch[2]].find((candidate) => candidate && candidate !== unknown);
+      if (tupleCandidate) {
+        return tupleCandidate;
+      }
+    }
+
+    const singleMatch = arrowBindingLine.match(/\b([A-Za-z_][A-Za-z0-9_]*)\s*=>/);
+    if (singleMatch && singleMatch[1] && singleMatch[1] !== unknown) {
+      return singleMatch[1];
+    }
+  }
+
   const lambdaBindingLine = contextLines.find((line) => /\bfn\s+[a-z_][a-zA-Z0-9_]*\s*->/.test(line));
   if (lambdaBindingLine) {
     const match = lambdaBindingLine.match(/\bfn\s+([a-z_][a-zA-Z0-9_]*)\s*->/);
@@ -792,6 +901,17 @@ function pluralize(value) {
   return `${source}s`;
 }
 
+function commentPrefixForExtension(extensionValue) {
+  const normalized = String(extensionValue || '').toLowerCase();
+  if (isJavaScriptExtension(normalized)) {
+    return '//';
+  }
+  if (normalized === '.lua') {
+    return '--';
+  }
+  return '#';
+}
+
 function resolveContextMetadata(sourceExt) {
   const normalized = String(sourceExt || '').toLowerCase();
   if (isJavaScriptExtension(normalized)) {
@@ -829,6 +949,17 @@ function blockDelta(line) {
   const source = String(line || '');
   const opens = [...source.matchAll(/\b(do|fn)\b/g)].length;
   const closes = [...source.matchAll(/\bend\b/g)].length;
+  return opens - closes;
+}
+
+function blockDeltaJavaScript(line) {
+  const source = String(line || '')
+    .replace(/\/\/.*$/, '')
+    .replace(/"(?:\\.|[^"\\])*"/g, '')
+    .replace(/'(?:\\.|[^'\\])*'/g, '')
+    .replace(/`(?:\\.|[^`\\])*`/g, '');
+  const opens = [...source.matchAll(/\{/g)].length;
+  const closes = [...source.matchAll(/\}/g)].length;
   return opens - closes;
 }
 

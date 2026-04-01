@@ -150,9 +150,11 @@
     "validate:matrix:node": "node scripts/validate_node_matrix.js",
     "validate:snippets:elixir": "node scripts/validate_elixir_snippets_workspace.js",
     "validate:checkup:elixir": "node scripts/validate_elixir_real_code_checkup.js",
+    "validate:checkup:node": "node scripts/validate_node_real_code_checkup.js",
     "validate:intent-contract": "node scripts/validate_intent_contract.js",
     "validate:vscode:autofix-guard": "node scripts/validate_vscode_autofix_guard.js",
     "validate:quality-gate:elixir": "npm run validate:snippets:elixir && npm run validate:matrix && npm run validate:intent-contract && npm run validate:checkup:elixir && npm run validate:vscode:autofix-guard",
+    "validate:quality-gate:javascript": "PINGU_ACTIVE_LANGUAGE_IDS=elixir,javascript npm run validate:matrix:node && PINGU_ACTIVE_LANGUAGE_IDS=elixir,javascript npm run validate:checkup:node && npm run validate:vscode:autofix-guard",
     "validate:editors": "node scripts/validate_editor_integrations.js",
     "validate:external-editors": "node scripts/validate_external_editor_suite.js",
     "validate:all": "npm run validate:matrix && npm run validate:intent-contract && npm run validate:editors"
