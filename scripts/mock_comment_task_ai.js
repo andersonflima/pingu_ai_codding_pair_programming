@@ -30,6 +30,10 @@ function isJavaScriptExtension(ext) {
   return ['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'].includes(String(ext || '').toLowerCase());
 }
 
+function isPythonExtension(ext) {
+  return String(ext || '').toLowerCase() === '.py';
+}
+
 function buildCommentTask(currentPayload, normalizedInstruction, normalizedExtension) {
   if (isJavaScriptExtension(normalizedExtension) && /\bcriar\b.*\bclass\b.*\bmain\b/.test(normalizedInstruction)) {
     return {
@@ -64,6 +68,37 @@ function buildCommentTask(currentPayload, normalizedInstruction, normalizedExten
   if (isJavaScriptExtension(normalizedExtension) && normalizedInstruction.includes('grafo direcionado')) {
     return {
       snippet: buildDirectedGraphSnippetJavaScript(),
+    };
+  }
+
+  if (isPythonExtension(normalizedExtension) && /\bcriar\b.*\bclass\b.*\bmain\b/.test(normalizedInstruction)) {
+    return {
+      snippet: [
+        'class Main:',
+        '    pass',
+      ].join('\n'),
+    };
+  }
+
+  if (isPythonExtension(normalizedExtension) && normalizedInstruction.includes('criar crud completo')) {
+    const entity = resolveEntityName(currentPayload);
+    const plural = pluralize(entity);
+    const listFn = `listar_${plural}`;
+    const createFn = `criar_${entity}`;
+    return {
+      snippet: [
+        `def ${listFn}(${plural}):`,
+        `    return ${plural}`,
+        '',
+        `def ${createFn}(${plural}, payload):`,
+        `    return [*${plural}, {'id': len(${plural}) + 1, **payload}]`,
+      ].join('\n'),
+    };
+  }
+
+  if (isPythonExtension(normalizedExtension) && normalizedInstruction.includes('grafo direcionado')) {
+    return {
+      snippet: buildDirectedGraphSnippetPython(),
     };
   }
 
@@ -217,6 +252,9 @@ function buildUnitTests(currentPayload) {
   if (isJavaScriptExtension(sourceExt)) {
     return buildJavaScriptUnitTests(currentPayload);
   }
+  if (isPythonExtension(sourceExt)) {
+    return buildPythonUnitTests(currentPayload);
+  }
 
   const moduleMatch = source.match(/defmodule\s+([A-Za-z0-9_.?!]+)\s+do/);
   const moduleName = moduleMatch ? moduleMatch[1] : pascalize(path.parse(String(currentPayload.sourceFile || '')).name || 'module');
@@ -284,6 +322,60 @@ function buildJavaScriptUnitTests(currentPayload) {
       mkdir_p: true,
     },
   };
+}
+
+function buildPythonUnitTests(currentPayload) {
+  const targetFile = String(currentPayload.targetFile || '');
+  const modulePath = String(currentPayload.sourceFile || '');
+  const moduleName = path.parse(modulePath).name;
+  const candidates = Array.isArray(currentPayload.testCandidates) ? currentPayload.testCandidates : [];
+
+  const lines = [
+    `from src.${moduleName} import *`,
+    '',
+  ];
+
+  candidates.forEach((candidate, index) => {
+    const name = String(candidate && candidate.name || 'executar');
+    const arity = Number(candidate && candidate.arity || 0);
+    if (index > 0) {
+      lines.push('');
+    }
+    lines.push(`def test_${name}_${arity}_disponivel():`);
+    lines.push(`    assert callable(${name})`);
+
+    const assertion = buildPythonCandidateAssertion(name, arity);
+    if (assertion) {
+      lines.push('');
+      lines.push(`def test_${name}_${arity}_contrato_principal():`);
+      lines.push(`    ${assertion}`);
+    }
+  });
+
+  return {
+    snippet: lines.join('\n'),
+    action: {
+      op: 'write_file',
+      target_file: targetFile,
+      mkdir_p: true,
+    },
+  };
+}
+
+function buildPythonCandidateAssertion(candidateName, arity) {
+  if (candidateName === 'soma' && arity === 1) {
+    return 'assert soma(1) == 2';
+  }
+  if (candidateName === 'soma' && arity === 2) {
+    return 'assert soma(1, 2) == 3';
+  }
+  if (candidateName === 'listar' && arity === 1) {
+    return 'assert listar([1, 2]) == [1, 2]';
+  }
+  if (candidateName.startsWith('listar_') && arity === 1) {
+    return `assert ${candidateName}([{'id': 1}]) == [{'id': 1}]`;
+  }
+  return '';
 }
 
 function buildJavaScriptCandidateAssertion(candidateName, arity) {
@@ -540,6 +632,57 @@ function buildDirectedGraphSnippetJavaScript() {
   ].join('\n');
 }
 
+function buildDirectedGraphSnippetPython() {
+  return [
+    'class GrafoDirecionado:',
+    '    def __init__(self):',
+    '        self.adjacencia = {}',
+    '',
+    '    def add_node(self, no):',
+    '        if no not in self.adjacencia:',
+    '            self.adjacencia[no] = set()',
+    '        return self',
+    '',
+    '    def add_edge(self, origem, destino):',
+    '        self.add_node(origem)',
+    '        self.add_node(destino)',
+    '        self.adjacencia[origem].add(destino)',
+    '        return self',
+    '',
+    '    def bfs(self, inicio):',
+    '        if inicio not in self.adjacencia:',
+    '            return []',
+    '        visitados = {inicio}',
+    '        fila = [inicio]',
+    '        ordem = []',
+    '        while fila:',
+    '            atual = fila.pop(0)',
+    '            ordem.append(atual)',
+    '            for vizinho in sorted(self.adjacencia.get(atual, set())):',
+    '                if vizinho not in visitados:',
+    '                    visitados.add(vizinho)',
+    '                    fila.append(vizinho)',
+    '        return ordem',
+    '',
+    '    def dfs(self, inicio):',
+    '        if inicio not in self.adjacencia:',
+    '            return []',
+    '        visitados = set()',
+    '        pilha = [inicio]',
+    '        ordem = []',
+    '        while pilha:',
+    '            atual = pilha.pop()',
+    '            if atual in visitados:',
+    '                continue',
+    '            visitados.add(atual)',
+    '            ordem.append(atual)',
+    '            for vizinho in sorted(self.adjacencia.get(atual, set()), reverse=True):',
+    '                if vizinho not in visitados:',
+    '                    pilha.append(vizinho)',
+    '        return ordem',
+  ].join('\n');
+}
+
 function buildNestedConditionRewrite(currentPayload) {
   const source = String(currentPayload.content || '');
   const lines = source
@@ -648,6 +791,9 @@ function rewriteCalculatorContextContract(currentPayload) {
   if (isJavaScriptExtension(lowerExtension)) {
     return rewriteJavaScriptCalculatorContextContract(currentPayload);
   }
+  if (isPythonExtension(lowerExtension)) {
+    return rewritePythonCalculatorContextContract(currentPayload);
+  }
   return rewriteElixirCalculatorContextContract(currentPayload);
 }
 
@@ -748,6 +894,57 @@ function rewriteJavaScriptCalculatorContextContract(currentPayload) {
   return source;
 }
 
+function rewritePythonCalculatorContextContract(currentPayload) {
+  const source = String(currentPayload.content || '');
+  const issue = currentPayload.issue || {};
+  const preferredExpression = String(issue.contextHint && issue.contextHint.preferredReturnExpression || '').trim();
+  const lines = source.split('\n');
+  const startIndex = Math.max(0, Number(issue.line || 1) - 1);
+
+  let functionStart = -1;
+  for (let index = startIndex; index < lines.length; index += 1) {
+    const current = String(lines[index] || '');
+    if (/^\s*def\s+[a-z_][a-zA-Z0-9_]*\s*\([^)]*\)\s*:/.test(current)) {
+      functionStart = index;
+      break;
+    }
+  }
+  if (functionStart < 0) {
+    return source;
+  }
+
+  const headerIndent = countLeadingSpaces(lines[functionStart]);
+  let functionEnd = lines.length - 1;
+  for (let index = functionStart + 1; index < lines.length; index += 1) {
+    const current = String(lines[index] || '');
+    const trimmed = current.trim();
+    if (!trimmed || /^\s*#/.test(current)) {
+      continue;
+    }
+    const indent = countLeadingSpaces(current);
+    if (indent <= headerIndent) {
+      functionEnd = index - 1;
+      break;
+    }
+  }
+
+  const expression = preferredExpression || inferExpressionFromPythonFunction(lines.slice(functionStart, functionEnd + 1));
+  if (!expression) {
+    return source;
+  }
+
+  for (let index = functionEnd; index > functionStart; index -= 1) {
+    const trimmed = String(lines[index] || '').trim();
+    if (/^return\s+(?:True|False)\s*$/.test(trimmed)) {
+      const indentation = String(lines[index] || '').match(/^\s*/);
+      lines[index] = `${indentation ? indentation[0] : ''}return ${expression}`;
+      return lines.join('\n');
+    }
+  }
+
+  return source;
+}
+
 function inferExpressionFromFunction(functionLines) {
   const lines = Array.isArray(functionLines) ? functionLines : [];
   for (let index = lines.length - 1; index >= 0; index -= 1) {
@@ -793,6 +990,20 @@ function inferDebugReplacementLine(source, lineText, extension) {
       return returnLine;
     }
     return `${' '.repeat(countLeadingSpaces(lineText))}return undefined;`;
+  }
+
+  if (isPythonExtension(lowerExtension)) {
+    const printCallMatch = String(lineText || '').match(/\bprint\((.*)\)\s*$/);
+    if (printCallMatch && String(printCallMatch[1] || '').trim()) {
+      return `${' '.repeat(countLeadingSpaces(lineText))}return ${String(printCallMatch[1]).trim()}`;
+    }
+    const returnLine = String(source || '')
+      .split('\n')
+      .find((line) => /^\s*return\b/.test(String(line || '').trim()));
+    if (returnLine) {
+      return returnLine;
+    }
+    return `${' '.repeat(countLeadingSpaces(lineText))}return None`;
   }
 
   const variableMatch = String(lineText || '').match(/\(([^)]+)\)/);
@@ -899,6 +1110,21 @@ function pluralize(value) {
     return source;
   }
   return `${source}s`;
+}
+
+function inferExpressionFromPythonFunction(functionLines) {
+  const lines = Array.isArray(functionLines) ? functionLines : [];
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const current = String(lines[index] || '').trim();
+    const assignment = current.match(/^([a-z_][a-zA-Z0-9_]*)\s*=\s*(.+)$/);
+    if (!assignment) {
+      continue;
+    }
+    if (/[+\-*/]/.test(String(assignment[2] || ''))) {
+      return assignment[1];
+    }
+  }
+  return '';
 }
 
 function commentPrefixForExtension(extensionValue) {
