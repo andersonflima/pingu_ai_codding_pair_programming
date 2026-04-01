@@ -8,6 +8,7 @@ const { buildFollowUpComment } = require('../lib/follow-up');
 const {
   defaultAutoFixKinds,
   fixPriorityForKind,
+  mustClearKindsForIssue,
   resolveIssueAction,
   supportsFollowUp,
 } = require('../lib/issue-kinds');
@@ -101,9 +102,9 @@ function activate(context) {
   let terminalRuntime;
   let codeActionRuntime;
 
-  async function analyzeDocument(document, trigger) {
+  async function collectIssues(document) {
     if (!supportsDocument(document)) {
-      return;
+      return [];
     }
 
     const config = configuration(document.uri);
@@ -113,17 +114,25 @@ function activate(context) {
     const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
     const cwd = workspaceFolder ? workspaceFolder.uri.fsPath : path.dirname(document.fileName);
 
+    return runAgent({
+      spawn,
+      nodePath,
+      scriptPath,
+      sourcePath: document.fileName,
+      text: document.getText(),
+      maxLineLength,
+      cwd,
+      env: resolveAgentEnvironment(document.uri),
+    });
+  }
+
+  async function analyzeDocument(document, trigger) {
+    if (!supportsDocument(document)) {
+      return;
+    }
+
     try {
-      const issues = await runAgent({
-        spawn,
-        nodePath,
-        scriptPath,
-        sourcePath: document.fileName,
-        text: document.getText(),
-        maxLineLength,
-        cwd,
-        env: resolveAgentEnvironment(document.uri),
-      });
+      const issues = await collectIssues(document);
       const autoFixApplied = await editRuntime.applyAutoFixes(document, issues);
       if (autoFixApplied) {
         return;
@@ -173,9 +182,11 @@ function activate(context) {
     path,
     vscode,
     analyzeDocument,
+    collectIssues,
     configuredAutoFixKinds,
     fixPriorityForKind,
     isAutoFixEnabled,
+    mustClearKindsForIssue,
     resolveIssueAction,
   });
 

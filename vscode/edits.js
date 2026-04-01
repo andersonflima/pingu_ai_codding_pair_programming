@@ -8,9 +8,11 @@ function createEditRuntime(deps) {
     path,
     vscode,
     analyzeDocument,
+    collectIssues,
     configuredAutoFixKinds,
     fixPriorityForKind,
     isAutoFixEnabled,
+    mustClearKindsForIssue,
     resolveIssueAction,
   } = deps;
 
@@ -309,6 +311,88 @@ function createEditRuntime(deps) {
     return issueActionIdentity(left).localeCompare(issueActionIdentity(right));
   }
 
+  function countIssuesByKind(issues, kind) {
+    return (Array.isArray(issues) ? issues : [])
+      .filter((issue) => String(issue && issue.kind || '') === String(kind || ''))
+      .length;
+  }
+
+  function collectAffectedFiles(document, batch) {
+    const affected = new Set([document.uri.fsPath]);
+    (Array.isArray(batch) ? batch : []).forEach((issue) => {
+      const action = resolveIssueAction(issue);
+      if (String(action.op || '') !== 'write_file') {
+        return;
+      }
+      const targetFile = String(action.target_file || '').trim();
+      if (targetFile) {
+        affected.add(targetFile);
+      }
+    });
+    return Array.from(affected);
+  }
+
+  function captureFileSnapshot(filePaths) {
+    const snapshot = new Map();
+    (Array.isArray(filePaths) ? filePaths : []).forEach((filePath) => {
+      if (!filePath) {
+        return;
+      }
+      const exists = fs.existsSync(filePath);
+      snapshot.set(filePath, {
+        exists,
+        contents: exists ? fs.readFileSync(filePath, 'utf8') : '',
+      });
+    });
+    return snapshot;
+  }
+
+  function restoreFileSnapshot(snapshot) {
+    if (!(snapshot instanceof Map)) {
+      return;
+    }
+    snapshot.forEach((state, filePath) => {
+      if (!state || !filePath) {
+        return;
+      }
+      if (!state.exists) {
+        fs.rmSync(filePath, { force: true });
+        return;
+      }
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.writeFileSync(filePath, String(state.contents || ''), 'utf8');
+    });
+  }
+
+  function resolveMustClearKinds(issue) {
+    if (typeof mustClearKindsForIssue === 'function') {
+      return mustClearKindsForIssue(issue);
+    }
+    const kind = String(issue && issue.kind || '').trim();
+    return kind ? [kind] : [];
+  }
+
+  function mustClearValidationFailures(appliedIssues, beforeIssues, afterIssues) {
+    const failures = [];
+    (Array.isArray(appliedIssues) ? appliedIssues : []).forEach((issue) => {
+      resolveMustClearKinds(issue).forEach((kind) => {
+        const beforeCount = countIssuesByKind(beforeIssues, kind);
+        if (beforeCount <= 0) {
+          return;
+        }
+        const afterCount = countIssuesByKind(afterIssues, kind);
+        if (afterCount >= beforeCount) {
+          failures.push({
+            kind,
+            beforeCount,
+            afterCount,
+          });
+        }
+      });
+    });
+    return failures;
+  }
+
   async function applyAutoFixes(document, issues) {
     if (!isAutoFixEnabled(document.uri)) {
       return false;
@@ -316,7 +400,8 @@ function createEditRuntime(deps) {
 
     const allowedKinds = new Set(configuredAutoFixKinds(document.uri));
     const seen = new Set();
-    const candidates = issues.filter((issue) => {
+    const baselineIssues = Array.isArray(issues) ? issues : [];
+    const candidates = baselineIssues.filter((issue) => {
       const action = resolveIssueAction(issue);
       const kind = String(issue.kind || '');
       if (action.op === 'run_command') {
@@ -346,17 +431,33 @@ function createEditRuntime(deps) {
     const inlineCandidates = candidates.filter((issue) => resolveIssueAction(issue).op !== 'write_file');
     const deferredWriteCandidates = candidates.filter((issue) => resolveIssueAction(issue).op === 'write_file');
     const batch = inlineCandidates.length > 0 ? inlineCandidates : deferredWriteCandidates;
+    const snapshot = captureFileSnapshot(collectAffectedFiles(document, batch));
 
     let applied = false;
+    const appliedIssues = [];
     for (const issue of batch) {
       const changed = await applySnippetIssue(document, issue);
       if (changed) {
         applied = true;
+        appliedIssues.push(issue);
       }
     }
 
     if (!applied) {
       return false;
+    }
+
+    if (typeof collectIssues === 'function') {
+      const refreshedDocument = await vscode.workspace.openTextDocument(document.uri);
+      const refreshedIssues = await collectIssues(refreshedDocument);
+      const validationFailures = mustClearValidationFailures(appliedIssues, baselineIssues, refreshedIssues);
+      if (validationFailures.length > 0) {
+        restoreFileSnapshot(snapshot);
+        return false;
+      }
+
+      await analyzeDocument(refreshedDocument, 'autofix');
+      return true;
     }
 
     const refreshedDocument = await vscode.workspace.openTextDocument(document.uri);
