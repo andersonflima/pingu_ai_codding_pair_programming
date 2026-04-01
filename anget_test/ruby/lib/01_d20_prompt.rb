@@ -1,1 +1,0 @@
-#: funcao dados d20

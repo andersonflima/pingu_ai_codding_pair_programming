@@ -1,1 +1,0 @@
-": funcao soma

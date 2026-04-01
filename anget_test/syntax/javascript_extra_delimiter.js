@@ -1,4 +1,0 @@
-function broken() {
-  return true;
-}}
-

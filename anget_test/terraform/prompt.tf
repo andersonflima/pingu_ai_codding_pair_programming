@@ -1,1 +1,0 @@
-#: adiciona terraform required version
