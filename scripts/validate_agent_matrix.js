@@ -5,9 +5,10 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { analyzeText } = require('../lib/analyzer');
-const { getCapabilityProfile, languageCapabilityRegistry } = require('../lib/language-capabilities');
+const { getCapabilityProfile, isLanguageActive, languageCapabilityRegistry, requiresAiForFeature } = require('../lib/language-capabilities');
 
 const repoRoot = path.resolve(__dirname, '..');
+const mockAiCommand = `${JSON.stringify(process.execPath)} ${JSON.stringify(path.join(repoRoot, 'scripts', 'mock_comment_task_ai.js'))}`;
 
 const fixtureCases = [
   ['anget_test/javascript/src/criar_funcao_soma.js', ['comment_task']],
@@ -983,6 +984,7 @@ function analyzeFixtureSource(sourcePath, content, envOverrides = null) {
 function normalizeFixtureCases() {
   const fileCases = fixtureCases
     .filter(([relativeFile]) => fixtureExists(relativeFile))
+    .filter(([relativeFile]) => isLanguageActive(relativeFile))
     .map(([relativeFile, expectedKinds]) => ({
       id: relativeFile,
       sourcePath: path.join(repoRoot, relativeFile),
@@ -991,8 +993,22 @@ function normalizeFixtureCases() {
       expectedSnippetIncludes: snippetExpectations[relativeFile] || [],
     }));
 
-  const availableSyntheticCases = syntheticCases.filter((fixture) => caseSourceAvailable(fixture.sourcePath));
-  return [...fileCases, ...availableSyntheticCases];
+  const availableSyntheticCases = syntheticCases
+    .filter((fixture) => caseSourceAvailable(fixture.sourcePath))
+    .filter((fixture) => isLanguageActive(fixture.sourcePath));
+
+  return [...fileCases, ...availableSyntheticCases].map((fixture) => ({
+    ...fixture,
+    envOverrides: {
+      ...(requiresAiForFeature(fixture.sourcePath, 'comment_task') || requiresAiForFeature(fixture.sourcePath, 'context_file') || requiresAiForFeature(fixture.sourcePath, 'unit_test')
+        ? {
+          PINGU_COMMENT_TASK_AI_CMD: mockAiCommand,
+          PINGU_COMMENT_TASK_AI_TIMEOUT_MS: '4000',
+        }
+        : {}),
+      ...(fixture.envOverrides || {}),
+    },
+  }));
 }
 
 function runFixtureMatrix() {

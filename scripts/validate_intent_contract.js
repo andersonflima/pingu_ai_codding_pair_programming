@@ -3,8 +3,10 @@
 
 const path = require('path');
 const { analyzeText } = require('../lib/analyzer');
+const { isLanguageActive, requiresAiForFeature } = require('../lib/language-capabilities');
 
 const repoRoot = path.resolve(__dirname, '..');
+const mockAiCommand = `${JSON.stringify(process.execPath)} ${JSON.stringify(path.join(repoRoot, 'scripts', 'mock_comment_task_ai.js'))}`;
 
 const intentContractCases = [
   {
@@ -127,8 +129,44 @@ const intentContractCases = [
   },
 ];
 
+function withTemporaryEnvironment(overrides, callback) {
+  const entries = Object.entries(overrides || {});
+  if (entries.length === 0) {
+    return callback();
+  }
+
+  const previousValues = new Map(entries.map(([key]) => [key, process.env[key]]));
+  entries.forEach(([key, value]) => {
+    process.env[key] = value;
+  });
+
+  try {
+    return callback();
+  } finally {
+    previousValues.forEach((value, key) => {
+      if (typeof value === 'undefined') {
+        delete process.env[key];
+        return;
+      }
+      process.env[key] = value;
+    });
+  }
+}
+function defaultEnvOverrides(contractCase) {
+  if (!isLanguageActive(contractCase.sourcePath)) {
+    return {};
+  }
+  if (!requiresAiForFeature(contractCase.sourcePath, 'comment_task')) {
+    return {};
+  }
+  return {
+    PINGU_COMMENT_TASK_AI_CMD: mockAiCommand,
+    PINGU_COMMENT_TASK_AI_TIMEOUT_MS: '4000',
+  };
+}
 function validateCase(contractCase) {
-  const issues = analyzeText(contractCase.sourcePath, contractCase.content, { maxLineLength: 120 });
+  const issues = withTemporaryEnvironment(defaultEnvOverrides(contractCase), () =>
+    analyzeText(contractCase.sourcePath, contractCase.content, { maxLineLength: 120 }));
   const commentTaskIssue = issues.find((issue) => issue.kind === 'comment_task');
   if (!commentTaskIssue) {
     return {
@@ -213,7 +251,8 @@ function validateCase(contractCase) {
 }
 
 function main() {
-  const results = intentContractCases.map(validateCase);
+  const cases = intentContractCases.filter((contractCase) => isLanguageActive(contractCase.sourcePath));
+  const results = cases.map(validateCase);
   const failures = results.filter((result) => !result.ok);
 
   if (failures.length === 0) {

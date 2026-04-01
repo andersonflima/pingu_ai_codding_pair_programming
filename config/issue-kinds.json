@@ -1,4 +1,11 @@
 {
+  "ai_required": {
+    "defaultAction": { "op": "insert_before" },
+    "autoFixDefault": false,
+    "autoFixPriority": 5,
+    "supportsQuickFix": false,
+    "supportsFollowUp": false
+  },
   "comment_task": {
     "defaultAction": { "op": "replace_line" },
     "autoFixDefault": true,
