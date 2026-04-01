@@ -148,6 +148,7 @@
     "rebuild:external-agent-test": "node scripts/rebuild_external_agent_test.js",
     "validate:matrix": "node scripts/validate_agent_matrix.js",
     "validate:snippets:elixir": "node scripts/validate_elixir_snippets_workspace.js",
+    "validate:checkup:elixir": "node scripts/validate_elixir_real_code_checkup.js",
     "validate:intent-contract": "node scripts/validate_intent_contract.js",
     "validate:quality-gate:elixir": "npm run validate:snippets:elixir && npm run validate:matrix && npm run validate:intent-contract",
     "validate:editors": "node scripts/validate_editor_integrations.js",
