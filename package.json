@@ -146,6 +146,7 @@
     "package:vscode": "node scripts/package_vscode.js",
     "rebuild:external-agent-test": "node scripts/rebuild_external_agent_test.js",
     "validate:matrix": "node scripts/validate_agent_matrix.js",
+    "validate:snippets:elixir": "node scripts/validate_elixir_snippets_workspace.js",
     "validate:intent-contract": "node scripts/validate_intent_contract.js",
     "validate:editors": "node scripts/validate_editor_integrations.js",
     "validate:external-editors": "node scripts/validate_external_editor_suite.js",
