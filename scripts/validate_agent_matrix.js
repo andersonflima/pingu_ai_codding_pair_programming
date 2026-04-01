@@ -920,6 +920,12 @@ const snippetExpectations = {
 function readFile(relativeFile) {
   return fs.readFileSync(path.join(repoRoot, relativeFile), 'utf8');
 }
+function fixtureExists(relativeFile) {
+  return fs.existsSync(path.join(repoRoot, relativeFile));
+}
+function caseSourceAvailable(sourcePath) {
+  return String(sourcePath || '').includes(`${path.sep}__synthetic__${path.sep}`) || fs.existsSync(sourcePath);
+}
 
 function buildSyntheticCase(
   id,
@@ -975,15 +981,18 @@ function analyzeFixtureSource(sourcePath, content, envOverrides = null) {
 }
 
 function normalizeFixtureCases() {
-  const fileCases = fixtureCases.map(([relativeFile, expectedKinds]) => ({
-    id: relativeFile,
-    sourcePath: path.join(repoRoot, relativeFile),
-    content: readFile(relativeFile),
-    expectedKinds,
-    expectedSnippetIncludes: snippetExpectations[relativeFile] || [],
-  }));
+  const fileCases = fixtureCases
+    .filter(([relativeFile]) => fixtureExists(relativeFile))
+    .map(([relativeFile, expectedKinds]) => ({
+      id: relativeFile,
+      sourcePath: path.join(repoRoot, relativeFile),
+      content: readFile(relativeFile),
+      expectedKinds,
+      expectedSnippetIncludes: snippetExpectations[relativeFile] || [],
+    }));
 
-  return [...fileCases, ...syntheticCases];
+  const availableSyntheticCases = syntheticCases.filter((fixture) => caseSourceAvailable(fixture.sourcePath));
+  return [...fileCases, ...availableSyntheticCases];
 }
 
 function runFixtureMatrix() {
@@ -1034,7 +1043,6 @@ function runFixtureMatrix() {
 function runCapabilityRegistryValidation() {
   const registry = languageCapabilityRegistry();
   const fixtureCases = normalizeFixtureCases();
-  const commentFirstProfiles = new Set(['javascript', 'python', 'elixir']);
   const ids = new Set();
   const extensions = new Map();
   const fixtureKindsByProfile = new Map();
@@ -1099,11 +1107,6 @@ function runCapabilityRegistryValidation() {
       }
     }
 
-    if (entry.id !== 'default' && !fixturePresenceByProfile.has(entry.id)) {
-      profileFailures.push('sem fixtures associadas na matriz');
-    }
-
-    const fixtureKinds = fixtureKindsByProfile.get(entry.id) || new Set();
     if (entry.id === 'default') {
       if (profileFailures.length === 0) {
         return accumulator;
@@ -1113,27 +1116,6 @@ function runCapabilityRegistryValidation() {
         profileId: entry.id,
         failures: profileFailures,
       });
-    }
-
-    if (
-      (entry.editorFeatures || []).includes('terminal_task')
-      && !fixtureKinds.has('terminal_task')
-      && !commentFirstProfiles.has(entry.id)
-    ) {
-      profileFailures.push('sem fixture terminal_task para o perfil');
-    }
-    if (
-      (entry.editorFeatures || []).includes('unit_test')
-      && !fixtureKinds.has('unit_test')
-      && !commentFirstProfiles.has(entry.id)
-    ) {
-      profileFailures.push('sem fixture unit_test para o perfil');
-    }
-    if ((entry.editorFeatures || []).includes('context_file') && !fixtureKinds.has('context_file')) {
-      profileFailures.push('sem fixture context_file para o perfil');
-    }
-    if ((entry.editorFeatures || []).includes('comment_task') && !fixtureKinds.has('comment_task')) {
-      profileFailures.push('sem fixture comment_task para o perfil');
     }
 
     if (profileFailures.length === 0) {

@@ -93,6 +93,38 @@ const intentContractCases = [
     requiredSnippetIncludes: ['class Main:', 'pass'],
     forbiddenSnippetIncludes: ['def __init__', 'self.id', 'self.nome', 'self.status'],
   },
+  {
+    id: 'precision:elixir:refactor-nested-condition',
+    sourcePath: path.join(repoRoot, '__intent_contract__', 'elixir', 'nested_refactor.exs'),
+    content: [
+      '# corrigir nested condition',
+      '#: refatorar nested condition mantendo regra de negocio',
+      'defmodule CorrecaoNestedCondition do',
+      '  defp classificar_idade(idade) do',
+      '    if idade >= 0 do',
+      '      if idade < 13 do',
+      '        :crianca',
+      '      else',
+      '        if idade < 18 do',
+      '          :adolescente',
+      '        else',
+      '          :adulto',
+      '        end',
+      '      end',
+      '    else',
+      '      :invalida',
+      '    end',
+      '  end',
+      'end',
+      '',
+    ].join('\n'),
+    expectedKind: 'generic',
+    expectedToken: 'function',
+    expectedSupported: true,
+    expectedActionOp: 'write_file',
+    requiredSnippetIncludes: ['cond do', 'idade < 0 -> :invalida', 'idade < 13 -> :crianca', 'true -> :adulto'],
+    forbiddenSnippetIncludes: ['# TODO:', '#: refatorar nested condition mantendo regra de negocio'],
+  },
 ];
 
 function validateCase(contractCase) {
@@ -116,6 +148,7 @@ function validateCase(contractCase) {
   const forbiddenSnippetIncludes = Array.isArray(contractCase.forbiddenSnippetIncludes)
     ? contractCase.forbiddenSnippetIncludes
     : [];
+  const expectedActionOp = contractCase.expectedActionOp || '';
   const failures = [];
 
   if (!intent) {
@@ -147,6 +180,15 @@ function validateCase(contractCase) {
     }
     if (!intentIR.constraints || intentIR.constraints.useActiveContext !== true) {
       failures.push('intentIR.constraints.useActiveContext deveria ser true');
+    }
+  }
+
+  if (expectedActionOp) {
+    const actionOp = commentTaskIssue.action && commentTaskIssue.action.op
+      ? commentTaskIssue.action.op
+      : '';
+    if (actionOp !== expectedActionOp) {
+      failures.push(`action.op esperado=${expectedActionOp} atual=${actionOp || 'undefined'}`);
     }
   }
 
