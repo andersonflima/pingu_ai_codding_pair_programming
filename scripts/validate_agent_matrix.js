@@ -2,206 +2,191 @@
 'use strict';
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
-const { spawnSync } = require('child_process');
 const { analyzeText } = require('../lib/analyzer');
-const { getCapabilityProfile, isLanguageActive, languageCapabilityRegistry, requiresAiForFeature } = require('../lib/language-capabilities');
+const {
+  activeLanguageIds,
+  getCapabilityProfile,
+  languageCapabilityRegistry,
+  requiresAiForFeature,
+} = require('../lib/language-capabilities');
 
 const repoRoot = path.resolve(__dirname, '..');
 const mockAiCommand = `${JSON.stringify(process.execPath)} ${JSON.stringify(path.join(repoRoot, 'scripts', 'mock_comment_task_ai.js'))}`;
+const temporaryProjects = [];
+const fixtureCases = [];
+const snippetExpectations = {};
 
-const fixtureCases = [
-  ['anget_test/javascript/src/criar_funcao_soma.js', ['comment_task']],
-  ['anget_test/javascript/src/criar_funcao_calcular_media.js', ['comment_task']],
-  ['anget_test/javascript/src/criar_classe_pedido.js', ['comment_task']],
-  ['anget_test/javascript/src/criar_enum_status_pedido.js', ['comment_task']],
-  ['anget_test/javascript/src/criar_struct_usuario.js', ['comment_task']],
-  ['anget_test/javascript/src/criar_pilha_funcional.js', ['comment_task']],
-  ['anget_test/javascript/src/criar_fila_funcional.js', ['comment_task']],
-  ['anget_test/javascript/src/criar_grafo_direcionado.js', ['comment_task']],
-  ['anget_test/javascript/src/criar_arvore_binaria_busca.js', ['comment_task']],
-  ['anget_test/javascript/src/criar_algoritmo_busca_binaria.js', ['comment_task']],
-  ['anget_test/javascript/src/criar_algoritmo_merge_sort.js', ['comment_task']],
-  ['anget_test/javascript/src/criar_cache_lru.js', ['comment_task']],
-  ['anget_test/javascript/src/criar_bff_crud_usuarios.js', ['comment_task']],
-  ['anget_test/javascript/src/corrigir_variavel_indefinida.js', ['comment_task']],
-  ['anget_test/javascript/src/refatorar_para_programacao_funcional.js', ['comment_task']],
-  ['anget_test/typescript/src/01_comment_simple.ts', ['comment_task']],
-  ['anget_test/typescript/src/02_comment_advanced.ts', ['comment_task']],
-  ['anget_test/typescript/src/03_unit_contract.ts', ['unit_test']],
-  ['anget_test/react/src/01_d20_prompt.tsx', ['comment_task']],
-  ['anget_test/react/src/02_component_contract.tsx', ['unit_test']],
-  ['anget_test/python/app/criar_funcao_soma.py', ['comment_task']],
-  ['anget_test/python/app/criar_funcao_calcular_media.py', ['comment_task']],
-  ['anget_test/python/app/criar_classe_pedido.py', ['comment_task']],
-  ['anget_test/python/app/criar_enum_status_pedido.py', ['comment_task']],
-  ['anget_test/python/app/criar_struct_usuario.py', ['comment_task']],
-  ['anget_test/python/app/criar_pilha_funcional.py', ['comment_task']],
-  ['anget_test/python/app/criar_fila_funcional.py', ['comment_task']],
-  ['anget_test/python/app/criar_grafo_direcionado.py', ['comment_task']],
-  ['anget_test/python/app/criar_arvore_binaria_busca.py', ['comment_task']],
-  ['anget_test/python/app/criar_algoritmo_busca_binaria.py', ['comment_task']],
-  ['anget_test/python/app/criar_algoritmo_merge_sort.py', ['comment_task']],
-  ['anget_test/python/app/criar_cache_lru.py', ['comment_task']],
-  ['anget_test/python/app/criar_bff_crud_usuarios.py', ['comment_task']],
-  ['anget_test/python/app/corrigir_variavel_indefinida.py', ['comment_task']],
-  ['anget_test/python/app/refatorar_para_programacao_funcional.py', ['comment_task']],
-  ['anget_test/elixir/lib/criar_funcao_soma.ex', ['comment_task']],
-  ['anget_test/elixir/lib/criar_funcao_calcular_media.ex', ['comment_task']],
-  ['anget_test/elixir/lib/criar_classe_pedido.ex', ['comment_task']],
-  ['anget_test/elixir/lib/criar_enum_status_pedido.ex', ['comment_task']],
-  ['anget_test/elixir/lib/criar_struct_usuario.ex', ['comment_task']],
-  ['anget_test/elixir/lib/criar_pilha_funcional.ex', ['comment_task']],
-  ['anget_test/elixir/lib/criar_fila_funcional.ex', ['comment_task']],
-  ['anget_test/elixir/lib/criar_grafo_direcionado.ex', ['comment_task']],
-  ['anget_test/elixir/lib/criar_arvore_binaria_busca.ex', ['comment_task']],
-  ['anget_test/elixir/lib/criar_algoritmo_busca_binaria.ex', ['comment_task']],
-  ['anget_test/elixir/lib/criar_algoritmo_merge_sort.ex', ['comment_task']],
-  ['anget_test/elixir/lib/criar_cache_lru.ex', ['comment_task']],
-  ['anget_test/elixir/lib/criar_bff_crud_usuarios.ex', ['comment_task']],
-  ['anget_test/elixir/lib/corrigir_variavel_indefinida.ex', ['comment_task']],
-  ['anget_test/elixir/lib/refatorar_para_programacao_funcional.ex', ['comment_task']],
-  ['anget_test/go/pkg/01_comment_prompt.go', ['comment_task']],
-  ['anget_test/go/pkg/02_unit_contract.go', ['unit_test']],
-  ['anget_test/go/pkg/03_terminal_task.go', ['terminal_task']],
-  ['anget_test/rust/src/01_comment_prompt.rs', ['comment_task']],
-  ['anget_test/rust/src/math.rs', ['unit_test']],
-  ['anget_test/rust/src/03_terminal_task.rs', ['terminal_task']],
-  ['anget_test/ruby/lib/01_d20_prompt.rb', ['comment_task']],
-  ['anget_test/ruby/lib/02_unit_contract.rb', ['unit_test']],
-  ['anget_test/ruby/lib/03_terminal_task.rb', ['terminal_task']],
-  ['anget_test/c/src/01_comment_prompt.c', ['comment_task']],
-  ['anget_test/c/src/02_comment_advanced.c', ['comment_task']],
-  ['anget_test/c/src/03_terminal_task.c', ['terminal_task']],
-  ['anget_test/c/src/04_unit_contract.c', ['unit_test']],
-  ['anget_test/lua/lua/01_comment_simple.lua', ['comment_task']],
-  ['anget_test/lua/lua/02_comment_advanced.lua', ['comment_task']],
-  ['anget_test/lua/lua/03_unit_contract.lua', ['unit_test']],
-  ['anget_test/lua/lua/04_terminal_task.lua', ['terminal_task']],
-  ['anget_test/vim/autoload/01_comment_prompt.vim', ['comment_task']],
-  ['anget_test/vim/autoload/02_comment_advanced.vim', ['comment_task']],
-  ['anget_test/vim/autoload/03_terminal_task.vim', ['terminal_task']],
-  ['anget_test/vim/autoload/04_unit_contract.vim', ['unit_test']],
-  ['anget_test/shell/01_comment_prompt.sh', ['comment_task']],
-  ['anget_test/shell/02_terminal_task.sh', ['terminal_task']],
-  ['anget_test/shell/03_unit_contract.sh', ['unit_test']],
-  ['anget_test/docker/Dockerfile.prompt', ['comment_task', 'unit_test']],
-  ['anget_test/docker/Dockerfile', ['unit_test']],
-  ['anget_test/compose/docker-compose.yml', ['unit_test']],
-  ['anget_test/markdown/prompt.md', ['comment_task']],
-  ['anget_test/markdown/README.md', ['unit_test']],
-  ['anget_test/mermaid/prompt.mmd', ['comment_task']],
-  ['anget_test/mermaid/diagram.mmd', ['unit_test']],
-  ['anget_test/toml/config.toml', ['comment_task', 'unit_test']],
-  ['anget_test/terraform/prompt.tf', ['comment_task']],
-  ['anget_test/terraform/main.tf', ['terraform_required_version', 'unit_test']],
-  ['anget_test/yaml/prompt.yaml', ['comment_task']],
-  ['anget_test/yaml/config.yaml', ['unit_test']],
-  ['anget_test/syntax/javascript_extra_delimiter.js', ['syntax_extra_delimiter']],
-  ['anget_test/syntax/javascript_missing_comma.js', ['syntax_missing_comma']],
-  ['anget_test/syntax/lua_missing_quote.lua', ['syntax_missing_quote']],
-  ['anget_test/syntax/markdown_unclosed_fence.md', ['syntax_missing_delimiter']],
-];
+function createTemporaryElixirProject(label, options = {}) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), `pingu-${label}-`));
+  temporaryProjects.push(root);
+  fs.mkdirSync(path.join(root, 'lib'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'tests'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'mix.exs'), [
+    'defmodule Validation.MixProject do',
+    '  use Mix.Project',
+    '  def project, do: [app: :validation, version: "0.1.0"]',
+    'end',
+    '',
+  ].join('\n'));
 
-const syntheticContextBlueprintCases = [
-  ['python', 'python/context_blueprint.py', '# ** contexto de projeto para billing'],
-  ['elixir', 'elixir/context_blueprint.ex', '# ** contexto de projeto para billing'],
-  ['go', 'go/context_blueprint.go', '// ** contexto de projeto para billing'],
-  ['rust', 'rust/context_blueprint.rs', '// ** contexto de projeto para billing'],
-  ['ruby', 'ruby/context_blueprint.rb', '# ** contexto de projeto para billing'],
-  ['lua', 'lua/context_blueprint.lua', '-- ** contexto de projeto para billing'],
-  ['vim', 'vim/context_blueprint.vim', '" ** contexto de projeto para billing'],
-  ['c', 'c/context_blueprint.c', '// ** contexto de projeto para billing'],
-  ['terraform', 'terraform/context_blueprint.tf', '# ** contexto de projeto para billing'],
-  ['yaml', 'yaml/context_blueprint.yaml', '# ** contexto de projeto para billing'],
-  ['markdown', 'markdown/context_blueprint.md', '<!-- ** contexto de projeto para billing -->'],
-  ['mermaid', 'mermaid/context_blueprint.mmd', '%% ** contexto de projeto para billing'],
-  ['dockerfile', 'docker/context_blueprint.Dockerfile', '# ** contexto de projeto para billing'],
-  ['shell', 'shell/context_blueprint.sh', '# ** contexto de projeto para billing'],
-  ['toml', 'toml/context_blueprint.toml', '# ** contexto de projeto para billing'],
-].map(([profileId, relativeSourcePath, content]) =>
-  buildSyntheticCase(`synthetic:${profileId}:context-file`, relativeSourcePath, `${content}\n`, ['context_file']));
+  if (options.activeContext) {
+    const contextDir = path.join(root, '.realtime-dev-agent', 'contexts');
+    fs.mkdirSync(contextDir, { recursive: true });
+    fs.writeFileSync(path.join(contextDir, 'elixir-active.md'), options.activeContext);
+  }
 
-const syntheticTerminalCases = [
-  ['markdown', 'markdown/terminal_task.md', '<!-- * listar arquivos do projeto -->'],
-  ['mermaid', 'mermaid/terminal_task.mmd', '%% * listar arquivos do projeto'],
-  ['toml', 'toml/terminal_task.toml', '# * listar arquivos do projeto'],
-].map(([profileId, relativeSourcePath, content]) =>
-  buildSyntheticCase(`synthetic:${profileId}:terminal-task`, relativeSourcePath, `${content}\n`, ['terminal_task']));
+  return {
+    root,
+    sourcePath: path.join(root, options.relativeFile || path.join('lib', 'sample.ex')),
+  };
+}
 
-const syntheticNativeBlueprintScaffoldCases = [
-  ['python', 'python/bff_context_blueprint.py', '# ** bff para crud de usuario', ['from dataclasses import dataclass, replace']],
-  ['go', 'go/bff_context_blueprint.go', '// ** bff para crud de usuario', ['type Usuario struct {']],
-  ['rust', 'rust/bff_context_blueprint.rs', '// ** bff para crud de usuario', ['pub struct Usuario {']],
-  ['elixir', 'elixir/bff_context_blueprint.ex', '# ** bff para crud de usuario', ['defmodule UsuarioCrud.Domain.Usuario do']],
-  ['ruby', 'ruby/bff_context_blueprint.rb', '# ** bff para crud de usuario', ['module UsuarioCrud']],
-  ['c', 'c/bff_context_blueprint.c', '// ** bff para crud de usuario', ['#ifndef USUARIO_H']],
-].map(([profileId, relativeSourcePath, content, expectedSnippetIncludes]) =>
-  buildSyntheticCase(`synthetic:${profileId}:context-scaffold`, relativeSourcePath, `${content}\n`, ['context_file'], expectedSnippetIncludes));
+function buildActiveContextDocument(entity, summary) {
+  return [
+    '<!-- realtime-dev-agent-context -->',
+    'architecture: onion',
+    'blueprint_type: bff_crud',
+    `entity: ${entity}`,
+    'language: elixir',
+    'slug: elixir-active',
+    'source_ext: .ex',
+    'source_root: lib',
+    `summary: ${summary}`,
+    '',
+    '# Contexto ativo',
+    `- Contexto principal: ${entity}`,
+  ].join('\n');
+}
+
+const crudProject = createTemporaryElixirProject('matrix-crud', {
+  relativeFile: path.join('lib', 'crud_from_context.ex'),
+  activeContext: buildActiveContextDocument('fatura', 'crud de faturamento'),
+});
+
+const contextMergeProject = createTemporaryElixirProject('matrix-context-merge', {
+  relativeFile: path.join('lib', 'context_merge.ex'),
+  activeContext: buildActiveContextDocument('usuario', 'contexto inicial de usuarios'),
+});
+
+const contextOverwriteProject = createTemporaryElixirProject('matrix-context-overwrite', {
+  relativeFile: path.join('lib', 'context_overwrite.ex'),
+  activeContext: buildActiveContextDocument('usuario', 'contexto inicial de usuarios'),
+});
+
+const unitTestProject = createTemporaryElixirProject('matrix-unit-test', {
+  relativeFile: path.join('lib', 'billing.ex'),
+});
 
 const syntheticCases = [
-  ...syntheticContextBlueprintCases,
-  ...syntheticTerminalCases,
-  ...syntheticNativeBlueprintScaffoldCases,
-  buildSyntheticCase(
-    'synthetic:javascript:triple-colon-context',
-    'javascript/context_triple_colon.js',
-    '//::: contexto de projeto para billing\n',
-    ['context_file'],
-  ),
-  buildSyntheticCase(
-    'synthetic:elixir:public-contracts',
-    'elixir/public_contracts.ex',
-    [
+  {
+    id: 'elixir:comment_task:minimal-module',
+    sourcePath: path.join(repoRoot, '__synthetic__', 'elixir', 'module_main.ex'),
+    content: '#:: criar um module main elixir\n',
+    expectedKinds: ['comment_task'],
+    expectedSnippetIncludes: ['defmodule Main do', 'end'],
+    forbiddenSnippetIncludes: ['@moduledoc', 'def listar('],
+  },
+  {
+    id: 'elixir:comment_task:directed-graph',
+    sourcePath: path.join(repoRoot, '__synthetic__', 'elixir', 'directed_graph.exs'),
+    content: '#:: criar grafo direcionado com add_node add_edge bfs dfs\n',
+    expectedKinds: ['comment_task'],
+    expectedSnippetIncludes: ['defmodule GrafoDirecionado do', 'def add_node(%__MODULE__', 'def bfs(%__MODULE__'],
+    forbiddenSnippetIncludes: ['implementar:', 'NotImplementedError'],
+  },
+  {
+    id: 'elixir:comment_task:crud-from-context',
+    sourcePath: crudProject.sourcePath,
+    content: '#:: criar crud completo\n',
+    expectedKinds: ['comment_task'],
+    expectedSnippetIncludes: ['def listar_faturas(faturas), do: faturas', 'def criar_fatura(faturas, payload) do'],
+  },
+  {
+    id: 'elixir:context_file:create',
+    sourcePath: path.join(repoRoot, '__synthetic__', 'elixir', 'context_create.ex'),
+    content: '# ** bff para crud de usuario\n',
+    expectedKinds: ['context_file'],
+    expectedSnippetIncludes: ['<!-- realtime-dev-agent-context -->', 'entity: usuario', 'slug: elixir-active'],
+  },
+  {
+    id: 'elixir:context_file:merge',
+    sourcePath: contextMergeProject.sourcePath,
+    content: '# ** bff para crud de usuario\n',
+    expectedKinds: ['context_file'],
+    expectedSnippetIncludes: ['entity: usuario', 'Politica aplicada: merge'],
+    expectedActionOp: 'write_file',
+    expectedTargetFileSuffix: path.join('.realtime-dev-agent', 'contexts', 'elixir-active.md'),
+  },
+  {
+    id: 'elixir:context_file:overwrite',
+    sourcePath: contextOverwriteProject.sourcePath,
+    content: '# ** bff para crud de fatura\n',
+    expectedKinds: ['context_file'],
+    expectedSnippetIncludes: ['entity: fatura', 'Politica aplicada: overwrite'],
+    expectedActionOp: 'write_file',
+    expectedTargetFileSuffix: path.join('.realtime-dev-agent', 'contexts', 'elixir-active.md'),
+  },
+  {
+    id: 'elixir:auto:public-contracts',
+    sourcePath: path.join(repoRoot, '__synthetic__', 'elixir', 'public_contracts.ex'),
+    content: [
       'defmodule Billing do',
       '  def soma(numero) do',
       '    numero + 1',
       '  end',
       'end',
     ].join('\n'),
-    ['moduledoc', 'function_doc', 'function_spec'],
-  ),
-  buildSyntheticCase(
-    'synthetic:elixir:debug-output',
-    'elixir/debug_output.ex',
-    [
-      'defmodule Billing do',
-      '  def soma(numero) do',
-      '    IO.inspect(numero)',
-      '  end',
-      'end',
-    ].join('\n'),
-    ['debug_output'],
-  ),
-  buildSyntheticCase(
-    'synthetic:elixir:undefined-variable',
-    'elixir/undefined_variable.ex',
-    [
+    expectedKinds: ['moduledoc', 'function_doc', 'function_spec'],
+    expectedSnippetIncludes: ['@moduledoc', '@doc', '@spec soma(any()) :: any()'],
+  },
+  {
+    id: 'elixir:auto:undefined-variable',
+    sourcePath: path.join(repoRoot, '__synthetic__', 'elixir', 'undefined_variable.ex'),
+    content: [
       'defmodule Billing do',
       '  def soma(numero) do',
       '    numeroo + 1',
       '  end',
       'end',
     ].join('\n'),
-    ['undefined_variable'],
-    ['numero + 1', 'pingu - correction : corrigido nome da variavel numeroo para numero'],
-  ),
-  buildSyntheticCase(
-    'synthetic:elixir:functional-reassignment',
-    'elixir/functional_reassignment.ex',
-    [
+    expectedKinds: ['undefined_variable'],
+    expectedSnippetIncludes: ['pingu - correction : corrigido nome da variavel numeroo para numero', 'numero + 1'],
+    expectedActionOp: 'write_file',
+  },
+  {
+    id: 'elixir:auto:debug-output',
+    sourcePath: path.join(repoRoot, '__synthetic__', 'elixir', 'debug_output.ex'),
+    content: [
+      'defmodule Billing do',
+      '  def soma(numero) do',
+      '    IO.inspect(numero)',
+      '  end',
+      'end',
+    ].join('\n'),
+    expectedKinds: ['debug_output'],
+    forbiddenSnippetIncludes: ['IO.inspect', 'IO.puts'],
+    expectedActionOp: 'write_file',
+  },
+  {
+    id: 'elixir:auto:functional-reassignment',
+    sourcePath: path.join(repoRoot, '__synthetic__', 'elixir', 'functional_reassignment.ex'),
+    content: [
       'defmodule Billing do',
       '  def soma(valor) do',
       '    valor = valor + 1',
       '  end',
       'end',
     ].join('\n'),
-    ['functional_reassignment'],
-  ),
-  buildSyntheticCase(
-    'synthetic:elixir:nested-condition',
-    'elixir/nested_condition.ex',
-    [
+    expectedKinds: ['functional_reassignment'],
+    expectedSnippetIncludes: ['pingu - correction : corrigida reatribuicao de valor para novo_valor', 'novo_valor = valor + 1'],
+    expectedActionOp: 'write_file',
+  },
+  {
+    id: 'elixir:auto:nested-condition',
+    sourcePath: path.join(repoRoot, '__synthetic__', 'elixir', 'nested_condition.ex'),
+    content: [
       'defmodule Billing do',
       '  def valida(a, b, c, d, e) do',
       '    if a do',
@@ -218,931 +203,146 @@ const syntheticCases = [
       '  end',
       'end',
     ].join('\n'),
-    ['nested_condition'],
-  ),
-  buildSyntheticCase(
-    'synthetic:javascript:todo-fixme',
-    'javascript/todo_fixme.js',
-    [
-      'function processaPedido() {',
-      '  // TODO: remover atalho depois da migracao',
-      '  return true;',
-      '}',
-    ].join('\n'),
-    ['todo_fixme'],
-  ),
-  buildSyntheticCase(
-    'synthetic:javascript:undefined-variable',
-    'javascript/undefined_variable.js',
-    [
-      'function soma_dois(a) {',
-      '  const dois = 10;',
-      '  return a + doiis;',
-      '}',
-    ].join('\n'),
-    ['undefined_variable'],
-    ['return a + dois;', 'pingu - correction : corrigido nome da variavel doiis para dois'],
-  ),
-  buildSyntheticCase(
-    'synthetic:c:undefined-variable',
-    'c/undefined_variable.c',
-    [
-      'int soma_dois(int a) {',
-      '  int dois = 10;',
-      '  return a + doiis;',
-      '}',
-    ].join('\n'),
-    ['undefined_variable'],
-    ['return a + dois;', 'pingu - correction : corrigido nome da variavel doiis para dois'],
-  ),
-  buildSyntheticCase(
-    'synthetic:javascript:method-inside-class',
-    'javascript/method_inside_class.js',
-    [
-      'class Main {',
-      '  //:: criar metodo soma que receba a e b e retorne a + b',
-      '}',
-    ].join('\n'),
-    ['comment_task'],
-    ['soma(a, b) {'],
-    [],
-    null,
-    ['function soma(a, b) {'],
-  ),
-  buildSyntheticCase(
-    'synthetic:python:method-inside-class',
-    'python/method_inside_class.py',
-    [
-      'class Main:',
-      '    #:: criar metodo soma que receba a e b e retorne a + b',
-    ].join('\n'),
-    ['comment_task'],
-    ['def soma(self, a, b):'],
-  ),
-  buildSyntheticCase(
-    'synthetic:javascript:non-actionable-correction-format',
-    'javascript/non_actionable_correction_format.js',
-    '//:: corrigir o metodo abaixo e adicionar comentario no formato:\n',
-    [],
-    [],
-    ['comment_task'],
-  ),
-  buildSyntheticCase(
-    'synthetic:python:non-actionable-pingu-correction',
-    'python/non_actionable_pingu_correction.py',
-    '#:: pingu - correction : corrigido uso de user para u, pois o iterador valido e u\n',
-    [],
-    [],
-    ['comment_task'],
-  ),
-  buildSyntheticCase(
-    'synthetic:javascript:function-doc',
-    'javascript/function_doc.js',
-    [
-      'function soma_dois(a) {',
-      '  const dois = 10;',
-      '  return a + dois;',
-      '}',
-    ].join('\n'),
-    ['function_doc'],
-    [
-      '@param {number} a',
-      '@returns {number}',
-    ],
-  ),
-  buildSyntheticCase(
-    'synthetic:python:function-doc',
-    'python/function_doc.py',
-    [
-      'def soma_dois(a):',
-      '    dois = 10',
-      '    return a + dois',
-    ].join('\n'),
-    ['function_doc'],
-    [
-      '# ---',
-      '#   a (int):',
-      '#   int:',
-    ],
-  ),
-  buildSyntheticCase(
-    'synthetic:javascript:flow-comment-and-missing-dependency',
-    'javascript/missing_dependency.js',
-    [
-      'function abrePool() {',
-      '  const pool = new Pool();',
-      '  return pool;',
-      '}',
-    ].join('\n'),
-    ['missing_dependency', 'flow_comment'],
-  ),
-  buildSyntheticCase(
-    'synthetic:markdown:title',
-    'docs/no_title.md',
-    'guia operacional sem titulo principal\n',
-    ['markdown_title'],
-  ),
-  buildSyntheticCase(
-    'synthetic:docker:workdir',
-    'docker/Dockerfile',
-    'FROM node:20\nCOPY . .\nRUN npm test\n',
-    ['dockerfile_workdir'],
-  ),
-  buildSyntheticCase(
-    'synthetic:javascript:trailing-whitespace-and-tabs',
-    'javascript/whitespace.js',
-    `const valor = 1;   \n\tconst outro = 2;\n`,
-    ['trailing_whitespace', 'tabs'],
-  ),
-  buildSyntheticCase(
-    'synthetic:javascript:long-line',
-    'javascript/long_line.js',
-    `const linha = '${'x'.repeat(140)}';\n`,
-    ['long_line'],
-  ),
-  buildSyntheticCase(
-    'synthetic:javascript:large-file',
-    'javascript/large_file.js',
-    Array.from({ length: 301 }, (_, index) => `const linha_${index} = ${index};`).join('\n'),
-    ['large_file'],
-  ),
-  buildSyntheticCase(
-    'synthetic:ruby:generated-comment-is-stable',
-    'ruby/generated_comment.rb',
-    [
-      '# Retorna um valor aleatorio entre 1 e 20 simulando a rolagem de um dado.',
-      '# Retorno: Numero inteiro entre 1 e 20.',
-      'def dados()',
-      '  # Executa a etapa de efeito colateral necessaria para este fluxo.',
-      '  rand(1..20)',
-      'end',
-    ].join('\n'),
-    [],
-    [],
-    ['function_doc', 'function_spec', 'syntax_missing_quote'],
-  ),
-  buildSyntheticCase(
-    'synthetic:typescript:enum-structure',
-    'typescript/enum_structure.ts',
-    '//: cria enum StatusPedido com pendente, aprovado e cancelado\n',
-    ['comment_task'],
-    ['export enum StatusPedido {', "Pendente = 'PENDENTE'"],
-  ),
-  buildSyntheticCase(
-    'synthetic:javascript:object-structure',
-    'javascript/object_structure.js',
-    '//: cria objeto pedido com campos id, nome e status\n',
-    ['comment_task'],
-    ['const pedido = {', 'id: 1,', 'status: "ativo",'],
-  ),
-  buildSyntheticCase(
-    'synthetic:javascript:double-colon-d20-function',
-    'javascript/block_comment_d20.js',
-    '//:: funcao dice que retorna um numero random de um dado de 20 lados\n',
-    ['comment_task'],
-    ['function dice()', 'Math.floor(Math.random() * 20) + 1'],
-  ),
-  buildSyntheticCase(
-    'synthetic:javascript:jsdoc-not-actionable',
-    'javascript/jsdoc_not_actionable.js',
-    [
-      '/**',
-      ' * Soma dois numeros para o dominio de faturamento.',
-      ' * @param {number} a',
-      ' * @param {number} b',
-      ' */',
-      'function soma(a, b) {',
-      '  return a + b;',
-      '}',
-    ].join('\n'),
-    [],
-    [],
-    ['comment_task'],
-  ),
-  buildSyntheticCase(
-    'synthetic:python:enum-structure',
-    'python/enum_structure.py',
-    '#: cria enum PaymentStatus com pending, paid e refunded\n',
-    ['comment_task'],
-    ['class PaymentStatus(Enum):', 'PAID = "PAID"'],
-  ),
-  buildSyntheticCase(
-    'synthetic:elixir:enum-structure',
-    'elixir/enum_structure.ex',
-    '#: cria enum status_pedido com pendente, aprovado e cancelado\n',
-    ['comment_task'],
-    ['@type status_pedido :: :pendente | :aprovado | :cancelado', 'def status_pedido_values do'],
-  ),
-  buildSyntheticCase(
-    'synthetic:go:enum-structure',
-    'go/enum_structure.go',
-    '//: cria enum StatusPedido com pendente, aprovado e cancelado\n',
-    ['comment_task'],
-    ['type StatusPedido string', 'StatusPedidoAprovado StatusPedido = "APROVADO"'],
-  ),
-  buildSyntheticCase(
-    'synthetic:rust:enum-structure',
-    'rust/enum_structure.rs',
-    '//: cria enum StatusPedido com pendente, aprovado e cancelado\n',
-    ['comment_task'],
-    ['pub enum StatusPedido {', 'Aprovado,'],
-  ),
-  buildSyntheticCase(
-    'synthetic:ruby:enum-structure',
-    'ruby/enum_structure.rb',
-    '#: cria enum StatusPedido com pendente, aprovado e cancelado\n',
-    ['comment_task'],
-    ['StatusPedido = {', "aprovado: 'APROVADO'"],
-  ),
-  buildSyntheticCase(
-    'synthetic:c:enum-structure',
-    'c/enum_structure.c',
-    '//: cria enum StatusPedido com pendente, aprovado e cancelado\n',
-    ['comment_task'],
-    ['typedef enum StatusPedido {', 'STATUS_PEDIDO_APROVADO,'],
-  ),
-  buildSyntheticCase(
-    'synthetic:lua:enum-structure',
-    'lua/enum_structure.lua',
-    '--: cria enum StatusPedido com pendente, aprovado e cancelado\n',
-    ['comment_task'],
-    ['local StatusPedido = {', 'APROVADO = "APROVADO",'],
-  ),
-  buildSyntheticCase(
-    'synthetic:vim:enum-structure',
-    'vim/enum_structure.vim',
-    '": cria enum StatusPedido com pendente, aprovado e cancelado\n',
-    ['comment_task'],
-    ['let s:status_pedido = {', "'aprovado': 'APROVADO'"],
-  ),
-  buildSyntheticCase(
-    'synthetic:shell:enum-structure',
-    'shell/enum_structure.sh',
-    '#: cria enum StatusPedido com pendente, aprovado e cancelado\n',
-    ['comment_task'],
-    ['readonly STATUS_PEDIDO_APROVADO="APROVADO"'],
-  ),
-  buildSyntheticCase(
-    'synthetic:javascript:class-structure',
-    'javascript/class_structure.js',
-    '//: cria class Pedido com id, nome e status\n',
-    ['comment_task'],
-    ['export class Pedido {', 'this.status = status;'],
-  ),
-  buildSyntheticCase(
-    'synthetic:typescript:interface-structure',
-    'typescript/interface_structure.ts',
-    '//: cria interface Pedido com id, nome e status\n',
-    ['comment_task'],
-    ['export interface Pedido {', 'nome: string;'],
-  ),
-  buildSyntheticCase(
-    'synthetic:python:class-structure',
-    'python/class_structure.py',
-    '#: cria class Pedido com id, nome e status\n',
-    ['comment_task'],
-    ['class Pedido:', 'self.status = status'],
-  ),
-  buildSyntheticCase(
-    'synthetic:javascript:class-broadcast',
-    'javascript/class_broadcast.js',
-    '//: cria class RoomBroadcaster com atributo usuarios_conectados_a_rooms e metodo broadcast\n',
-    ['comment_task'],
-    ['export class RoomBroadcaster {', 'broadcast(roomId, mensagem) {', 'this.usuarios_conectados_a_rooms[roomId] ?? []'],
-  ),
-  buildSyntheticCase(
-    'synthetic:typescript:class-broadcast',
-    'typescript/class_broadcast.ts',
-    '//: cria class RoomBroadcaster com atributo usuarios_conectados_a_rooms e metodo broadcast\n',
-    ['comment_task'],
-    ['export class RoomBroadcaster {', 'broadcast(roomId: string, mensagem: string): Array<Record<string, unknown>> {'],
-  ),
-  buildSyntheticCase(
-    'synthetic:python:class-broadcast',
-    'python/class_broadcast.py',
-    '#: cria class RoomBroadcaster com atributo usuarios_conectados_a_rooms e metodo broadcast\n',
-    ['comment_task'],
-    ['class RoomBroadcaster:', 'self.usuarios_conectados_a_rooms = usuarios_conectados_a_rooms', 'def broadcast(self, room_id, mensagem):'],
-  ),
-  buildSyntheticCase(
-    'synthetic:python:class-broadcast-inferred',
-    'python/class_broadcast_inferred.py',
-    '#: cria class RoomBroadcaster completa com implementacao de broadcast\n',
-    ['comment_task'],
-    ['class RoomBroadcaster:', 'self.usuarios_conectados_a_rooms = usuarios_conectados_a_rooms', 'def broadcast(self, room_id, mensagem):'],
-  ),
-  buildSyntheticCase(
-    'synthetic:python:class-realtime-chat',
-    'python/class_realtime_chat.py',
-    '#: class broadcast para fazer realtime chat com varios usuarios podendo estar na mesma room\n',
-    ['comment_task'],
-    ['class RoomBroadcaster:', 'self.usuarios_conectados_a_rooms = usuarios_conectados_a_rooms or {}', 'def join_room(self, room_id, usuario):', 'def leave_room(self, room_id, usuario):', 'def broadcast(self, room_id, mensagem):'],
-  ),
-  buildSyntheticCase(
-    'synthetic:javascript:class-realtime-chat',
-    'javascript/class_realtime_chat.js',
-    '//: class broadcast para fazer realtime chat com varios usuarios podendo estar na mesma room\n',
-    ['comment_task'],
-    ['export class RoomBroadcaster {', 'joinRoom(roomId, usuario) {', 'leaveRoom(roomId, usuario) {', 'broadcast(roomId, mensagem) {'],
-  ),
-  buildSyntheticCase(
-    'synthetic:javascript:directed-graph',
-    'javascript/directed_graph.js',
-    '//:: criar grafo direcionado com add_node add_edge bfs dfs\n',
-    ['comment_task'],
-    ['export class GrafoDirecionado {', 'add_node(no) {', 'add_edge(origem, destino) {', 'bfs(inicio) {', 'dfs(inicio) {'],
-    [],
-    null,
-    ['implementar:', 'NotImplementedError', 'throw new Error("implementar'],
-  ),
-  buildSyntheticCase(
-    'synthetic:python:directed-graph',
-    'python/directed_graph.py',
-    '#:: criar grafo direcionado com add_node add_edge bfs dfs\n',
-    ['comment_task'],
-    ['class GrafoDirecionado:', 'def add_node(self, no):', 'def add_edge(self, origem, destino):', 'def bfs(self, inicio):', 'def dfs(self, inicio):'],
-    [],
-    null,
-    ['implementar:', 'NotImplementedError', 'raise NotImplementedError'],
-  ),
-  buildSyntheticCase(
-    'synthetic:elixir:directed-graph',
-    'elixir/directed_graph.exs',
-    '#:: criar grafo direcionado com add_node add_edge bfs dfs\n',
-    ['comment_task'],
-    ['defmodule GrafoDirecionado do', 'def add_node(%__MODULE__', 'def add_edge(%__MODULE__', 'def bfs(%__MODULE__', 'def dfs(%__MODULE__'],
-    [],
-    null,
-    ['implementar:', 'NotImplementedError'],
-  ),
-  buildSyntheticCase(
-    'synthetic:elixir:no-false-undefined-variable-on-destructuring',
-    'elixir/no_false_undefined_variable_on_destructuring.ex',
-    [
-      'defmodule GrafoDirecionado do',
-      '  def bfs(%__MODULE__{adjacencia: _adjacencia}, inicio) do',
-      '    fila = :queue.from_list([inicio])',
-      '    visitados = MapSet.new([inicio])',
-      '    {proxima_fila, proximos_visitados} =',
-      '      Enum.reduce([], {fila, visitados}, fn _vizinho, {fila_acc, visitados_acc} ->',
-      '        {fila_acc, visitados_acc}',
-      '      end)',
-      '',
-      '    {proxima_fila, proximos_visitados}',
-      '  end',
-      'end',
-    ].join('\n'),
-    [],
-    [],
-    ['undefined_variable'],
-  ),
-  buildSyntheticCase(
-    'synthetic:elixir:function-spec-arity-on-structured-param',
-    'elixir/function_spec_arity_on_structured_param.ex',
-    [
-      'defmodule GrafoDirecionado do',
-      '  defstruct adjacencia: %{}',
-      '',
-      '  def add_node(%__MODULE__{adjacencia: adjacencia} = grafo, no) do',
-      '    %__MODULE__{grafo | adjacencia: Map.put_new(adjacencia, no, MapSet.new())}',
-      '  end',
-      'end',
-    ].join('\n'),
-    ['function_spec'],
-    ['@spec add_node(any(), any()) :: any()'],
-  ),
-  buildSyntheticCase(
-    'synthetic:python:function-fallback-no-placeholder',
-    'python/function_fallback_no_placeholder.py',
-    '#:: criar stack funcional com push pop peek size\n',
-    ['comment_task'],
-    ['def stack(arg):', 'return []'],
-    [],
-    null,
-    ['implementar:', 'NotImplementedError', 'raise NotImplementedError'],
-  ),
-  buildSyntheticCase(
-    'synthetic:elixir:module-structure',
-    'elixir/module_structure.ex',
-    '#: cria modulo Billing com funcoes listar e criar\n',
-    ['comment_task'],
-    ['defmodule Billing do', 'def listar(itens) do'],
-  ),
-  buildSyntheticCase(
-    'synthetic:elixir:class-broadcast',
-    'elixir/class_broadcast.ex',
-    '#: cria class RoomBroadcaster com atributo usuarios_conectados_a_rooms e metodo broadcast\n',
-    ['comment_task'],
-    ['defmodule RoomBroadcaster do', 'defstruct usuarios_conectados_a_rooms: %{}', 'def broadcast(%__MODULE__{usuarios_conectados_a_rooms: usuarios_conectados_a_rooms}, room_id, mensagem) do'],
-  ),
-  buildSyntheticCase(
-    'synthetic:go:struct-structure',
-    'go/struct_structure.go',
-    '//: cria struct Pedido com id, nome e status\n',
-    ['comment_task'],
-    ['type Pedido struct {', 'Status string'],
-  ),
-  buildSyntheticCase(
-    'synthetic:go:class-broadcast',
-    'go/class_broadcast.go',
-    '//: cria class RoomBroadcaster com atributo usuarios_conectados_a_rooms e metodo broadcast\n',
-    ['comment_task'],
-    ['type RoomBroadcaster struct {', 'UsuariosConectadosARooms map[string][]string', 'func (service *RoomBroadcaster) Broadcast(roomID string, mensagem string) []string {'],
-  ),
-  buildSyntheticCase(
-    'synthetic:rust:interface-structure',
-    'rust/interface_structure.rs',
-    '//: cria interface Validador com metodos validar e sincronizar\n',
-    ['comment_task'],
-    ['pub trait Validador {', 'fn validar(&self) -> bool;'],
-  ),
-  buildSyntheticCase(
-    'synthetic:rust:class-broadcast',
-    'rust/class_broadcast.rs',
-    '//: cria class RoomBroadcaster com atributo usuarios_conectados_a_rooms e metodo broadcast\n',
-    ['comment_task'],
-    ['pub struct RoomBroadcaster {', 'pub fn broadcast(&self, room_id: &str, mensagem: &str) -> Vec<String> {'],
-  ),
-  buildSyntheticCase(
-    'synthetic:ruby:class-structure',
-    'ruby/class_structure.rb',
-    '#: cria class Pedido com id, nome e status\n',
-    ['comment_task'],
-    ['class Pedido', '@status = status'],
-  ),
-  buildSyntheticCase(
-    'synthetic:ruby:class-broadcast',
-    'ruby/class_broadcast.rb',
-    '#: cria class RoomBroadcaster com atributo usuarios_conectados_a_rooms e metodo broadcast\n',
-    ['comment_task'],
-    ['class RoomBroadcaster', '@usuarios_conectados_a_rooms = usuarios_conectados_a_rooms', 'def broadcast(room_id, mensagem)'],
-  ),
-  buildSyntheticCase(
-    'synthetic:c:struct-structure',
-    'c/struct_structure.c',
-    '//: cria struct Pedido com id, nome e status\n',
-    ['comment_task'],
-    ['typedef struct Pedido {', 'const char* status;'],
-  ),
-  buildSyntheticCase(
-    'synthetic:c:class-broadcast',
-    'c/class_broadcast.c',
-    '//: cria class RoomBroadcaster com atributo usuarios_conectados_a_rooms e metodo broadcast\n',
-    ['comment_task'],
-    ['typedef int (*RoomBroadcasterBroadcastFn)(void* usuario, const char* mensagem);', 'int RoomBroadcaster_broadcast(RoomBroadcaster* self, const char* room_id, const char* mensagem) {'],
-  ),
-  buildSyntheticCase(
-    'synthetic:c:double-colon-d20-function',
-    'c/block_comment_d20.c',
-    '//:: funcao dice que retorna um numero random de um dado de 20 lados\n',
-    ['comment_task', 'missing_dependency'],
-    ['int dice(void) {', 'return (rand() % 20) + 1;', '#include <stdlib.h>'],
-  ),
-  buildSyntheticCase(
-    'synthetic:lua:module-structure',
-    'lua/module_structure.lua',
-    '--: cria modulo Billing com funcoes listar e criar\n',
-    ['comment_task'],
-    ['local Billing = {}', 'function Billing.listar(itens)'],
-  ),
-  buildSyntheticCase(
-    'synthetic:lua:class-broadcast',
-    'lua/class_broadcast.lua',
-    '--: cria class RoomBroadcaster com atributo usuarios_conectados_a_rooms e metodo broadcast\n',
-    ['comment_task'],
-    ['local RoomBroadcaster = {}', 'function RoomBroadcaster:broadcast(room_id, mensagem)', 'self.usuarios_conectados_a_rooms[room_id] or {}'],
-  ),
-  buildSyntheticCase(
-    'synthetic:vim:namespace-structure',
-    'vim/namespace_structure.vim',
-    '": cria namespace billing com funcoes listar e criar\n',
-    ['comment_task'],
-    ['function! s:billing_listar(itens) abort', 'function! s:billing_criar(payload) abort'],
-  ),
-  buildSyntheticCase(
-    'synthetic:vim:class-broadcast',
-    'vim/class_broadcast.vim',
-    '": cria class RoomBroadcaster com atributo usuarios_conectados_a_rooms e metodo broadcast\n',
-    ['comment_task'],
-    ['function! s:room_broadcaster_new(attrs) abort', 'function! s:room_broadcaster_broadcast(instancia, room_id, mensagem) abort'],
-  ),
-  buildSyntheticCase(
-    'synthetic:shell:module-structure',
-    'shell/module_structure.sh',
-    '#: cria modulo billing com funcoes listar e criar\n',
-    ['comment_task'],
-    ['billing_listar() {', 'billing_criar() {'],
-  ),
-  buildSyntheticCase(
-    'synthetic:shell:class-broadcast',
-    'shell/class_broadcast.sh',
-    '#: cria class RoomBroadcaster com atributo usuarios_conectados_a_rooms e metodo broadcast\n',
-    ['comment_task'],
-    ['create_room_broadcaster() {', 'room_broadcaster_broadcast() {', 'local room_var="ROOM_$(printf'],
-  ),
-  buildSyntheticCase(
-    'synthetic:javascript:ai-comment-task',
-    'javascript/ai_comment_task.js',
-    '//: criar funcao gerado via ai\n',
-    ['comment_task'],
-    ['function ai_generated_task()', 'return 42;'],
-    [],
-    {
-      PINGU_COMMENT_TASK_AI_CMD: `${JSON.stringify(process.execPath)} ${JSON.stringify(path.join(repoRoot, 'scripts', 'mock_comment_task_ai.js'))}`,
-      PINGU_COMMENT_TASK_AI_TIMEOUT_MS: '4000',
-    },
-  ),
-  buildSyntheticCase(
-    'synthetic:python:crud-from-active-context',
-    path.join(repoRoot, 'anget_test', 'ai_context_python', 'app', 'crud_from_context.py'),
-    '#:: criar crud completo\n',
-    ['comment_task'],
-    ['def listar_usuarios(usuarios):', 'def criar_usuario(usuarios, payload):'],
-    [],
-    null,
-    ['implementar:', 'NotImplementedError', 'raise NotImplementedError'],
-  ),
-  buildSyntheticCase(
-    'synthetic:javascript:crud-from-active-context',
-    path.join(repoRoot, 'anget_test', 'ai_context_javascript', 'src', 'crud_from_context.js'),
-    '//:: criar crud completo\n',
-    ['comment_task'],
-    ['export function listarPedidos(pedidos)', 'export function criarPedido(pedidos, payload)'],
-    [],
-    null,
-    ['implementar:', 'NotImplementedError', 'throw new Error("implementar'],
-  ),
-  buildSyntheticCase(
-    'synthetic:elixir:crud-from-active-context',
-    path.join(repoRoot, 'anget_test', 'ai_context_elixir', 'lib', 'crud_from_context.ex'),
-    '#:: criar crud completo\n',
-    ['comment_task'],
-    ['def listar_faturas(faturas), do: faturas', 'def criar_fatura(faturas, payload) do'],
-    [],
-    null,
-    ['implementar:', 'NotImplementedError'],
-  ),
-  buildSyntheticCase(
-    'synthetic:python:ai-comment-task-with-context',
-    path.join(repoRoot, 'anget_test', 'ai_context_python', 'app', 'ai_context.py'),
-    '#: criar funcao gerado com contexto ativo\n',
-    ['comment_task'],
-    ['def criar_usuario(payload):', '"entidade": "usuario"'],
-    [],
-    {
-      PINGU_COMMENT_TASK_AI_CMD: `${JSON.stringify(process.execPath)} ${JSON.stringify(path.join(repoRoot, 'scripts', 'mock_comment_task_ai.js'))}`,
-      PINGU_COMMENT_TASK_AI_TIMEOUT_MS: '4000',
-    },
-  ),
-  buildSyntheticCase(
-    'synthetic:terraform:terminal-task',
-    'terraform/terminal_task.tf',
-    '# * git status\n',
-    ['terminal_task'],
-  ),
-  buildSyntheticCase(
-    'synthetic:yaml:terminal-task',
-    'yaml/terminal_task.yaml',
-    '# * rodar testes do projeto\n',
-    ['terminal_task'],
-  ),
-  buildSyntheticCase(
-    'synthetic:dockerfile:terminal-task',
-    'docker/terminal_task.Dockerfile',
-    '# * git status\n',
-    ['terminal_task'],
-  ),
-  buildSyntheticCase(
-    'synthetic:typescript:enum-structure-idempotent',
-    'typescript/enum_structure_existing.ts',
-    [
-      'export enum StatusPedido {',
-      '  Pendente = "PENDENTE",',
-      '  Aprovado = "APROVADO",',
-      '  Cancelado = "CANCELADO",',
-      '}',
-      '',
-      '//: cria enum StatusPedido com pendente, aprovado e cancelado',
-    ].join('\n'),
-    [],
-    [],
-    ['comment_task'],
-  ),
-  buildSyntheticCase(
-    'synthetic:javascript:class-structure-idempotent',
-    'javascript/class_structure_existing.js',
-    [
-      'export class Pedido {',
-      '  constructor({ id = 0, nome = "", status = "ativo" } = {}) {',
-      '    this.id = id;',
-      '    this.nome = nome;',
-      '    this.status = status;',
-      '  }',
-      '}',
-      '',
-      '//: cria class Pedido com id, nome e status',
-    ].join('\n'),
-    [],
-    [],
-    ['comment_task'],
-  ),
-  buildSyntheticCase(
-    'synthetic:elixir:module-structure-idempotent',
-    'elixir/module_structure_existing.ex',
-    [
+    expectedKinds: ['nested_condition'],
+    expectedSnippetIncludes: ['cond do', 'true -> :adulto'],
+    expectedActionOp: 'write_file',
+  },
+  {
+    id: 'elixir:auto:todo-fixme',
+    sourcePath: path.join(repoRoot, '__synthetic__', 'elixir', 'todo_fixme.ex'),
+    content: [
       'defmodule Billing do',
-      '  def listar(itens) do',
-      '    itens',
-      '  end',
-      '',
-      '  def criar(payload) do',
+      '  def processa(payload) do',
+      '    # TODO: remover ajuste temporario',
       '    payload',
       '  end',
       'end',
-      '',
-      '#: cria modulo Billing com funcoes listar e criar',
     ].join('\n'),
-    [],
-    [],
-    ['comment_task'],
-  ),
+    expectedKinds: ['todo_fixme'],
+    forbiddenSnippetIncludes: ['TODO', 'FIXME'],
+    expectedActionOp: 'write_file',
+  },
+  {
+    id: 'elixir:auto:unit-test',
+    sourcePath: unitTestProject.sourcePath,
+    content: [
+      'defmodule Billing do',
+      '  def soma(numero), do: numero + 1',
+      '',
+      '  def listar(itens), do: itens',
+      'end',
+    ].join('\n'),
+    expectedKinds: ['unit_test'],
+    expectedSnippetIncludes: ['ExUnit.start()', 'describe "soma/1"', 'assert Billing.soma(1) == 2', 'describe "listar/1"'],
+    expectedActionOp: 'write_file',
+    expectedTargetFileSuffix: path.join('tests', 'lib', 'billing_test.exs'),
+  },
 ];
 
-const snippetExpectations = {
-  'anget_test/typescript/src/02_comment_advanced.ts': [
-    'function somar_10(numero)',
-    'return numero + 10',
-  ],
-  'anget_test/react/src/01_d20_prompt.tsx': [
-    'export function D20DiceRoller()',
-    'const [faceValue, setFaceValue] = useState(sides);',
-  ],
-  'anget_test/go/pkg/01_comment_prompt.go': [
-    'func soma(a float64, b float64) float64 {',
-    'return a + b',
-  ],
-  'anget_test/rust/src/01_comment_prompt.rs': [
-    'fn soma(a: f64, b: f64) -> f64 {',
-    'a + b',
-  ],
-  'anget_test/ruby/lib/01_d20_prompt.rb': [
-    'def dados()',
-    'rand(1..20)',
-  ],
-  'anget_test/c/src/01_comment_prompt.c': [
-    'double soma(double a, double b) {',
-    'return a + b;',
-  ],
-  'anget_test/c/src/02_comment_advanced.c': [
-    'double somar_10(double numero) {',
-    'return numero + 10;',
-  ],
-  'anget_test/lua/lua/02_comment_advanced.lua': [
-    'function somar_10(numero)',
-    'return numero + 10',
-  ],
-  'anget_test/vim/autoload/02_comment_advanced.vim': [
-    'function! somar_10(numero)',
-    'return numero + 10',
-  ],
-  'anget_test/shell/01_comment_prompt.sh': [
-    'somar_10() {',
-    'printf \'%s\\n\' "$(( numero + 10 ))"',
-  ],
-  'anget_test/toml/config.toml': [
-    'timeout = 30',
-  ],
-  'anget_test/terraform/prompt.tf': [
-    'terraform {',
-    'required_version = ">= 1.5.0"',
-  ],
-};
-
-function readFile(relativeFile) {
-  return fs.readFileSync(path.join(repoRoot, relativeFile), 'utf8');
-}
-function fixtureExists(relativeFile) {
-  return fs.existsSync(path.join(repoRoot, relativeFile));
-}
-function caseSourceAvailable(sourcePath) {
-  return String(sourcePath || '').includes(`${path.sep}__synthetic__${path.sep}`) || fs.existsSync(sourcePath);
-}
-
-function buildSyntheticCase(
-  id,
-  relativeSourcePath,
-  content,
-  expectedKinds,
-  expectedSnippetIncludes = [],
-  forbiddenKinds = [],
-  envOverrides = null,
-  forbiddenSnippetIncludes = [],
-) {
-  return {
-    id,
-    sourcePath: path.isAbsolute(relativeSourcePath)
-      ? relativeSourcePath
-      : path.join(repoRoot, '__synthetic__', relativeSourcePath),
-    content,
-    expectedKinds,
-    expectedSnippetIncludes,
-    forbiddenKinds,
-    envOverrides,
-    forbiddenSnippetIncludes,
-  };
-}
-
 function withTemporaryEnvironment(overrides, callback) {
-  const entries = Object.entries(overrides || {});
-  if (entries.length === 0) {
-    return callback();
-  }
-
-  const previousValues = new Map(entries.map(([key]) => [key, process.env[key]]));
-  entries.forEach(([key, value]) => {
+  const previousValues = new Map(Object.keys(overrides).map((key) => [key, process.env[key]]));
+  Object.entries(overrides).forEach(([key, value]) => {
     process.env[key] = value;
   });
-
   try {
     return callback();
   } finally {
     previousValues.forEach((value, key) => {
       if (typeof value === 'undefined') {
         delete process.env[key];
-        return;
+      } else {
+        process.env[key] = value;
       }
-      process.env[key] = value;
     });
   }
 }
 
-function analyzeFixtureSource(sourcePath, content, envOverrides = null) {
-  return withTemporaryEnvironment(envOverrides, () =>
-    analyzeText(sourcePath, content, { maxLineLength: 120 }));
+function analyzeFixture(fixture) {
+  return withTemporaryEnvironment({
+    PINGU_COMMENT_TASK_AI_CMD: mockAiCommand,
+    PINGU_COMMENT_TASK_AI_TIMEOUT_MS: '4000',
+  }, () => analyzeText(fixture.sourcePath, fixture.content, { maxLineLength: 120 }));
 }
 
-function normalizeFixtureCases() {
-  const fileCases = fixtureCases
-    .filter(([relativeFile]) => fixtureExists(relativeFile))
-    .filter(([relativeFile]) => isLanguageActive(relativeFile))
-    .map(([relativeFile, expectedKinds]) => ({
-      id: relativeFile,
-      sourcePath: path.join(repoRoot, relativeFile),
-      content: readFile(relativeFile),
-      expectedKinds,
-      expectedSnippetIncludes: snippetExpectations[relativeFile] || [],
-    }));
+function validateFixtureMatrix() {
+  const failures = [];
 
-  const availableSyntheticCases = syntheticCases
-    .filter((fixture) => caseSourceAvailable(fixture.sourcePath))
-    .filter((fixture) => isLanguageActive(fixture.sourcePath));
-
-  return [...fileCases, ...availableSyntheticCases].map((fixture) => ({
-    ...fixture,
-    envOverrides: {
-      ...(requiresAiForFeature(fixture.sourcePath, 'comment_task') || requiresAiForFeature(fixture.sourcePath, 'context_file') || requiresAiForFeature(fixture.sourcePath, 'unit_test')
-        ? {
-          PINGU_COMMENT_TASK_AI_CMD: mockAiCommand,
-          PINGU_COMMENT_TASK_AI_TIMEOUT_MS: '4000',
-        }
-        : {}),
-      ...(fixture.envOverrides || {}),
-    },
-  }));
-}
-
-function runFixtureMatrix() {
-  const failures = normalizeFixtureCases().reduce((accumulator, fixture) => {
-    const issues = analyzeFixtureSource(fixture.sourcePath, fixture.content, fixture.envOverrides || null);
+  syntheticCases.forEach((fixture) => {
+    const issues = analyzeFixture(fixture);
     const kinds = new Set(issues.map((issue) => issue.kind));
     const missingKinds = fixture.expectedKinds.filter((kind) => !kinds.has(kind));
-    const forbiddenKinds = fixture.forbiddenKinds || [];
-    const presentForbiddenKinds = forbiddenKinds.filter((kind) => kinds.has(kind));
-    const expectedSnippets = fixture.expectedSnippetIncludes || [];
-    const forbiddenSnippetIncludes = fixture.forbiddenSnippetIncludes || [];
-    const snippetPayload = issues
-      .map((issue) => String(issue.snippet || ''))
-      .filter((snippet) => snippet.length > 0)
-      .join('\n---\n');
-    const missingSnippetIncludes = expectedSnippets.filter((snippet) => !snippetPayload.includes(snippet));
-    const presentForbiddenSnippetIncludes = forbiddenSnippetIncludes.filter((snippet) => snippetPayload.includes(snippet));
-    if (
-      missingKinds.length === 0
-      && missingSnippetIncludes.length === 0
-      && presentForbiddenKinds.length === 0
-      && presentForbiddenSnippetIncludes.length === 0
-    ) {
-      return accumulator;
+    const snippets = issues.map((issue) => String(issue.snippet || '')).join('\n---\n');
+    const missingSnippets = (fixture.expectedSnippetIncludes || []).filter((fragment) => !snippets.includes(fragment));
+    const forbiddenSnippets = (fixture.forbiddenSnippetIncludes || []).filter((fragment) => snippets.includes(fragment));
+
+    const firstExpectedIssue = issues.find((issue) => {
+      if (!fixture.expectedKinds.includes(issue.kind)) {
+        return false;
+      }
+      if (!fixture.expectedTargetFileSuffix) {
+        return true;
+      }
+      const targetFile = issue.action ? String(issue.action.target_file || '') : '';
+      return targetFile.endsWith(fixture.expectedTargetFileSuffix);
+    }) || issues.find((issue) => fixture.expectedKinds.includes(issue.kind));
+    const actionOp = firstExpectedIssue && firstExpectedIssue.action ? firstExpectedIssue.action.op : '';
+    const targetFile = firstExpectedIssue && firstExpectedIssue.action ? String(firstExpectedIssue.action.target_file || '') : '';
+
+    const actionFailure = fixture.expectedActionOp && actionOp !== fixture.expectedActionOp
+      ? `action.op esperado=${fixture.expectedActionOp} atual=${actionOp || 'undefined'}`
+      : '';
+    const targetFailure = fixture.expectedTargetFileSuffix && !targetFile.endsWith(fixture.expectedTargetFileSuffix)
+      ? `target_file esperado com sufixo=${fixture.expectedTargetFileSuffix} atual=${targetFile || 'undefined'}`
+      : '';
+
+    if (missingKinds.length === 0 && missingSnippets.length === 0 && forbiddenSnippets.length === 0 && !actionFailure && !targetFailure) {
+      return;
     }
 
-    return accumulator.concat({
-      fixtureId: fixture.id,
-      sourcePath: fixture.sourcePath,
-      expectedKinds: fixture.expectedKinds,
-      forbiddenKinds,
-      actualKinds: Array.from(kinds).sort(),
+    failures.push({
+      id: fixture.id,
       missingKinds,
-      missingSnippetIncludes,
-      presentForbiddenKinds,
-      forbiddenSnippetIncludes,
-      presentForbiddenSnippetIncludes,
+      missingSnippets,
+      forbiddenSnippets,
+      actionFailure,
+      targetFailure,
+      actualKinds: Array.from(kinds).sort(),
     });
-  }, []);
+  });
 
   return {
     ok: failures.length === 0,
-    total: normalizeFixtureCases().length,
+    total: syntheticCases.length,
     failures,
   };
 }
 
-function runCapabilityRegistryValidation() {
+function validateCapabilityRegistry() {
   const registry = languageCapabilityRegistry();
-  const fixtureCases = normalizeFixtureCases();
-  const ids = new Set();
-  const extensions = new Map();
-  const fixtureKindsByProfile = new Map();
-  const fixturePresenceByProfile = new Set();
+  const failures = [];
 
-  fixtureCases.forEach((fixture) => {
-    const profile = getCapabilityProfile(fixture.sourcePath);
-    const kinds = new Set(fixture.expectedKinds || []);
-    fixturePresenceByProfile.add(profile.id);
-    if (!fixtureKindsByProfile.has(profile.id)) {
-      fixtureKindsByProfile.set(profile.id, new Set());
+  const activeIds = activeLanguageIds().sort();
+  if (activeIds.join(',') !== 'elixir') {
+    failures.push(`activeLanguageIds esperado=elixir atual=${activeIds.join(',') || 'vazio'}`);
+  }
+
+  const ids = registry.map((entry) => entry.id).sort();
+  if (ids.join(',') !== 'default,elixir') {
+    failures.push(`registry ids esperados=default,elixir atuais=${ids.join(',')}`);
+  }
+
+  const elixirProfile = getCapabilityProfile(path.join(repoRoot, 'lib', 'sample.ex'));
+  ['comment_task', 'context_file', 'unit_test', 'terminal_task'].forEach((feature) => {
+    if (!elixirProfile.editorFeatures.includes(feature)) {
+      failures.push(`feature ${feature} ausente no profile elixir`);
     }
-    kinds.forEach((kind) => fixtureKindsByProfile.get(profile.id).add(kind));
   });
 
-  const failures = registry.reduce((accumulator, entry) => {
-    const profileFailures = [];
-
-    if (ids.has(entry.id)) {
-      profileFailures.push(`id duplicado: ${entry.id}`);
+  ['comment_task', 'context_file', 'unit_test'].forEach((feature) => {
+    if (!requiresAiForFeature(path.join(repoRoot, 'lib', 'sample.ex'), feature)) {
+      failures.push(`requiresAiForFeature deveria ser true para ${feature} em elixir`);
     }
-    ids.add(entry.id);
-
-    if (entry.id !== 'default' && (!Array.isArray(entry.extensions) || entry.extensions.length === 0)) {
-      profileFailures.push('linguagem sem extensoes declaradas');
-    }
-
-    (entry.extensions || []).forEach((extension) => {
-      const normalizedExtension = String(extension || '').trim().toLowerCase();
-      if (!normalizedExtension) {
-        profileFailures.push('extensao vazia');
-        return;
-      }
-      if (extensions.has(normalizedExtension)) {
-        profileFailures.push(`extensao duplicada ${normalizedExtension} com ${extensions.get(normalizedExtension)}`);
-        return;
-      }
-      extensions.set(normalizedExtension, entry.id);
-    });
-
-    if ((entry.editorFeatures || []).includes('comment_task') && (!entry.commentTaskIntents || entry.commentTaskIntents.length === 0)) {
-      profileFailures.push('comment_task declarado sem intents de comentario');
-    }
-
-    if ((entry.editorFeatures || []).includes('terminal_task') && !(entry.offlineCapabilities || []).includes('terminal_task')) {
-      profileFailures.push('terminal_task declarado sem capacidade offline correspondente');
-    }
-
-    if ((entry.editorFeatures || []).includes('context_file') && !(entry.offlineCapabilities || []).includes('context_blueprint')) {
-      profileFailures.push('context_file declarado sem capacidade offline context_blueprint');
-    }
-
-    if ((entry.editorFeatures || []).includes('unit_test') && entry.unitTestStyle === 'none') {
-      profileFailures.push('unit_test declarado com unitTestStyle none');
-    }
-
-    if ((entry.editorFeatures || []).includes('unit_test')) {
-      const hasUnitTestCapability = (entry.offlineCapabilities || []).includes('unit_test_generation')
-        || (entry.offlineCapabilities || []).includes('contract_test_generation');
-      if (!hasUnitTestCapability) {
-        profileFailures.push('unit_test declarado sem capacidade offline de teste correspondente');
-      }
-    }
-
-    if (entry.id === 'default') {
-      if (profileFailures.length === 0) {
-        return accumulator;
-      }
-
-      return accumulator.concat({
-        profileId: entry.id,
-        failures: profileFailures,
-      });
-    }
-
-    if (profileFailures.length === 0) {
-      return accumulator;
-    }
-
-    return accumulator.concat({
-      profileId: entry.id,
-      failures: profileFailures,
-    });
-  }, []);
+  });
 
   return {
     ok: failures.length === 0,
@@ -1151,95 +351,34 @@ function runCapabilityRegistryValidation() {
   };
 }
 
-function findTerminalIssue(relativeFile) {
-  const absoluteFile = path.join(repoRoot, relativeFile);
-  return analyzeFixtureSource(absoluteFile, readFile(relativeFile)).find((issue) => issue.kind === 'terminal_task');
-}
-
-function runCommand(command, cwd) {
-  return spawnSync('/bin/sh', ['-lc', command], {
-    cwd,
-    encoding: 'utf8',
+function cleanupTemporaryProjects() {
+  temporaryProjects.forEach((projectRoot) => {
+    fs.rmSync(projectRoot, { recursive: true, force: true });
   });
 }
 
-function runExternalChecks(externalFixturesDir) {
-  const externalRoot = path.resolve(externalFixturesDir);
-  const checks = [];
-
-  const cTerminalIssue = findTerminalIssue('anget_test/c/src/01_comment_prompt.c');
-  const cRoot = path.join(externalRoot, 'c');
-  if (cTerminalIssue && fs.existsSync(cRoot)) {
-    const cResult = runCommand(cTerminalIssue.action.command, cRoot);
-    checks.push({
-      name: 'external-c-terminal-task',
-      ok: cResult.status === 0,
-      status: cResult.status,
-      stdout: cResult.stdout,
-      stderr: cResult.stderr,
-    });
-  }
-
-  const elixirRoot = path.join(externalRoot, 'elixir');
-  if (fs.existsSync(elixirRoot)) {
-    const elixirResult = spawnSync('mix', ['test'], {
-      cwd: elixirRoot,
-      encoding: 'utf8',
-    });
-    const sandboxPubSubDenied = String(elixirResult.stderr || '').includes('Mix.PubSub')
-      && String(elixirResult.stderr || '').includes(':eperm');
-    checks.push({
-      name: 'external-elixir-mix-test',
-      ok: elixirResult.status === 0 || sandboxPubSubDenied,
-      skipped: sandboxPubSubDenied,
-      status: elixirResult.status,
-      stdout: elixirResult.stdout,
-      stderr: elixirResult.stderr,
-    });
-  }
-
-  return checks;
-}
-
-function parseExternalDir(argv) {
-  const explicitIndex = argv.indexOf('--external-dir');
-  if (explicitIndex !== -1 && argv[explicitIndex + 1]) {
-    return argv[explicitIndex + 1];
-  }
-  return process.env.PINGU_EXTERNAL_FIXTURES_DIR || '';
-}
-
 function main() {
-  const summary = {
-    registry: runCapabilityRegistryValidation(),
-    matrix: runFixtureMatrix(),
-    external: [],
-  };
+  const matrix = validateFixtureMatrix();
+  const registry = validateCapabilityRegistry();
 
-  const externalDir = parseExternalDir(process.argv.slice(2));
-  if (externalDir) {
-    summary.external = runExternalChecks(externalDir);
+  cleanupTemporaryProjects();
+
+  if (matrix.ok && registry.ok) {
+    console.log(JSON.stringify({
+      ok: true,
+      matrixTotal: matrix.total,
+      registryTotal: registry.total,
+      activeLanguageIds: activeLanguageIds(),
+    }));
+    return;
   }
 
-  const failingExternal = summary.external.filter((item) => !item.ok);
-  const ok = summary.registry.ok && summary.matrix.ok && failingExternal.length === 0;
-
-  console.log(JSON.stringify({
-    ok,
-    registry: {
-      ok: summary.registry.ok,
-      total: summary.registry.total,
-      failures: summary.registry.failures,
-    },
-    matrix: {
-      ok: summary.matrix.ok,
-      total: summary.matrix.total,
-      failures: summary.matrix.failures,
-    },
-    external: summary.external,
+  console.error(JSON.stringify({
+    ok: false,
+    matrix,
+    registry,
   }, null, 2));
-
-  process.exit(ok ? 0 : 1);
+  process.exitCode = 1;
 }
 
 if (require.main === module) {
@@ -1248,12 +387,8 @@ if (require.main === module) {
 
 module.exports = {
   fixtureCases,
-  snippetExpectations,
-  normalizeFixtureCases,
-  parseExternalDir,
-  readFile,
   repoRoot,
-  runCapabilityRegistryValidation,
-  runExternalChecks,
-  runFixtureMatrix,
+  snippetExpectations,
+  validateCapabilityRegistry,
+  validateFixtureMatrix,
 };

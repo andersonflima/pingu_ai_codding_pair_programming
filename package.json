@@ -67,12 +67,12 @@
         "realtimeDevAgent.commentTaskAiCommand": {
           "type": "string",
           "default": "",
-          "description": "Comando opcional para geracao de comment_task via IA. O comando recebe JSON via stdin e deve responder JSON com snippet."
+          "description": "Comando obrigatorio para os fluxos orientados por IA do agente. O comando recebe JSON via stdin e deve responder JSON com snippet e action quando necessario."
         },
         "realtimeDevAgent.commentTaskAiTimeoutMs": {
           "type": "number",
           "default": 4000,
-          "description": "Tempo maximo em milissegundos para a etapa opcional de IA em comment_task."
+          "description": "Tempo maximo em milissegundos para as etapas orientadas por IA do agente."
         },
         "realtimeDevAgent.realtimeOnSave": {
           "type": "boolean",

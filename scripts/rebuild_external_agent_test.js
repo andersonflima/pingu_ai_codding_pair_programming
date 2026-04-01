@@ -124,7 +124,11 @@ function buildExternalSuite(targetDir = defaultTargetDir) {
     force: true,
   });
   fs.mkdirSync(path.dirname(absoluteTargetDir), { recursive: true });
-  fs.cpSync(sourceDir, absoluteTargetDir, { recursive: true });
+  if (fs.existsSync(sourceDir)) {
+    fs.cpSync(sourceDir, absoluteTargetDir, { recursive: true });
+  } else {
+    fs.mkdirSync(absoluteTargetDir, { recursive: true });
+  }
 
   const manifest = buildManifest(absoluteTargetDir);
   const workspaceFile = path.join(absoluteTargetDir, 'realtime-dev-agent-validation.code-workspace');

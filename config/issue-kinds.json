@@ -106,7 +106,7 @@
   },
   "nested_condition": {
     "defaultAction": { "op": "insert_before" },
-    "autoFixDefault": false,
+    "autoFixDefault": true,
     "autoFixPriority": 170,
     "supportsQuickFix": true,
     "supportsFollowUp": true
@@ -162,7 +162,7 @@
   },
   "todo_fixme": {
     "defaultAction": { "op": "insert_before" },
-    "autoFixDefault": false,
+    "autoFixDefault": true,
     "autoFixPriority": 165,
     "supportsQuickFix": true,
     "supportsFollowUp": true
