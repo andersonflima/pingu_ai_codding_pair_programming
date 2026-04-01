@@ -1,0 +1,273 @@
+#!/usr/bin/env node
+'use strict';
+
+process.env.PINGU_ACTIVE_LANGUAGE_IDS = process.env.PINGU_ACTIVE_LANGUAGE_IDS || 'elixir,javascript';
+
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { analyzeText } = require('../lib/analyzer');
+const {
+  activeLanguageIds,
+  getCapabilityProfile,
+  languageCapabilityRegistry,
+  requiresAiForFeature,
+} = require('../lib/language-capabilities');
+
+const repoRoot = path.resolve(__dirname, '..');
+const mockAiCommand = `${JSON.stringify(process.execPath)} ${JSON.stringify(path.join(repoRoot, 'scripts', 'mock_comment_task_ai.js'))}`;
+const temporaryProjects = [];
+
+function createTemporaryNodeProject(label, options = {}) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), `pingu-node-${label}-`));
+  temporaryProjects.push(root);
+  fs.mkdirSync(path.join(root, 'src'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'tests'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({
+    name: `pingu-${label}`,
+    version: '0.1.0',
+    type: 'commonjs',
+  }, null, 2));
+
+  if (options.activeContext) {
+    const contextDir = path.join(root, '.realtime-dev-agent', 'contexts');
+    fs.mkdirSync(contextDir, { recursive: true });
+    fs.writeFileSync(path.join(contextDir, 'javascript-active.md'), options.activeContext);
+  }
+
+  return {
+    root,
+    sourcePath: path.join(root, options.relativeFile || path.join('src', 'sample.js')),
+  };
+}
+
+function buildActiveNodeContextDocument(entity, summary) {
+  return [
+    '<!-- realtime-dev-agent-context -->',
+    'architecture: onion',
+    'blueprint_type: bff_crud',
+    `entity: ${entity}`,
+    'language: javascript',
+    'slug: javascript-active',
+    'source_ext: .js',
+    'source_root: src',
+    `summary: ${summary}`,
+    '',
+    '# Contexto ativo',
+    `- Contexto principal: ${entity}`,
+  ].join('\n');
+}
+
+const crudProject = createTemporaryNodeProject('matrix-crud', {
+  relativeFile: path.join('src', 'crud_from_context.js'),
+  activeContext: buildActiveNodeContextDocument('fatura', 'crud de faturamento'),
+});
+
+const unitTestProject = createTemporaryNodeProject('matrix-unit-test', {
+  relativeFile: path.join('src', 'billing.js'),
+});
+
+const syntheticCases = [
+  {
+    id: 'node:comment_task:minimal-class',
+    sourcePath: path.join(repoRoot, '__synthetic__', 'node', 'class_main.js'),
+    content: '//:: criar uma class main nodejs\n',
+    expectedKinds: ['comment_task'],
+    expectedSnippetIncludes: ['class Main {}', 'module.exports = { Main };'],
+    forbiddenSnippetIncludes: ['defmodule', '@moduledoc'],
+  },
+  {
+    id: 'node:comment_task:directed-graph',
+    sourcePath: path.join(repoRoot, '__synthetic__', 'node', 'directed_graph.js'),
+    content: '//:: criar grafo direcionado com add_node add_edge bfs dfs\n',
+    expectedKinds: ['comment_task'],
+    expectedSnippetIncludes: ['class GrafoDirecionado {', 'addNode(no)', 'bfs(inicio)', 'dfs(inicio)'],
+    forbiddenSnippetIncludes: ['implementar:', 'NotImplementedError'],
+  },
+  {
+    id: 'node:comment_task:crud-from-context',
+    sourcePath: crudProject.sourcePath,
+    content: '//:: criar crud completo\n',
+    expectedKinds: ['comment_task'],
+    expectedSnippetIncludes: ['function listarFaturas(faturas)', 'function criarFatura(faturas, payload)'],
+  },
+  {
+    id: 'node:context_file:create',
+    sourcePath: path.join(repoRoot, '__synthetic__', 'node', 'context_create.js'),
+    content: '// ** bff para crud de usuario\n',
+    expectedKinds: ['context_file'],
+    expectedSnippetIncludes: ['language: javascript', 'source_ext: .js', 'source_root: src'],
+    expectedActionOp: 'write_file',
+    expectedTargetFileSuffix: path.join('.realtime-dev-agent', 'contexts', 'bff-crud-usuario.md'),
+  },
+  {
+    id: 'node:auto:unit_test',
+    sourcePath: unitTestProject.sourcePath,
+    content: [
+      'function soma(a, b) {',
+      '  return a + b;',
+      '}',
+      '',
+      'function listar(itens) {',
+      '  return itens;',
+      '}',
+      '',
+      'module.exports = { soma, listar };',
+    ].join('\n'),
+    expectedKinds: ['unit_test'],
+    expectedSnippetIncludes: ['const test = require(\'node:test\');', 'subject.soma(1, 2)', 'subject.listar([1, 2])'],
+    expectedActionOp: 'write_file',
+    expectedTargetFileSuffix: path.join('tests', 'src', 'billing.test.js'),
+  },
+];
+
+function withTemporaryEnvironment(overrides, callback) {
+  const previousValues = new Map(Object.keys(overrides).map((key) => [key, process.env[key]]));
+  Object.entries(overrides).forEach(([key, value]) => {
+    process.env[key] = value;
+  });
+  try {
+    return callback();
+  } finally {
+    previousValues.forEach((value, key) => {
+      if (typeof value === 'undefined') {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    });
+  }
+}
+
+function analyzeFixture(fixture) {
+  return withTemporaryEnvironment({
+    PINGU_COMMENT_TASK_AI_CMD: mockAiCommand,
+    PINGU_COMMENT_TASK_AI_TIMEOUT_MS: '4000',
+  }, () => analyzeText(fixture.sourcePath, fixture.content, { maxLineLength: 120 }));
+}
+
+function validateFixtureMatrix() {
+  const failures = [];
+
+  syntheticCases.forEach((fixture) => {
+    const issues = analyzeFixture(fixture);
+    const kinds = new Set(issues.map((issue) => issue.kind));
+    const missingKinds = fixture.expectedKinds.filter((kind) => !kinds.has(kind));
+    const snippets = issues.map((issue) => String(issue.snippet || '')).join('\n---\n');
+    const missingSnippets = (fixture.expectedSnippetIncludes || []).filter((fragment) => !snippets.includes(fragment));
+    const forbiddenSnippets = (fixture.forbiddenSnippetIncludes || []).filter((fragment) => snippets.includes(fragment));
+
+    const firstExpectedIssue = issues.find((issue) => {
+      if (!fixture.expectedKinds.includes(issue.kind)) {
+        return false;
+      }
+      if (!fixture.expectedTargetFileSuffix) {
+        return true;
+      }
+      const targetFile = issue.action ? String(issue.action.target_file || '') : '';
+      return targetFile.endsWith(fixture.expectedTargetFileSuffix);
+    }) || issues.find((issue) => fixture.expectedKinds.includes(issue.kind));
+    const actionOp = firstExpectedIssue && firstExpectedIssue.action ? firstExpectedIssue.action.op : '';
+    const targetFile = firstExpectedIssue && firstExpectedIssue.action ? String(firstExpectedIssue.action.target_file || '') : '';
+
+    const actionFailure = fixture.expectedActionOp && actionOp !== fixture.expectedActionOp
+      ? `action.op esperado=${fixture.expectedActionOp} atual=${actionOp || 'undefined'}`
+      : '';
+    const targetFailure = fixture.expectedTargetFileSuffix && !targetFile.endsWith(fixture.expectedTargetFileSuffix)
+      ? `target_file esperado com sufixo=${fixture.expectedTargetFileSuffix} atual=${targetFile || 'undefined'}`
+      : '';
+
+    if (missingKinds.length === 0 && missingSnippets.length === 0 && forbiddenSnippets.length === 0 && !actionFailure && !targetFailure) {
+      return;
+    }
+
+    failures.push({
+      id: fixture.id,
+      missingKinds,
+      missingSnippets,
+      forbiddenSnippets,
+      actionFailure,
+      targetFailure,
+      actualKinds: Array.from(kinds).sort(),
+    });
+  });
+
+  return {
+    ok: failures.length === 0,
+    total: syntheticCases.length,
+    failures,
+  };
+}
+
+function validateCapabilityRegistry() {
+  const registry = languageCapabilityRegistry();
+  const failures = [];
+
+  const activeIds = activeLanguageIds().sort();
+  if (activeIds.join(',') !== 'elixir,javascript') {
+    failures.push(`activeLanguageIds esperado=elixir,javascript atual=${activeIds.join(',') || 'vazio'}`);
+  }
+
+  const ids = registry.map((entry) => entry.id).sort();
+  if (ids.join(',') !== 'default,elixir,javascript') {
+    failures.push(`registry ids esperados=default,elixir,javascript atuais=${ids.join(',')}`);
+  }
+
+  const jsProfile = getCapabilityProfile(path.join(repoRoot, 'src', 'sample.js'));
+  ['comment_task', 'context_file', 'unit_test', 'terminal_task'].forEach((feature) => {
+    if (!jsProfile.editorFeatures.includes(feature)) {
+      failures.push(`feature ${feature} ausente no profile javascript`);
+    }
+  });
+
+  ['comment_task', 'context_file', 'unit_test'].forEach((feature) => {
+    if (!requiresAiForFeature(path.join(repoRoot, 'src', 'sample.js'), feature)) {
+      failures.push(`requiresAiForFeature deveria ser true para ${feature} em javascript`);
+    }
+  });
+
+  return {
+    ok: failures.length === 0,
+    total: registry.length,
+    failures,
+  };
+}
+
+function cleanupTemporaryProjects() {
+  temporaryProjects.forEach((projectRoot) => {
+    fs.rmSync(projectRoot, { recursive: true, force: true });
+  });
+}
+
+function main() {
+  const matrix = validateFixtureMatrix();
+  const registry = validateCapabilityRegistry();
+
+  cleanupTemporaryProjects();
+
+  if (matrix.ok && registry.ok) {
+    console.log(JSON.stringify({
+      ok: true,
+      matrixTotal: matrix.total,
+      registryTotal: registry.total,
+      activeLanguageIds: activeLanguageIds().sort(),
+    }));
+    return;
+  }
+
+  console.error(JSON.stringify({
+    ok: false,
+    matrix,
+    registry,
+  }, null, 2));
+  process.exitCode = 1;
+}
+
+if (require.main === module) {
+  main();
+}
+
+module.exports = {
+  validateCapabilityRegistry,
+  validateFixtureMatrix,
+};

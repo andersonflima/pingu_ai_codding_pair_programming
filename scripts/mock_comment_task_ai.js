@@ -26,7 +26,47 @@ if (mode === 'issue_fix') {
 
 process.stdout.write(JSON.stringify(buildCommentTask(payload, instruction, extension)));
 
+function isJavaScriptExtension(ext) {
+  return ['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'].includes(String(ext || '').toLowerCase());
+}
+
 function buildCommentTask(currentPayload, normalizedInstruction, normalizedExtension) {
+  if (isJavaScriptExtension(normalizedExtension) && /\bcriar\b.*\bclass\b.*\bmain\b/.test(normalizedInstruction)) {
+    return {
+      snippet: [
+        'class Main {}',
+        '',
+        'module.exports = { Main };',
+      ].join('\n'),
+    };
+  }
+
+  if (isJavaScriptExtension(normalizedExtension) && normalizedInstruction.includes('criar crud completo')) {
+    const entity = resolveEntityName(currentPayload);
+    const plural = pluralize(entity);
+    const listFn = `listar${pascalize(plural)}`;
+    const createFn = `criar${pascalize(entity)}`;
+    return {
+      snippet: [
+        `function ${listFn}(${plural}) {`,
+        `  return ${plural};`,
+        '}',
+        '',
+        `function ${createFn}(${plural}, payload) {`,
+        `  return [...${plural}, { id: ${plural}.length + 1, ...payload }];`,
+        '}',
+        '',
+        `module.exports = { ${listFn}, ${createFn} };`,
+      ].join('\n'),
+    };
+  }
+
+  if (isJavaScriptExtension(normalizedExtension) && normalizedInstruction.includes('grafo direcionado')) {
+    return {
+      snippet: buildDirectedGraphSnippetJavaScript(),
+    };
+  }
+
   if (normalizedInstruction.includes('criar um module main')) {
     return { snippet: ['defmodule Main do', 'end'].join('\n') };
   }
@@ -134,8 +174,9 @@ function buildContextResolution(currentPayload) {
   const blueprintHint = currentPayload.blueprintHint || {};
   const entity = resolveEntityName(currentPayload);
   const summary = String(blueprintHint.summary || currentPayload.instruction || 'contexto ativo').trim();
-  const sourceExt = String(blueprintHint.sourceExt || '.ex');
-  const sourceRoot = String(blueprintHint.sourceRoot || 'lib');
+  const sourceExt = String(blueprintHint.sourceExt || currentPayload.extension || '.ex');
+  const contextMetadata = resolveContextMetadata(sourceExt);
+  const sourceRoot = String(blueprintHint.sourceRoot || contextMetadata.sourceRoot);
   const existingContext = String(currentPayload.existingContextDocument || '');
   const currentEntity = String(currentPayload.activeBlueprint && currentPayload.activeBlueprint.entity || '').trim();
   const mergedSummary = currentEntity && currentEntity === entity
@@ -148,15 +189,15 @@ function buildContextResolution(currentPayload) {
       'architecture: onion',
       'blueprint_type: bff_crud',
       `entity: ${entity}`,
-      'language: elixir',
-      'slug: elixir-active',
+      `language: ${contextMetadata.language}`,
+      `slug: ${contextMetadata.slug}`,
       `source_ext: ${sourceExt}`,
       `source_root: ${sourceRoot}`,
       `summary: ${mergedSummary}`,
       '',
       '# Contexto ativo',
       `- Contexto principal: ${entity}`,
-      '- Linguagem alvo: elixir',
+      `- Linguagem alvo: ${contextMetadata.language}`,
       `- Politica aplicada: ${currentEntity && currentEntity === entity ? 'merge' : 'overwrite'}`,
       existingContext && currentEntity && currentEntity === entity
         ? `- Contexto anterior preservado para ${currentEntity}`
@@ -172,6 +213,11 @@ function buildContextResolution(currentPayload) {
 
 function buildUnitTests(currentPayload) {
   const source = String(currentPayload.content || '');
+  const sourceExt = String(currentPayload.extension || path.extname(String(currentPayload.sourceFile || '')) || '.ex').toLowerCase();
+  if (isJavaScriptExtension(sourceExt)) {
+    return buildJavaScriptUnitTests(currentPayload);
+  }
+
   const moduleMatch = source.match(/defmodule\s+([A-Za-z0-9_.?!]+)\s+do/);
   const moduleName = moduleMatch ? moduleMatch[1] : pascalize(path.parse(String(currentPayload.sourceFile || '')).name || 'module');
   const targetFile = String(currentPayload.targetFile || '');
@@ -195,6 +241,65 @@ function buildUnitTests(currentPayload) {
       mkdir_p: true,
     },
   };
+}
+
+function buildJavaScriptUnitTests(currentPayload) {
+  const targetFile = String(currentPayload.targetFile || '');
+  const sourceFile = String(currentPayload.sourceFile || '');
+  const candidates = Array.isArray(currentPayload.testCandidates) ? currentPayload.testCandidates : [];
+  const relativeSource = toPosixPath(path.relative(path.dirname(targetFile), sourceFile));
+  const importPath = relativeSource.startsWith('.') ? relativeSource : `./${relativeSource}`;
+
+  const lines = [
+    "const test = require('node:test');",
+    "const assert = require('node:assert/strict');",
+    `const subject = require(${JSON.stringify(importPath)});`,
+    '',
+  ];
+
+  candidates.forEach((candidate, index) => {
+    const name = String(candidate && candidate.name || 'executar');
+    const arity = Number(candidate && candidate.arity || 0);
+    if (index > 0) {
+      lines.push('');
+    }
+    lines.push(`test(${JSON.stringify(`${name}/${arity} permanece disponivel`)}, () => {`);
+    lines.push(`  assert.equal(typeof subject.${name}, 'function');`);
+    lines.push('});');
+
+    const behaviorAssertion = buildJavaScriptCandidateAssertion(name, arity);
+    if (behaviorAssertion) {
+      lines.push('');
+      lines.push(`test(${JSON.stringify(`${name}/${arity} executa o contrato principal`)}, () => {`);
+      lines.push(`  ${behaviorAssertion}`);
+      lines.push('});');
+    }
+  });
+
+  return {
+    snippet: lines.join('\n'),
+    action: {
+      op: 'write_file',
+      target_file: targetFile,
+      mkdir_p: true,
+    },
+  };
+}
+
+function buildJavaScriptCandidateAssertion(candidateName, arity) {
+  if (candidateName === 'soma' && arity === 1) {
+    return 'assert.equal(subject.soma(1), 2);';
+  }
+  if (candidateName === 'soma' && arity === 2) {
+    return 'assert.equal(subject.soma(1, 2), 3);';
+  }
+  if (candidateName === 'listar' && arity === 1) {
+    return 'assert.deepEqual(subject.listar([1, 2]), [1, 2]);';
+  }
+  if (candidateName.startsWith('listar') && arity === 1) {
+    return `assert.deepEqual(subject[${JSON.stringify(candidateName)}]([{ id: 1 }]), [{ id: 1 }]);`;
+  }
+  return '';
 }
 
 function buildIssueFix(currentPayload) {
@@ -360,6 +465,75 @@ function buildDirectedGraphSnippet() {
     '    end',
     '  end',
     'end',
+  ].join('\n');
+}
+
+function buildDirectedGraphSnippetJavaScript() {
+  return [
+    'class GrafoDirecionado {',
+    '  constructor() {',
+    '    this.adjacencia = new Map();',
+    '  }',
+    '',
+    '  addNode(no) {',
+    '    if (!this.adjacencia.has(no)) {',
+    '      this.adjacencia.set(no, new Set());',
+    '    }',
+    '    return this;',
+    '  }',
+    '',
+    '  addEdge(origem, destino) {',
+    '    this.addNode(origem);',
+    '    this.addNode(destino);',
+    '    this.adjacencia.get(origem).add(destino);',
+    '    return this;',
+    '  }',
+    '',
+    '  bfs(inicio) {',
+    '    if (!this.adjacencia.has(inicio)) {',
+    '      return [];',
+    '    }',
+    '    const visitados = new Set([inicio]);',
+    '    const fila = [inicio];',
+    '    const ordem = [];',
+    '    while (fila.length > 0) {',
+    '      const atual = fila.shift();',
+    '      ordem.push(atual);',
+    '      [...(this.adjacencia.get(atual) || [])].sort().forEach((vizinho) => {',
+    '        if (!visitados.has(vizinho)) {',
+    '          visitados.add(vizinho);',
+    '          fila.push(vizinho);',
+    '        }',
+    '      });',
+    '    }',
+    '    return ordem;',
+    '  }',
+    '',
+    '  dfs(inicio) {',
+    '    if (!this.adjacencia.has(inicio)) {',
+    '      return [];',
+    '    }',
+    '    const visitados = new Set();',
+    '    const pilha = [inicio];',
+    '    const ordem = [];',
+    '    while (pilha.length > 0) {',
+    '      const atual = pilha.pop();',
+    '      if (visitados.has(atual)) {',
+    '        continue;',
+    '      }',
+    '      visitados.add(atual);',
+    '      ordem.push(atual);',
+    '      [...(this.adjacencia.get(atual) || [])].sort().reverse().forEach((vizinho) => {',
+    '        if (!visitados.has(vizinho)) {',
+    '          pilha.push(vizinho);',
+    '        }',
+    '      });',
+    '    }',
+    '    return ordem;',
+    '  }',
+    '}',
+    '',
+    'module.exports = { GrafoDirecionado };',
   ].join('\n');
 }
 
@@ -616,6 +790,35 @@ function pluralize(value) {
     return source;
   }
   return `${source}s`;
+}
+
+function resolveContextMetadata(sourceExt) {
+  const normalized = String(sourceExt || '').toLowerCase();
+  if (isJavaScriptExtension(normalized)) {
+    return {
+      language: 'javascript',
+      slug: 'javascript-active',
+      sourceRoot: 'src',
+    };
+  }
+
+  if (normalized === '.py') {
+    return {
+      language: 'python',
+      slug: 'python-active',
+      sourceRoot: 'src',
+    };
+  }
+
+  return {
+    language: 'elixir',
+    slug: 'elixir-active',
+    sourceRoot: 'lib',
+  };
+}
+
+function toPosixPath(value) {
+  return String(value || '').split(path.sep).join('/');
 }
 
 function escapeRegExp(value) {
