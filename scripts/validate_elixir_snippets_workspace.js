@@ -262,6 +262,29 @@ const cases = [
     mustClearKinds: ['unit_test'],
     expectedTargetIncludesAfterApply: ['describe "soma/1"', 'describe "listar/1"'],
   },
+  {
+    id: 'auto:context_contract:calculator_return',
+    file: 'corrigir_contexto_calculadora_resultado.ex',
+    preContext: {
+      entity: 'calculadora',
+      summary: 'projeto de calculadora com retorno numerico para o cliente',
+    },
+    content: [
+      'defmodule Calculadora do',
+      '  def resultado(a, b) do',
+      '    total = a + b',
+      '    true',
+      '  end',
+      'end',
+    ].join('\n'),
+    expectedKinds: ['context_contract'],
+    expectedSnippetIncludes: ['total = a + b', '    total'],
+    expectedActionOp: 'write_file',
+    applyKinds: ['context_contract'],
+    mustClearKinds: ['context_contract'],
+    expectedSourceIncludesAfterApply: ['total = a + b', '    total'],
+    forbiddenSourceIncludesAfterApply: ['    true', '    false'],
+  },
 ];
 
 function normalizePathForDisplay(absolutePath) {

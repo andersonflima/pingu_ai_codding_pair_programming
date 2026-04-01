@@ -20,6 +20,13 @@
     "supportsQuickFix": true,
     "supportsFollowUp": true
   },
+  "context_contract": {
+    "defaultAction": { "op": "write_file" },
+    "autoFixDefault": true,
+    "autoFixPriority": 85,
+    "supportsQuickFix": true,
+    "supportsFollowUp": true
+  },
   "debug_output": {
     "defaultAction": { "op": "replace_line" },
     "autoFixDefault": true,

@@ -79,6 +79,11 @@ const unitTestProject = createTemporaryElixirProject('matrix-unit-test', {
   relativeFile: path.join('lib', 'billing.ex'),
 });
 
+const contextContractProject = createTemporaryElixirProject('matrix-context-contract', {
+  relativeFile: path.join('lib', 'context_contract_calculator.ex'),
+  activeContext: buildActiveContextDocument('calculadora', 'projeto de calculadora com saida numerica'),
+});
+
 const syntheticCases = [
   {
     id: 'elixir:comment_task:minimal-module',
@@ -236,6 +241,22 @@ const syntheticCases = [
     expectedSnippetIncludes: ['ExUnit.start()', 'describe "soma/1"', 'assert Billing.soma(1) == 2', 'describe "listar/1"'],
     expectedActionOp: 'write_file',
     expectedTargetFileSuffix: path.join('tests', 'lib', 'billing_test.exs'),
+  },
+  {
+    id: 'elixir:auto:context-contract-calculator',
+    sourcePath: contextContractProject.sourcePath,
+    content: [
+      'defmodule Calculadora do',
+      '  def resultado(a, b) do',
+      '    total = a + b',
+      '    true',
+      '  end',
+      'end',
+    ].join('\n'),
+    expectedKinds: ['context_contract'],
+    expectedSnippetIncludes: ['total = a + b', '    total'],
+    expectedActionOp: 'write_file',
+    expectedTargetFileSuffix: path.join('lib', 'context_contract_calculator.ex'),
   },
 ];
 

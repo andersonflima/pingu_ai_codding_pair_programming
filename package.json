@@ -116,6 +116,7 @@
           },
           "default": [
             "moduledoc",
+            "context_contract",
             "function_spec",
             "function_doc",
             "missing_dependency",

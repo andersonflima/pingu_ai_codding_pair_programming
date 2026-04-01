@@ -273,6 +273,10 @@ function buildIssueFix(currentPayload) {
     return rewriteFileResult(currentPayload, buildNestedConditionRewrite(currentPayload));
   }
 
+  if (issueKind === 'context_contract') {
+    return rewriteFileResult(currentPayload, rewriteCalculatorContextContract(currentPayload));
+  }
+
   return {};
 }
 
@@ -462,6 +466,67 @@ function replaceLineInSource(source, lineNumber, replacementLines) {
   return lines.join('\n');
 }
 
+function rewriteCalculatorContextContract(currentPayload) {
+  const source = String(currentPayload.content || '');
+  const issue = currentPayload.issue || {};
+  const preferredExpression = String(issue.contextHint && issue.contextHint.preferredReturnExpression || '').trim();
+  const lines = source.split('\n');
+  const startIndex = Math.max(0, Number(issue.line || 1) - 1);
+
+  let depth = 0;
+  let functionStart = -1;
+  let functionEnd = -1;
+  for (let index = startIndex; index < lines.length; index += 1) {
+    const current = String(lines[index] || '');
+    if (functionStart < 0 && /^\s*def\s+/.test(current)) {
+      functionStart = index;
+      depth = blockDelta(current);
+      continue;
+    }
+    if (functionStart >= 0) {
+      depth += blockDelta(current);
+      if (depth <= 0 && /^\s*end\b/.test(current.trim())) {
+        functionEnd = index;
+        break;
+      }
+    }
+  }
+
+  if (functionStart < 0 || functionEnd < 0) {
+    return source;
+  }
+
+  const expression = preferredExpression || inferExpressionFromFunction(lines.slice(functionStart, functionEnd + 1));
+  if (!expression) {
+    return source;
+  }
+
+  for (let index = functionEnd - 1; index > functionStart; index -= 1) {
+    if (/^\s*(true|false)\s*$/.test(String(lines[index] || '').trim())) {
+      const indentation = String(lines[index] || '').match(/^\s*/);
+      lines[index] = `${indentation ? indentation[0] : ''}${expression}`;
+      return lines.join('\n');
+    }
+  }
+
+  return source;
+}
+
+function inferExpressionFromFunction(functionLines) {
+  const lines = Array.isArray(functionLines) ? functionLines : [];
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const current = String(lines[index] || '').trim();
+    const assignment = current.match(/^([a-z_][a-zA-Z0-9_?!]*)\s*=\s*(.+)$/);
+    if (!assignment) {
+      continue;
+    }
+    if (/[+\-*/]/.test(String(assignment[2] || ''))) {
+      return assignment[1];
+    }
+  }
+  return '';
+}
+
 function inferDebugReplacementLine(source, lineText) {
   const variableMatch = String(lineText || '').match(/\(([^)]+)\)/);
   if (variableMatch && variableMatch[1]) {
@@ -555,6 +620,13 @@ function pluralize(value) {
 
 function escapeRegExp(value) {
   return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function blockDelta(line) {
+  const source = String(line || '');
+  const opens = [...source.matchAll(/\b(do|fn)\b/g)].length;
+  const closes = [...source.matchAll(/\bend\b/g)].length;
+  return opens - closes;
 }
 
 function levenshteinDistance(a, b) {
