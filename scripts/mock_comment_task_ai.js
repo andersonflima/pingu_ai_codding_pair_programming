@@ -216,11 +216,7 @@ function buildIssueFix(currentPayload) {
 
   if (issueKind === 'function_doc') {
     return {
-      snippet: [
-        '  @doc """',
-        '  Executa a regra principal da funcao mantendo o contrato publico do dominio.',
-        '  """',
-      ].join('\n'),
+      snippet: '  @doc "Executa a regra principal da funcao mantendo o contrato publico do dominio."',
       action: { op: 'insert_before' },
     };
   }
@@ -238,7 +234,7 @@ function buildIssueFix(currentPayload) {
 
   if (issueKind === 'undefined_variable') {
     const unknown = extractBetween(issue.message, "'", "'");
-    const replacement = extractBetween(issue.suggestion, "'", "'");
+    const replacement = resolveUndefinedVariableReplacement(currentPayload, unknown, extractBetween(issue.suggestion, "'", "'"));
     const fixedLine = replaceToken(lineText, unknown, replacement);
     const rewritten = replaceLineInSource(source, Number(issue.line || 1), [
       `    # pingu - correction : corrigido nome da variavel ${unknown} para ${replacement}, pois ${replacement} e o identificador valido no escopo atual.`,
@@ -481,6 +477,36 @@ function inferDebugReplacementLine(source, lineText) {
   return `${' '.repeat(countLeadingSpaces(lineText))}:ok`;
 }
 
+function resolveUndefinedVariableReplacement(currentPayload, unknown, suggested) {
+  const fallback = String(suggested || '').trim() || 'valor';
+  const contextLines = currentPayload.issueContext && Array.isArray(currentPayload.issueContext.surroundingLines)
+    ? currentPayload.issueContext.surroundingLines.map((entry) => String(entry.text || ''))
+    : [];
+  const lambdaBindingLine = contextLines.find((line) => /\bfn\s+[a-z_][a-zA-Z0-9_]*\s*->/.test(line));
+  if (lambdaBindingLine) {
+    const match = lambdaBindingLine.match(/\bfn\s+([a-z_][a-zA-Z0-9_]*)\s*->/);
+    if (match && match[1] && match[1] !== unknown) {
+      return match[1];
+    }
+  }
+
+  const functionHeader = contextLines.find((line) => /^\s*def\s+[a-z_][a-zA-Z0-9_?!]*\s*\(/.test(line));
+  if (functionHeader) {
+    const params = String(functionHeader)
+      .replace(/^.*\(/, '')
+      .replace(/\).*$/, '')
+      .split(',')
+      .map((token) => String(token || '').trim().replace(/[^a-zA-Z0-9_?!]/g, ''))
+      .filter(Boolean);
+    const closestParam = params.find((param) => levenshteinDistance(param, unknown) <= 2 && param !== unknown);
+    if (closestParam) {
+      return closestParam;
+    }
+  }
+
+  return fallback;
+}
+
 function replaceToken(text, from, to) {
   return String(text || '').replace(new RegExp(`\\b${escapeRegExp(from)}\\b`, 'g'), to);
 }
@@ -529,4 +555,31 @@ function pluralize(value) {
 
 function escapeRegExp(value) {
   return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function levenshteinDistance(a, b) {
+  const left = String(a || '');
+  const right = String(b || '');
+  if (left === right) {
+    return 0;
+  }
+  if (!left.length) {
+    return right.length;
+  }
+  if (!right.length) {
+    return left.length;
+  }
+
+  let previous = Array.from({ length: right.length + 1 }, (_value, index) => index);
+  for (let row = 0; row < left.length; row += 1) {
+    const current = [row + 1];
+    for (let column = 0; column < right.length; column += 1) {
+      const insertion = current[column] + 1;
+      const deletion = previous[column + 1] + 1;
+      const substitution = previous[column] + (left[row] === right[column] ? 0 : 1);
+      current.push(Math.min(insertion, deletion, substitution));
+    }
+    previous = current;
+  }
+  return previous[previous.length - 1];
 }

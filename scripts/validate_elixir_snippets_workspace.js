@@ -10,6 +10,7 @@ const repoRoot = path.resolve(__dirname, '..');
 const mockAiCommand = `${JSON.stringify(process.execPath)} ${JSON.stringify(path.join(repoRoot, 'scripts', 'mock_comment_task_ai.js'))}`;
 const workspaceRoot = path.join(os.homedir(), 'snippets', 'pingu', 'elixir');
 const contextsDir = path.join(workspaceRoot, '.realtime-dev-agent', 'contexts');
+const contextFile = path.join(contextsDir, 'elixir-active.md');
 
 const cases = [
   {
@@ -19,6 +20,8 @@ const cases = [
     expectedKinds: ['comment_task'],
     expectedSnippetIncludes: ['defmodule Main do', 'end'],
     forbiddenSnippetIncludes: ['@moduledoc', '@spec', 'def listar('],
+    applyKinds: ['comment_task'],
+    mustClearKinds: ['comment_task'],
   },
   {
     id: 'comment_task:graph',
@@ -27,6 +30,21 @@ const cases = [
     expectedKinds: ['comment_task'],
     expectedSnippetIncludes: ['defmodule GrafoDirecionado do', 'def add_node(%__MODULE__', 'def bfs(%__MODULE__'],
     forbiddenSnippetIncludes: ['implementar:', 'NotImplementedError'],
+    applyKinds: ['comment_task'],
+    mustClearKinds: ['comment_task'],
+  },
+  {
+    id: 'comment_task:crud_from_context',
+    file: 'criar_crud_contexto.ex',
+    preContext: {
+      entity: 'fatura',
+      summary: 'contexto ativo de faturamento',
+    },
+    content: '#:: criar crud completo\n',
+    expectedKinds: ['comment_task'],
+    expectedSnippetIncludes: ['def listar_faturas(faturas), do: faturas', 'def criar_fatura(faturas, payload) do'],
+    applyKinds: ['comment_task'],
+    mustClearKinds: ['comment_task'],
   },
   {
     id: 'context_file:merge',
@@ -40,6 +58,9 @@ const cases = [
     expectedSnippetIncludes: ['entity: usuario', 'Politica aplicada: merge'],
     expectedActionOp: 'write_file',
     expectedTargetFileSuffix: path.join('.realtime-dev-agent', 'contexts', 'elixir-active.md'),
+    applyKinds: ['context_file'],
+    mustClearKinds: ['context_file'],
+    expectedTargetIncludesAfterApply: ['entity: usuario', 'Politica aplicada: merge'],
   },
   {
     id: 'context_file:overwrite',
@@ -53,6 +74,9 @@ const cases = [
     expectedSnippetIncludes: ['entity: fatura', 'Politica aplicada: overwrite'],
     expectedActionOp: 'write_file',
     expectedTargetFileSuffix: path.join('.realtime-dev-agent', 'contexts', 'elixir-active.md'),
+    applyKinds: ['context_file'],
+    mustClearKinds: ['context_file'],
+    expectedTargetIncludesAfterApply: ['entity: fatura', 'Politica aplicada: overwrite'],
   },
   {
     id: 'auto:public_contracts',
@@ -66,9 +90,12 @@ const cases = [
     ].join('\n'),
     expectedKinds: ['moduledoc', 'function_doc', 'function_spec'],
     expectedSnippetIncludes: ['@moduledoc', '@doc', '@spec soma(any()) :: any()'],
+    applyKinds: ['moduledoc', 'function_spec', 'function_doc'],
+    mustClearKinds: ['moduledoc', 'function_doc', 'function_spec'],
+    expectedSourceIncludesAfterApply: ['@moduledoc', '@doc', '@spec soma(any()) :: any()'],
   },
   {
-    id: 'auto:undefined_variable',
+    id: 'auto:undefined_variable:simple',
     file: 'corrigir_variavel_indefinida.ex',
     content: [
       'defmodule Billing do',
@@ -80,6 +107,63 @@ const cases = [
     expectedKinds: ['undefined_variable'],
     expectedSnippetIncludes: ['pingu - correction : corrigido nome da variavel numeroo para numero', 'numero + 1'],
     expectedActionOp: 'write_file',
+    applyKinds: ['undefined_variable'],
+    mustClearKinds: ['undefined_variable'],
+    expectedSourceIncludesAfterApply: ['numero + 1'],
+  },
+  {
+    id: 'auto:undefined_variable:param_name',
+    file: 'corrigir_parametro_nome_errado.ex',
+    content: [
+      'defmodule Billing do',
+      '  def soma(a, b) do',
+      '    aa + b',
+      '  end',
+      'end',
+    ].join('\n'),
+    expectedKinds: ['undefined_variable'],
+    expectedSnippetIncludes: ['pingu - correction : corrigido nome da variavel aa para a', 'a + b'],
+    expectedActionOp: 'write_file',
+    applyKinds: ['undefined_variable'],
+    mustClearKinds: ['undefined_variable'],
+    expectedSourceIncludesAfterApply: ['a + b'],
+  },
+  {
+    id: 'auto:undefined_variable:map_reference',
+    file: 'corrigir_referencia_mapa_errada.ex',
+    content: [
+      'defmodule Billing do',
+      '  def formatar_usuario(usuario_mapa) do',
+      '    nome = Map.get(usuario_map, :nome)',
+      '    "#{nome} <#{usuario_mapa[:email]}>"',
+      '  end',
+      'end',
+    ].join('\n'),
+    expectedKinds: ['undefined_variable'],
+    expectedSnippetIncludes: ['pingu - correction : corrigido nome da variavel usuario_map para usuario_mapa', 'Map.get(usuario_mapa, :nome)'],
+    expectedActionOp: 'write_file',
+    applyKinds: ['undefined_variable'],
+    mustClearKinds: ['undefined_variable'],
+    expectedSourceIncludesAfterApply: ['Map.get(usuario_mapa, :nome)'],
+  },
+  {
+    id: 'auto:undefined_variable:enum_scope',
+    file: 'corrigir_variavel_escopo_enum.ex',
+    content: [
+      'defmodule Billing do',
+      '  def normalizar(itens) do',
+      '    Enum.map(itens, fn item ->',
+      '      i + 1',
+      '    end)',
+      '  end',
+      'end',
+    ].join('\n'),
+    expectedKinds: ['undefined_variable'],
+    expectedSnippetIncludes: ['pingu - correction : corrigido nome da variavel i para item', 'item + 1'],
+    expectedActionOp: 'write_file',
+    applyKinds: ['undefined_variable'],
+    mustClearKinds: ['undefined_variable'],
+    expectedSourceIncludesAfterApply: ['item + 1'],
   },
   {
     id: 'auto:functional_reassignment',
@@ -94,6 +178,9 @@ const cases = [
     expectedKinds: ['functional_reassignment'],
     expectedSnippetIncludes: ['pingu - correction : corrigida reatribuicao de valor para novo_valor', 'novo_valor = valor + 1'],
     expectedActionOp: 'write_file',
+    applyKinds: ['functional_reassignment'],
+    mustClearKinds: ['functional_reassignment'],
+    expectedSourceIncludesAfterApply: ['novo_valor = valor + 1'],
   },
   {
     id: 'auto:debug_output',
@@ -108,6 +195,9 @@ const cases = [
     expectedKinds: ['debug_output'],
     forbiddenSnippetIncludes: ['IO.inspect', 'IO.puts'],
     expectedActionOp: 'write_file',
+    applyKinds: ['debug_output'],
+    mustClearKinds: ['debug_output'],
+    forbiddenSourceIncludesAfterApply: ['IO.inspect', 'IO.puts'],
   },
   {
     id: 'auto:nested_condition',
@@ -132,6 +222,9 @@ const cases = [
     expectedKinds: ['nested_condition'],
     expectedSnippetIncludes: ['cond do', 'true -> :adulto'],
     expectedActionOp: 'write_file',
+    applyKinds: ['nested_condition'],
+    mustClearKinds: ['nested_condition'],
+    expectedSourceIncludesAfterApply: ['cond do', 'true -> :adulto'],
   },
   {
     id: 'auto:todo_fixme',
@@ -147,6 +240,9 @@ const cases = [
     expectedKinds: ['todo_fixme'],
     forbiddenSnippetIncludes: ['TODO', 'FIXME'],
     expectedActionOp: 'write_file',
+    applyKinds: ['todo_fixme'],
+    mustClearKinds: ['todo_fixme'],
+    forbiddenSourceIncludesAfterApply: ['TODO', 'FIXME'],
   },
   {
     id: 'auto:unit_test',
@@ -162,6 +258,9 @@ const cases = [
     expectedSnippetIncludes: ['ExUnit.start()', 'describe "soma/1"', 'assert Billing.soma(1) == 2', 'describe "listar/1"'],
     expectedActionOp: 'write_file',
     expectedTargetFileSuffix: path.join('tests', 'cobertura_unit_test_test.exs'),
+    applyKinds: ['unit_test'],
+    mustClearKinds: ['unit_test'],
+    expectedTargetIncludesAfterApply: ['describe "soma/1"', 'describe "listar/1"'],
   },
 ];
 
@@ -173,6 +272,7 @@ function ensureWorkspace() {
   fs.rmSync(workspaceRoot, { recursive: true, force: true });
   fs.mkdirSync(workspaceRoot, { recursive: true });
   fs.mkdirSync(path.join(workspaceRoot, 'tests'), { recursive: true });
+  fs.mkdirSync(contextsDir, { recursive: true });
   fs.writeFileSync(path.join(workspaceRoot, 'mix.exs'), [
     'defmodule PinguWorkspace.MixProject do',
     '  use Mix.Project',
@@ -180,6 +280,8 @@ function ensureWorkspace() {
     'end',
     '',
   ].join('\n'));
+  fs.writeFileSync(path.join(workspaceRoot, '.gitignore'), '.realtime-dev-agent/\n');
+  fs.rmSync(contextFile, { force: true });
 }
 
 function buildActiveContextDocument(entity, summary) {
@@ -200,15 +302,13 @@ function buildActiveContextDocument(entity, summary) {
 }
 
 function resetContextFile() {
-  fs.mkdirSync(contextsDir, { recursive: true });
-  const contextFile = path.join(contextsDir, 'elixir-active.md');
   fs.rmSync(contextFile, { force: true });
 }
 
 function applyPreContext(preContext) {
   fs.mkdirSync(contextsDir, { recursive: true });
   fs.writeFileSync(
-    path.join(contextsDir, 'elixir-active.md'),
+    contextFile,
     buildActiveContextDocument(preContext.entity, preContext.summary),
     'utf8',
   );
@@ -235,22 +335,97 @@ function withAiEnvironment(callback) {
   }
 }
 
-function findPrimaryIssue(issues, testCase) {
-  const expectedKindsSet = new Set(testCase.expectedKinds || []);
-  const direct = issues.find((issue) => {
-    if (!expectedKindsSet.has(issue.kind)) {
-      return false;
-    }
-    if (!testCase.expectedTargetFileSuffix) {
-      return true;
-    }
-    const targetFile = issue.action ? String(issue.action.target_file || '') : '';
-    return targetFile.endsWith(testCase.expectedTargetFileSuffix);
-  });
-  if (direct) {
-    return direct;
+function readFileLines(targetFile) {
+  return fs.readFileSync(targetFile, 'utf8').replace(/\r\n/g, '\n').split('\n');
+}
+
+function writeFileLines(targetFile, lines) {
+  fs.writeFileSync(targetFile, lines.join('\n'), 'utf8');
+}
+
+function snippetLines(snippet) {
+  const normalized = String(snippet || '').replace(/\r\n/g, '\n');
+  if (normalized.length === 0) {
+    return [];
   }
-  return issues.find((issue) => expectedKindsSet.has(issue.kind)) || null;
+  return normalized.split('\n');
+}
+
+function boundedLineIndex(line, lines) {
+  const numeric = Number(line || 1);
+  if (!Number.isFinite(numeric) || numeric <= 1) {
+    return 0;
+  }
+  return Math.min(Math.max(0, numeric - 1), Math.max(0, lines.length - 1));
+}
+
+function findIssueForKind(issues, kind, testCase) {
+  const expectedSuffix = testCase.expectedTargetFileSuffix || '';
+  if (expectedSuffix) {
+    const withTarget = issues.find((issue) => {
+      if (issue.kind !== kind) {
+        return false;
+      }
+      const targetFile = issue.action ? String(issue.action.target_file || '') : '';
+      return targetFile.endsWith(expectedSuffix);
+    });
+    if (withTarget) {
+      return withTarget;
+    }
+  }
+  return issues.find((issue) => issue.kind === kind) || null;
+}
+
+function applyIssueAction(sourceFile, issue) {
+  const action = issue && issue.action && typeof issue.action === 'object'
+    ? issue.action
+    : { op: 'insert_before' };
+  const op = String(action.op || 'insert_before');
+  const renderedSnippetLines = snippetLines(issue && issue.snippet);
+
+  if (op === 'write_file') {
+    const targetFile = String(action.target_file || sourceFile);
+    if (action.mkdir_p) {
+      fs.mkdirSync(path.dirname(targetFile), { recursive: true });
+    }
+    fs.writeFileSync(targetFile, renderedSnippetLines.join('\n'), 'utf8');
+
+    if (action.remove_trigger && path.resolve(targetFile) !== path.resolve(sourceFile) && fs.existsSync(sourceFile)) {
+      const lines = readFileLines(sourceFile);
+      const index = boundedLineIndex(issue.line, lines);
+      lines.splice(index, 1);
+      writeFileLines(sourceFile, lines);
+    }
+
+    return targetFile;
+  }
+
+  if (!fs.existsSync(sourceFile)) {
+    return sourceFile;
+  }
+  const lines = readFileLines(sourceFile);
+  const index = boundedLineIndex(issue.line, lines);
+
+  if (op === 'replace_line') {
+    lines.splice(index, 1, ...renderedSnippetLines);
+    writeFileLines(sourceFile, lines);
+    return sourceFile;
+  }
+
+  if (op === 'insert_after') {
+    lines.splice(index + 1, 0, ...renderedSnippetLines);
+    writeFileLines(sourceFile, lines);
+    return sourceFile;
+  }
+
+  lines.splice(index, 0, ...renderedSnippetLines);
+  writeFileLines(sourceFile, lines);
+  return sourceFile;
+}
+
+function analyzeFile(filePath) {
+  const content = fs.readFileSync(filePath, 'utf8');
+  return withAiEnvironment(() => analyzeText(filePath, content, { maxLineLength: 120 }));
 }
 
 function validateCase(testCase) {
@@ -263,13 +438,14 @@ function validateCase(testCase) {
   const filePath = path.join(workspaceRoot, testCase.file);
   fs.writeFileSync(filePath, `${testCase.content}\n`, 'utf8');
 
-  const issues = withAiEnvironment(() => analyzeText(filePath, `${testCase.content}\n`, { maxLineLength: 120 }));
-  const issueKinds = new Set(issues.map((issue) => issue.kind));
+  const initialIssues = analyzeFile(filePath);
+  const issueKinds = new Set(initialIssues.map((issue) => issue.kind));
   const missingKinds = (testCase.expectedKinds || []).filter((kind) => !issueKinds.has(kind));
-  const snippetPayload = issues.map((issue) => String(issue.snippet || '')).join('\n---\n');
+  const snippetPayload = initialIssues.map((issue) => String(issue.snippet || '')).join('\n---\n');
   const missingSnippets = (testCase.expectedSnippetIncludes || []).filter((fragment) => !snippetPayload.includes(fragment));
   const forbiddenSnippets = (testCase.forbiddenSnippetIncludes || []).filter((fragment) => snippetPayload.includes(fragment));
-  const primaryIssue = findPrimaryIssue(issues, testCase);
+
+  const primaryIssue = findIssueForKind(initialIssues, (testCase.expectedKinds || [])[0], testCase);
   const actionOp = primaryIssue && primaryIssue.action ? primaryIssue.action.op : '';
   const targetFile = primaryIssue && primaryIssue.action ? String(primaryIssue.action.target_file || '') : '';
   const actionFailure = testCase.expectedActionOp && actionOp !== testCase.expectedActionOp
@@ -279,16 +455,82 @@ function validateCase(testCase) {
     ? `target_file esperado com sufixo=${testCase.expectedTargetFileSuffix} atual=${targetFile || 'undefined'}`
     : '';
 
+  const applyKinds = Array.isArray(testCase.applyKinds) && testCase.applyKinds.length > 0
+    ? testCase.applyKinds
+    : [];
+  const applyFailures = [];
+  const appliedTargets = {};
+  let currentIssues = initialIssues;
+
+  applyKinds.forEach((kind) => {
+    const issue = findIssueForKind(currentIssues, kind, testCase);
+    if (!issue) {
+      applyFailures.push(`issue ausente para aplicar kind=${kind}`);
+      return;
+    }
+    const affectedFile = applyIssueAction(filePath, issue);
+    appliedTargets[kind] = affectedFile;
+    currentIssues = analyzeFile(filePath);
+  });
+
+  const clearKinds = Array.isArray(testCase.mustClearKinds) && testCase.mustClearKinds.length > 0
+    ? testCase.mustClearKinds
+    : [];
+  clearKinds.forEach((kind) => {
+    if (currentIssues.some((issue) => issue.kind === kind)) {
+      applyFailures.push(`kind ${kind} permaneceu apos aplicacao`);
+    }
+  });
+
+  const sourceAfterApply = fs.readFileSync(filePath, 'utf8');
+  const sourceExpectationFailures = [];
+  (testCase.expectedSourceIncludesAfterApply || []).forEach((fragment) => {
+    if (!sourceAfterApply.includes(fragment)) {
+      sourceExpectationFailures.push(`fonte sem trecho esperado apos aplicar: ${fragment}`);
+    }
+  });
+  (testCase.forbiddenSourceIncludesAfterApply || []).forEach((fragment) => {
+    if (sourceAfterApply.includes(fragment)) {
+      sourceExpectationFailures.push(`fonte contem trecho proibido apos aplicar: ${fragment}`);
+    }
+  });
+
+  const targetExpectationFailures = [];
+  if ((testCase.expectedTargetIncludesAfterApply || []).length > 0) {
+    const targetPath = appliedTargets.context_file || appliedTargets.unit_test || targetFile;
+    if (!targetPath || !fs.existsSync(targetPath)) {
+      targetExpectationFailures.push('arquivo alvo esperado nao foi criado');
+    } else {
+      const targetContent = fs.readFileSync(targetPath, 'utf8');
+      (testCase.expectedTargetIncludesAfterApply || []).forEach((fragment) => {
+        if (!targetContent.includes(fragment)) {
+          targetExpectationFailures.push(`alvo sem trecho esperado apos aplicar: ${fragment}`);
+        }
+      });
+    }
+  }
+
   return {
     id: testCase.id,
     filePath,
-    ok: missingKinds.length === 0 && missingSnippets.length === 0 && forbiddenSnippets.length === 0 && !actionFailure && !targetFailure,
+    ok: missingKinds.length === 0
+      && missingSnippets.length === 0
+      && forbiddenSnippets.length === 0
+      && !actionFailure
+      && !targetFailure
+      && applyFailures.length === 0
+      && sourceExpectationFailures.length === 0
+      && targetExpectationFailures.length === 0,
     missingKinds,
     missingSnippets,
     forbiddenSnippets,
     actionFailure,
     targetFailure,
+    applyFailures,
+    sourceExpectationFailures,
+    targetExpectationFailures,
     actualKinds: Array.from(issueKinds).sort(),
+    remainingKindsAfterApply: Array.from(new Set(currentIssues.map((issue) => issue.kind))).sort(),
   };
 }
 
@@ -311,7 +553,11 @@ function main() {
       forbiddenSnippets: failure.forbiddenSnippets,
       actionFailure: failure.actionFailure,
       targetFailure: failure.targetFailure,
+      applyFailures: failure.applyFailures,
+      sourceExpectationFailures: failure.sourceExpectationFailures,
+      targetExpectationFailures: failure.targetExpectationFailures,
       actualKinds: failure.actualKinds,
+      remainingKindsAfterApply: failure.remainingKindsAfterApply,
     })),
   };
 
