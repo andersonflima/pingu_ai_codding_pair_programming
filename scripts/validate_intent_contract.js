@@ -5,9 +5,9 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { analyzeText } = require('../lib/analyzer');
+const { requireRealAiCommand } = require('./require_real_ai_command');
 
 const repoRoot = path.resolve(__dirname, '..');
-const mockAiCommand = `${JSON.stringify(process.execPath)} ${JSON.stringify(path.join(repoRoot, 'scripts', 'mock_comment_task_ai.js'))}`;
 
 const temporaryProjects = [];
 const intentContractCases = [
@@ -106,31 +106,8 @@ function buildActiveContextDocument(entity, summary) {
   ].join('\n');
 }
 
-function withTemporaryEnvironment(overrides, callback) {
-  const entries = Object.entries(overrides || {});
-  const previousValues = new Map(entries.map(([key]) => [key, process.env[key]]));
-  entries.forEach(([key, value]) => {
-    process.env[key] = value;
-  });
-
-  try {
-    return callback();
-  } finally {
-    previousValues.forEach((value, key) => {
-      if (typeof value === 'undefined') {
-        delete process.env[key];
-      } else {
-        process.env[key] = value;
-      }
-    });
-  }
-}
-
 function validateCase(contractCase) {
-  const issues = withTemporaryEnvironment({
-    PINGU_COMMENT_TASK_AI_CMD: mockAiCommand,
-    PINGU_COMMENT_TASK_AI_TIMEOUT_MS: '4000',
-  }, () => analyzeText(contractCase.sourcePath, contractCase.content, { maxLineLength: 120 }));
+  const issues = analyzeText(contractCase.sourcePath, contractCase.content, { maxLineLength: 120 });
 
   const commentTaskIssue = issues.find((issue) => issue.kind === 'comment_task');
   if (!commentTaskIssue) {
@@ -210,6 +187,7 @@ function cleanupTemporaryProjects() {
 }
 
 function main() {
+  requireRealAiCommand('validate:intent-contract');
   const results = intentContractCases.map(validateCase);
   const failures = results.filter((result) => !result.ok);
 

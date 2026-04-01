@@ -7,9 +7,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { analyzeText } = require('../lib/analyzer');
-
-const repoRoot = path.resolve(__dirname, '..');
-const mockAiCommand = `${JSON.stringify(process.execPath)} ${JSON.stringify(path.join(repoRoot, 'scripts', 'mock_comment_task_ai.js'))}`;
+const { requireRealAiCommand } = require('./require_real_ai_command');
 
 const cases = [
   {
@@ -154,30 +152,9 @@ function buildActiveContextDocument(entity, summary) {
   ].join('\n');
 }
 
-function withAiEnvironment(callback) {
-  const previousCommand = process.env.PINGU_COMMENT_TASK_AI_CMD;
-  const previousTimeout = process.env.PINGU_COMMENT_TASK_AI_TIMEOUT_MS;
-  process.env.PINGU_COMMENT_TASK_AI_CMD = mockAiCommand;
-  process.env.PINGU_COMMENT_TASK_AI_TIMEOUT_MS = '4000';
-  try {
-    return callback();
-  } finally {
-    if (typeof previousCommand === 'undefined') {
-      delete process.env.PINGU_COMMENT_TASK_AI_CMD;
-    } else {
-      process.env.PINGU_COMMENT_TASK_AI_CMD = previousCommand;
-    }
-    if (typeof previousTimeout === 'undefined') {
-      delete process.env.PINGU_COMMENT_TASK_AI_TIMEOUT_MS;
-    } else {
-      process.env.PINGU_COMMENT_TASK_AI_TIMEOUT_MS = previousTimeout;
-    }
-  }
-}
-
 function analyzeFile(filePath) {
   const content = fs.readFileSync(filePath, 'utf8');
-  return withAiEnvironment(() => analyzeText(filePath, content, { maxLineLength: 120 }));
+  return analyzeText(filePath, content, { maxLineLength: 120 });
 }
 
 function readFileLines(targetFile) {
@@ -349,6 +326,7 @@ function validateCase(workspace, testCase) {
 }
 
 function main() {
+  requireRealAiCommand('validate:checkup:python');
   const workspace = createWorkspace();
   const results = cases.map((testCase) => validateCase(workspace, testCase));
   const failures = results.filter((result) => !result.ok);

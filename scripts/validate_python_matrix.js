@@ -7,6 +7,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { analyzeText } = require('../lib/analyzer');
+const { requireRealAiCommand } = require('./require_real_ai_command');
 const {
   activeLanguageIds,
   getCapabilityProfile,
@@ -15,7 +16,6 @@ const {
 } = require('../lib/language-capabilities');
 
 const repoRoot = path.resolve(__dirname, '..');
-const mockAiCommand = `${JSON.stringify(process.execPath)} ${JSON.stringify(path.join(repoRoot, 'scripts', 'mock_comment_task_ai.js'))}`;
 const temporaryProjects = [];
 
 function createTemporaryPythonProject(label, options = {}) {
@@ -118,29 +118,8 @@ const syntheticCases = [
   },
 ];
 
-function withTemporaryEnvironment(overrides, callback) {
-  const previousValues = new Map(Object.keys(overrides).map((key) => [key, process.env[key]]));
-  Object.entries(overrides).forEach(([key, value]) => {
-    process.env[key] = value;
-  });
-  try {
-    return callback();
-  } finally {
-    previousValues.forEach((value, key) => {
-      if (typeof value === 'undefined') {
-        delete process.env[key];
-      } else {
-        process.env[key] = value;
-      }
-    });
-  }
-}
-
 function analyzeFixture(fixture) {
-  return withTemporaryEnvironment({
-    PINGU_COMMENT_TASK_AI_CMD: mockAiCommand,
-    PINGU_COMMENT_TASK_AI_TIMEOUT_MS: '4000',
-  }, () => analyzeText(fixture.sourcePath, fixture.content, { maxLineLength: 120 }));
+  return analyzeText(fixture.sourcePath, fixture.content, { maxLineLength: 120 });
 }
 
 function validateFixtureMatrix() {
@@ -237,6 +216,7 @@ function cleanupTemporaryProjects() {
 }
 
 function main() {
+  requireRealAiCommand('validate:matrix:python');
   const matrix = validateFixtureMatrix();
   const registry = validateCapabilityRegistry();
 

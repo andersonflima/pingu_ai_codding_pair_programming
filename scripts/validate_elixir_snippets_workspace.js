@@ -5,9 +5,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { analyzeText } = require('../lib/analyzer');
+const { requireRealAiCommand } = require('./require_real_ai_command');
 
-const repoRoot = path.resolve(__dirname, '..');
-const mockAiCommand = `${JSON.stringify(process.execPath)} ${JSON.stringify(path.join(repoRoot, 'scripts', 'mock_comment_task_ai.js'))}`;
 const workspaceRoot = path.join(os.homedir(), 'snippets', 'pingu', 'elixir');
 const contextsDir = path.join(workspaceRoot, '.realtime-dev-agent', 'contexts');
 const contextFile = path.join(contextsDir, 'elixir-active.md');
@@ -337,27 +336,6 @@ function applyPreContext(preContext) {
   );
 }
 
-function withAiEnvironment(callback) {
-  const previousCommand = process.env.PINGU_COMMENT_TASK_AI_CMD;
-  const previousTimeout = process.env.PINGU_COMMENT_TASK_AI_TIMEOUT_MS;
-  process.env.PINGU_COMMENT_TASK_AI_CMD = mockAiCommand;
-  process.env.PINGU_COMMENT_TASK_AI_TIMEOUT_MS = '4000';
-  try {
-    return callback();
-  } finally {
-    if (typeof previousCommand === 'undefined') {
-      delete process.env.PINGU_COMMENT_TASK_AI_CMD;
-    } else {
-      process.env.PINGU_COMMENT_TASK_AI_CMD = previousCommand;
-    }
-    if (typeof previousTimeout === 'undefined') {
-      delete process.env.PINGU_COMMENT_TASK_AI_TIMEOUT_MS;
-    } else {
-      process.env.PINGU_COMMENT_TASK_AI_TIMEOUT_MS = previousTimeout;
-    }
-  }
-}
-
 function readFileLines(targetFile) {
   return fs.readFileSync(targetFile, 'utf8').replace(/\r\n/g, '\n').split('\n');
 }
@@ -448,7 +426,7 @@ function applyIssueAction(sourceFile, issue) {
 
 function analyzeFile(filePath) {
   const content = fs.readFileSync(filePath, 'utf8');
-  return withAiEnvironment(() => analyzeText(filePath, content, { maxLineLength: 120 }));
+  return analyzeText(filePath, content, { maxLineLength: 120 });
 }
 
 function validateCase(testCase) {
@@ -558,6 +536,7 @@ function validateCase(testCase) {
 }
 
 function main() {
+  requireRealAiCommand('validate:snippets:elixir');
   ensureWorkspace();
   const results = cases.map(validateCase);
   const failures = results.filter((result) => !result.ok);

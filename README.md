@@ -563,13 +563,11 @@ Pre-requisitos:
 
 ## Credenciais e variaveis de ambiente
 
-O agente tem dois modos:
-
-- Modo local: usa o runtime embarcado neste repositorio e nao exige API key.
-- Modo remoto: quando um provedor externo for acoplado ao fluxo, a credencial precisa estar no ambiente antes de abrir o editor.
+Os fluxos orientados por IA exigem um comando real configurado em `PINGU_COMMENT_TASK_AI_CMD`. O projeto nao usa fallback com mock para geracao por IA.
 
 Variaveis comuns:
 
+- `PINGU_COMMENT_TASK_AI_CMD`
 - `OPENAI_API_KEY`
 - `ANTHROPIC_API_KEY`
 - `GEMINI_API_KEY`
@@ -577,6 +575,7 @@ Variaveis comuns:
 Exemplo:
 
 ```bash
+export PINGU_COMMENT_TASK_AI_CMD="seu_comando_real_de_ia"
 export OPENAI_API_KEY="sua_chave_aqui"
 ```
 
@@ -589,6 +588,12 @@ Importante:
 ## Validacao
 
 O repositorio possui validadores locais para segurar regressao do runtime e da paridade entre editores.
+
+Antes de rodar os validadores de matriz/checkup/intent contract, configure:
+
+```bash
+export PINGU_COMMENT_TASK_AI_CMD="seu_comando_real_de_ia"
+```
 
 ### Matriz do agente
 
