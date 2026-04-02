@@ -36,6 +36,16 @@ function runEditorParityContract(repoRoot) {
 
   const checks = [
     buildCheck(
+      'parity:architecture:large-file-advisory-only',
+      'shared',
+      'advisory_only_diagnostics',
+      issueKinds.large_file
+        && issueKinds.large_file.autoFixDefault === false
+        && issueKinds.large_file.supportsQuickFix === false
+        && issueKinds.large_file.supportsFollowUp === false,
+      'large_file precisa continuar apenas como diagnostico consultivo, sem quick fix ou follow-up automatico.',
+    ),
+    buildCheck(
       'parity:lazyvim:always-active',
       'lazyvim',
       'continuous_analysis',

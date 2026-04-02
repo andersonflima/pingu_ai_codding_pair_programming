@@ -87,8 +87,8 @@
     "defaultAction": { "op": "insert_before" },
     "autoFixDefault": false,
     "autoFixPriority": 210,
-    "supportsQuickFix": true,
-    "supportsFollowUp": true
+    "supportsQuickFix": false,
+    "supportsFollowUp": false
   },
   "long_line": {
     "defaultAction": { "op": "insert_before" },
