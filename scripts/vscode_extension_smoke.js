@@ -475,6 +475,26 @@ function representativeLanguageCases(workspaceRoot) {
       isValid: (contents) => String(contents || '').includes('# Titulo do documento'),
     },
     {
+      key: 'pythonStructuredComments',
+      failureMessage: 'VS Code smoke: python nao inseriu documentacao de classe, metodo e comentario de variavel.',
+      filePath: path.join(workspaceRoot, 'src', 'pedido.py'),
+      content: [
+        'class Pedido:',
+        '    def total(',
+        '        self,',
+        '        valor: int,',
+        '    ) -> int:',
+        '        subtotal = valor + 1',
+        '        return subtotal',
+      ].join('\n'),
+      isValid: (contents) => {
+        const normalized = String(contents || '');
+        return normalized.includes('Representa a responsabilidade principal de Pedido.')
+          && normalized.includes('# Orquestra o comportamento principal de total')
+          && normalized.includes('# Calcula subtotal para suportar o restante do fluxo.');
+      },
+    },
+    {
       key: 'mermaidMissingDelimiter',
       failureMessage: 'VS Code smoke: mermaid syntax_missing_delimiter nao fechou o delimitador esperado.',
       filePath: path.join(workspaceRoot, 'diagrams', 'authentication.mmd'),

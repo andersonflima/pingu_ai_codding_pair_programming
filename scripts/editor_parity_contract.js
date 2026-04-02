@@ -165,6 +165,7 @@ function runEditorParityContract(repoRoot) {
         "path.join(workspaceRoot, 'src', 'billing.go')",
         "path.join(workspaceRoot, 'src', 'billing.lua')",
         "path.join(workspaceRoot, 'docs', 'api.md')",
+        "path.join(workspaceRoot, 'src', 'pedido.py')",
         "path.join(workspaceRoot, 'diagrams', 'authentication.mmd')",
         "path.join(workspaceRoot, 'src', 'billing.rs')",
         "path.join(workspaceRoot, 'lib', 'billing.rb')",

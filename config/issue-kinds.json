@@ -41,9 +41,16 @@
     "supportsQuickFix": true,
     "supportsFollowUp": true
   },
+  "class_doc": {
+    "defaultAction": { "op": "insert_after" },
+    "autoFixDefault": true,
+    "autoFixPriority": 92,
+    "supportsQuickFix": true,
+    "supportsFollowUp": true
+  },
   "flow_comment": {
     "defaultAction": { "op": "insert_before" },
-    "autoFixDefault": false,
+    "autoFixDefault": true,
     "autoFixPriority": 320,
     "supportsQuickFix": true,
     "supportsFollowUp": true

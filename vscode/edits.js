@@ -337,16 +337,16 @@ function createEditRuntime(deps) {
   }
 
   function compareFixCandidates(left, right) {
+    const leftLine = Number(left.line || 1);
+    const rightLine = Number(right.line || 1);
+    if (leftLine !== rightLine) {
+      return rightLine - leftLine;
+    }
+
     const leftPriority = fixPriorityForKind(left.kind);
     const rightPriority = fixPriorityForKind(right.kind);
     if (leftPriority !== rightPriority) {
       return leftPriority - rightPriority;
-    }
-
-    const leftLine = Number(left.line || 1);
-    const rightLine = Number(right.line || 1);
-    if (leftLine !== rightLine) {
-      return leftLine - rightLine;
     }
 
     return issueActionIdentity(left).localeCompare(issueActionIdentity(right));

@@ -1695,6 +1695,10 @@ function! s:build_followup_instruction(issue) abort
     endif
   endif
 
+  if l:kind ==# 'class_doc'
+    return 'adicione documentacao curta para a classe mantendo o contrato atual'
+  endif
+
   if !empty(l:suggestion)
     return l:suggestion
   endif
