@@ -89,12 +89,12 @@ function activate(context) {
 
   function resolveAgentEnvironment(uri) {
     const config = configuration(uri);
-    const aiCommand = String(config.get('commentTaskAiCommand', '') || '').trim();
-    const aiTimeoutMs = Number(config.get('commentTaskAiTimeoutMs', 4000));
+    const openAiModel = String(config.get('openAiModel', 'gpt-5-codex') || '').trim();
+    const openAiTimeoutMs = Number(config.get('openAiTimeoutMs', 30000));
     return {
       ...process.env,
-      ...(aiCommand ? { PINGU_COMMENT_TASK_AI_CMD: aiCommand } : {}),
-      PINGU_COMMENT_TASK_AI_TIMEOUT_MS: String(Number.isFinite(aiTimeoutMs) && aiTimeoutMs > 0 ? aiTimeoutMs : 4000),
+      ...(openAiModel ? { PINGU_OPENAI_MODEL: openAiModel } : {}),
+      PINGU_OPENAI_TIMEOUT_MS: String(Number.isFinite(openAiTimeoutMs) && openAiTimeoutMs > 0 ? openAiTimeoutMs : 30000),
     };
   }
 

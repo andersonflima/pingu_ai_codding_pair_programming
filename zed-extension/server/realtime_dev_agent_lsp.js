@@ -1,12 +1,19 @@
 #!/usr/bin/env node
 'use strict';
 
+const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const { fileURLToPath, pathToFileURL } = require('url');
 const { analyzeText } = require('../../lib/analyzer');
+const { evaluateAutofixGuard } = require('../../lib/autofix-guard');
 const { buildFollowUpComment } = require('../../lib/follow-up');
-const { resolveIssueAction, supportsFollowUp, supportsQuickFix } = require('../../lib/issue-kinds');
+const {
+  mustClearKindsForIssue,
+  resolveIssueAction,
+  supportsFollowUp,
+  supportsQuickFix,
+} = require('../../lib/issue-kinds');
 const { resolvePreferredInsertBeforeLine } = require('../../lib/snippet-placement');
 const {
   isTerminalRiskAllowed,
@@ -84,7 +91,7 @@ function handleMessage(message) {
         textDocumentSync: 1,
         codeActionProvider: true,
         executeCommandProvider: {
-          commands: ['realtimeDevAgent.runTerminalTask'],
+          commands: ['realtimeDevAgent.runTerminalTask', 'realtimeDevAgent.applyIssueFix'],
         },
       },
       serverInfo: {
@@ -161,6 +168,11 @@ function handleMessage(message) {
     const params = message.params || {};
     if (params.command === 'realtimeDevAgent.runTerminalTask') {
       executeTerminalTask(Array.isArray(params.arguments) ? params.arguments[0] : null);
+      sendResponse(message.id, null);
+      return;
+    }
+    if (params.command === 'realtimeDevAgent.applyIssueFix') {
+      executeIssueFix(Array.isArray(params.arguments) ? params.arguments[0] : null);
       sendResponse(message.id, null);
       return;
     }
@@ -248,13 +260,9 @@ function buildCodeActionsForIssue(document, issue) {
   if (isTerminalAction(action)) {
     actions.push(buildTerminalCodeAction(document, issue, action));
   } else {
-    const edit = buildWorkspaceEdit(document, issue, action);
-    if (edit) {
-      actions.push({
-        title: `Realtime Dev Agent: ${issue.suggestion || issue.message}`,
-        kind: 'quickfix',
-        edit,
-      });
+    const quickFixAction = buildQuickFixCodeAction(document, issue, action);
+    if (quickFixAction) {
+      actions.push(quickFixAction);
     }
   }
 
@@ -264,6 +272,26 @@ function buildCodeActionsForIssue(document, issue) {
   }
 
   return actions.filter(Boolean);
+}
+
+function buildQuickFixCodeAction(document, issue, action) {
+  const edit = buildWorkspaceEdit(document, issue, action);
+  if (!edit) {
+    return null;
+  }
+
+  return {
+    title: `Realtime Dev Agent: ${issue.suggestion || issue.message}`,
+    kind: 'quickfix',
+    command: {
+      title: `Realtime Dev Agent: ${issue.suggestion || issue.message}`,
+      command: 'realtimeDevAgent.applyIssueFix',
+      arguments: [{
+        uri: document.uri,
+        issue,
+      }],
+    },
+  };
 }
 
 function buildFollowUpCodeAction(document, issue) {
@@ -355,14 +383,17 @@ function buildWorkspaceEdit(document, issue, action) {
   const indent = detectIndent(action.indent || currentLine);
   const snippetLines = normalizeSnippetLines(splitSnippetLines(issue.snippet || ''), indent);
   const snippetText = snippetLines.join('\n');
+  const actionRange = normalizeActionRange(action && action.range);
 
   if (action.op === 'replace_line') {
     return {
       changes: {
         [uri]: [
           {
-            range: fullLineRange(lines, boundedLineIndex),
-            newText: snippetText,
+            range: actionRange || fullLineRange(lines, boundedLineIndex),
+            newText: actionRange && typeof action.text === 'string'
+              ? String(action.text || '')
+              : snippetText,
           },
         ],
       },
@@ -517,6 +548,23 @@ function detectIndent(text) {
   return match ? match[0] : '';
 }
 
+function normalizeActionRange(range) {
+  if (!range || typeof range !== 'object') {
+    return null;
+  }
+
+  return {
+    start: {
+      line: Math.max(0, Number(range.start && range.start.line || 0)),
+      character: Math.max(0, Number(range.start && range.start.character || 0)),
+    },
+    end: {
+      line: Math.max(0, Number(range.end && range.end.line || 0)),
+      character: Math.max(0, Number(range.end && range.end.character || 0)),
+    },
+  };
+}
+
 function commonIndentLength(lines) {
   const nonEmpty = lines.filter((line) => String(line || '').trim() !== '');
   if (nonEmpty.length === 0) {
@@ -582,6 +630,286 @@ function sendRequest(method, params, callback) {
     method,
     params,
   });
+}
+
+function requestApplyEdit(label, edit) {
+  return new Promise((resolve) => {
+    sendRequest('workspace/applyEdit', {
+      label,
+      edit,
+    }, (response) => {
+      resolve(Boolean(response && response.result && response.result.applied));
+    });
+  });
+}
+
+function fullDocumentRangeForText(text) {
+  const lines = splitDocumentLines(text);
+  const lastLineIndex = Math.max(lines.length - 1, 0);
+  const lastLine = lines[lastLineIndex] || '';
+  return {
+    start: { line: 0, character: 0 },
+    end: { line: lastLineIndex, character: lastLine.length },
+  };
+}
+
+function applyRangeChangeToText(text, range, replacement) {
+  const sourceLines = splitDocumentLines(text);
+  const safeRange = range || zeroRange(0, 0);
+  const startLine = Math.max(0, Number(safeRange.start && safeRange.start.line || 0));
+  const startCharacter = Math.max(0, Number(safeRange.start && safeRange.start.character || 0));
+  const endLine = Math.max(startLine, Number(safeRange.end && safeRange.end.line || startLine));
+  const endCharacter = Math.max(0, Number(safeRange.end && safeRange.end.character || 0));
+  const replacementLines = String(replacement || '').split('\n');
+  const prefix = String(sourceLines[startLine] || '').slice(0, startCharacter);
+  const suffix = String(sourceLines[endLine] || '').slice(endCharacter);
+  const before = sourceLines.slice(0, startLine);
+  const after = sourceLines.slice(endLine + 1);
+  const middle = replacementLines.length > 0 ? [...replacementLines] : [''];
+  middle[0] = `${prefix}${middle[0]}`;
+  middle[middle.length - 1] = `${middle[middle.length - 1]}${suffix}`;
+  return [...before, ...middle, ...after].join('\n');
+}
+
+function compareEditRangeDescending(left, right) {
+  const leftRange = left && left.range ? left.range : zeroRange(0, 0);
+  const rightRange = right && right.range ? right.range : zeroRange(0, 0);
+  const leftLine = Number(leftRange.start && leftRange.start.line || 0);
+  const rightLine = Number(rightRange.start && rightRange.start.line || 0);
+  if (leftLine !== rightLine) {
+    return rightLine - leftLine;
+  }
+  const leftCharacter = Number(leftRange.start && leftRange.start.character || 0);
+  const rightCharacter = Number(rightRange.start && rightRange.start.character || 0);
+  return rightCharacter - leftCharacter;
+}
+
+function applyTextEditsToDocumentText(text, edits) {
+  const orderedEdits = (Array.isArray(edits) ? [...edits] : []).sort(compareEditRangeDescending);
+  return orderedEdits.reduce(
+    (currentText, edit) => applyRangeChangeToText(currentText, edit && edit.range, edit && edit.newText),
+    String(text || ''),
+  );
+}
+
+function upsertLocalDocument(uri, text, version = null) {
+  const existing = documents.get(uri);
+  documents.set(uri, {
+    uri,
+    text: String(text || ''),
+    version: Number.isFinite(version) ? version : (existing ? existing.version : null),
+  });
+}
+
+function applyWorkspaceEditLocally(edit) {
+  if (!edit || typeof edit !== 'object') {
+    return;
+  }
+
+  if (edit.changes && typeof edit.changes === 'object') {
+    Object.entries(edit.changes).forEach(([uri, edits]) => {
+      const currentDocument = documents.get(uri) || { uri, text: '', version: null };
+      upsertLocalDocument(uri, applyTextEditsToDocumentText(currentDocument.text, edits), currentDocument.version);
+    });
+  }
+
+  const documentChanges = Array.isArray(edit.documentChanges) ? edit.documentChanges : [];
+  documentChanges.forEach((change) => {
+    if (!change || typeof change !== 'object') {
+      return;
+    }
+    if (change.kind === 'create') {
+      if (!documents.has(change.uri)) {
+        upsertLocalDocument(change.uri, '', null);
+      }
+      return;
+    }
+    if (change.kind === 'delete') {
+      documents.delete(change.uri);
+      issuesByUri.delete(change.uri);
+      return;
+    }
+    if (!change.textDocument || !Array.isArray(change.edits)) {
+      return;
+    }
+    const uri = change.textDocument.uri;
+    const currentDocument = documents.get(uri) || { uri, text: '', version: null };
+    upsertLocalDocument(
+      uri,
+      applyTextEditsToDocumentText(currentDocument.text, change.edits),
+      change.textDocument.version,
+    );
+  });
+}
+
+function captureIssueFixSnapshot(document, action) {
+  const entries = [{
+    uri: document.uri,
+    filePath: uriToFilePath(document.uri),
+    exists: true,
+    text: document.text,
+  }];
+
+  if (String(action && action.op || '') !== 'write_file' || !action.target_file) {
+    return entries;
+  }
+
+  const targetFilePath = path.resolve(String(action.target_file || '').trim());
+  const targetUri = pathToFileURL(targetFilePath).toString();
+  if (entries.some((entry) => entry.uri === targetUri)) {
+    return entries;
+  }
+
+  const openTargetDocument = documents.get(targetUri);
+  const targetExists = openTargetDocument ? true : fs.existsSync(targetFilePath);
+  entries.push({
+    uri: targetUri,
+    filePath: targetFilePath,
+    exists: targetExists,
+    text: openTargetDocument
+      ? openTargetDocument.text
+      : (targetExists ? fs.readFileSync(targetFilePath, 'utf8') : ''),
+  });
+  return entries;
+}
+
+function buildGuardFileEntries(snapshot) {
+  return (Array.isArray(snapshot) ? snapshot : []).map((entry) => {
+    const currentDocument = documents.get(entry.uri);
+    return {
+      path: entry.filePath,
+      contents: currentDocument ? currentDocument.text : String(entry.text || ''),
+    };
+  });
+}
+
+function buildSnapshotRestoreEdit(snapshot) {
+  const documentChanges = [];
+  (Array.isArray(snapshot) ? snapshot : []).forEach((entry) => {
+    const currentDocument = documents.get(entry.uri);
+    if (!entry.exists) {
+      if (currentDocument) {
+        documentChanges.push({
+          kind: 'delete',
+          uri: entry.uri,
+        });
+      }
+      return;
+    }
+
+    if (!currentDocument) {
+      documentChanges.push({
+        kind: 'create',
+        uri: entry.uri,
+      });
+      documentChanges.push({
+        textDocument: {
+          uri: entry.uri,
+          version: null,
+        },
+        edits: [{
+          range: zeroRange(0, 0),
+          newText: String(entry.text || ''),
+        }],
+      });
+      return;
+    }
+
+    documentChanges.push({
+      textDocument: {
+        uri: entry.uri,
+        version: currentDocument.version,
+      },
+      edits: [{
+        range: fullDocumentRangeForText(currentDocument.text),
+        newText: String(entry.text || ''),
+      }],
+    });
+  });
+  return { documentChanges };
+}
+
+function restoreSnapshotLocally(snapshot) {
+  (Array.isArray(snapshot) ? snapshot : []).forEach((entry) => {
+    if (!entry.exists) {
+      documents.delete(entry.uri);
+      issuesByUri.delete(entry.uri);
+      return;
+    }
+    upsertLocalDocument(entry.uri, entry.text);
+  });
+}
+
+function summarizeGuardFailures(guardResult) {
+  const validationFailures = (guardResult && Array.isArray(guardResult.validationFailures))
+    ? guardResult.validationFailures
+    : [];
+  const runtimeFailures = (guardResult && Array.isArray(guardResult.runtimeFailures))
+    ? guardResult.runtimeFailures
+    : [];
+
+  const validationSummary = validationFailures
+    .map((failure) => `${failure.kind}(${failure.beforeCount}->${failure.afterCount})`)
+    .join(', ');
+  const runtimeSummary = runtimeFailures
+    .map((failure) => `${failure.command} em ${failure.filePath}`)
+    .join(', ');
+
+  return [validationSummary, runtimeSummary].filter(Boolean).join(' | ');
+}
+
+async function executeIssueFix(payload) {
+  if (!payload || typeof payload !== 'object') {
+    return;
+  }
+
+  const uri = String(payload.uri || '').trim();
+  const document = documents.get(uri);
+  const issue = payload.issue && typeof payload.issue === 'object' ? payload.issue : null;
+  if (!uri || !document || !issue) {
+    return;
+  }
+
+  const action = issueAction(issue);
+  const edit = buildWorkspaceEdit(document, issue, action);
+  if (!edit) {
+    return;
+  }
+
+  const snapshot = captureIssueFixSnapshot(document, action);
+  const beforeIssues = issuesByUri.get(uri) || [];
+  const applied = await requestApplyEdit('Realtime Dev Agent quick fix', edit);
+  if (!applied) {
+    return;
+  }
+
+  applyWorkspaceEditLocally(edit);
+  const updatedDocument = documents.get(uri) || document;
+  const filePath = uriToFilePath(uri);
+  const afterIssues = analyzeText(filePath, updatedDocument.text, { maxLineLength: 120 });
+  const guardResult = evaluateAutofixGuard({
+    appliedIssues: [issue],
+    beforeIssues,
+    afterIssues,
+    fileEntries: buildGuardFileEntries(snapshot),
+    resolveMustClearKinds: mustClearKindsForIssue,
+  });
+
+  if (!guardResult.ok) {
+    const restoreEdit = buildSnapshotRestoreEdit(snapshot);
+    const restored = await requestApplyEdit('Realtime Dev Agent rollback', restoreEdit);
+    if (restored) {
+      restoreSnapshotLocally(snapshot);
+      analyzeAndPublish(uri);
+    }
+    sendNotification('window/logMessage', {
+      type: 2,
+      message: `[RealtimeDevAgent/Zed] rollback aplicado: ${summarizeGuardFailures(guardResult)}`,
+    });
+    return;
+  }
+
+  analyzeAndPublish(uri);
 }
 
 function executeTerminalTask(payload) {

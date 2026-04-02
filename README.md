@@ -563,20 +563,19 @@ Pre-requisitos:
 
 ## Credenciais e variaveis de ambiente
 
-Os fluxos orientados por IA exigem um comando real configurado em `PINGU_COMMENT_TASK_AI_CMD`. O projeto nao usa fallback com mock para geracao por IA.
+Os fluxos orientados por IA usam OpenAI Codex por padrao. O contrato principal agora e `OPENAI_API_KEY`.
 
 Variaveis comuns:
 
-- `PINGU_COMMENT_TASK_AI_CMD`
 - `OPENAI_API_KEY`
-- `ANTHROPIC_API_KEY`
-- `GEMINI_API_KEY`
+- `PINGU_OPENAI_MODEL`
+- `PINGU_OPENAI_TIMEOUT_MS`
 
 Exemplo:
 
 ```bash
-export PINGU_COMMENT_TASK_AI_CMD="seu_comando_real_de_ia"
 export OPENAI_API_KEY="sua_chave_aqui"
+export PINGU_OPENAI_MODEL="gpt-5-codex"
 ```
 
 Importante:
@@ -592,7 +591,13 @@ O repositorio possui validadores locais para segurar regressao do runtime e da p
 Antes de rodar os validadores de matriz/checkup/intent contract, configure:
 
 ```bash
-export PINGU_COMMENT_TASK_AI_CMD="seu_comando_real_de_ia"
+export OPENAI_API_KEY="sua_chave_aqui"
+```
+
+Para executar tambem os cenarios live contra OpenAI Codex durante a validacao:
+
+```bash
+export PINGU_VALIDATE_WITH_OPENAI="1"
 ```
 
 ### Matriz do agente

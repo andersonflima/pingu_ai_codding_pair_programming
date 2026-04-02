@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 'use strict';
 
+process.env.PINGU_ACTIVE_LANGUAGE_IDS = process.env.PINGU_ACTIVE_LANGUAGE_IDS || 'elixir,javascript,python';
+
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { hasLiveOpenAiValidation } = require('./require_real_ai_command');
 
 const repoRoot = path.resolve(__dirname, '..');
 
@@ -44,6 +47,9 @@ function buildNvimScript(targetFile) {
 
   return [
     'set nomore',
+    'set noswapfile',
+    "set shell=/bin/sh",
+    "set shellcmdflag=-c",
     'let g:realtime_dev_agent_start_on_editor_enter = 0',
     'let g:realtime_dev_agent_review_on_open = 0',
     'let g:realtime_dev_agent_open_window_on_start = 0',
@@ -116,6 +122,33 @@ function buildCommentTaskCase(workspaceRoot) {
   };
 }
 
+function buildUndefinedVariableCase(workspaceRoot) {
+  writePackageJson(workspaceRoot);
+  const targetFile = path.join(workspaceRoot, 'src', 'undefined-variable.js');
+  writeFile(targetFile, [
+    'function soma(numero) {',
+    '  return numeroo + numeroo;',
+    '}',
+    '',
+  ].join('\n'));
+
+  return {
+    targetFile,
+    verify() {
+      const contents = fs.readFileSync(targetFile, 'utf8');
+      const summary = {
+        correctedOnlyTargetIdentifier: contents.includes('return numero + numeroo;'),
+        preservedRemainingCode: !contents.includes('return numero + numero;'),
+      };
+
+      assert(summary.correctedOnlyTargetIdentifier, 'nvim undefined_variable: o identificador esperado nao foi corrigido.');
+      assert(summary.preservedRemainingCode, 'nvim undefined_variable: a correcao excedeu o range esperado.');
+
+      return summary;
+    },
+  };
+}
+
 function buildContextFileCase(workspaceRoot) {
   writePackageJson(workspaceRoot);
   const targetFile = path.join(workspaceRoot, 'src', 'context.js');
@@ -181,14 +214,17 @@ function buildTerminalTaskCase(workspaceRoot) {
 }
 
 function main() {
-  const cases = [
-    runCase('comment-task', buildCommentTaskCase),
-    runCase('context-file', buildContextFileCase),
-    runCase('terminal-task', buildTerminalTaskCase),
-  ];
+  const realAiAvailable = hasLiveOpenAiValidation();
+  const cases = [];
+  if (realAiAvailable) {
+    cases.push(runCase('comment-task', buildCommentTaskCase));
+    cases.push(runCase('context-file', buildContextFileCase));
+  }
+  cases.push(runCase('terminal-task', buildTerminalTaskCase));
 
   console.log(JSON.stringify({
     ok: true,
+    hasLiveOpenAiValidation: realAiAvailable,
     cases,
   }, null, 2));
 }

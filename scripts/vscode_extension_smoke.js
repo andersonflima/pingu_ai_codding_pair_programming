@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 'use strict';
 
+process.env.PINGU_ACTIVE_LANGUAGE_IDS = process.env.PINGU_ACTIVE_LANGUAGE_IDS || 'elixir,javascript,python';
+
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const Module = require('module');
+const { hasLiveOpenAiValidation } = require('./require_real_ai_command');
 
 const repoRoot = path.resolve(__dirname, '..');
 
@@ -423,6 +426,7 @@ function assert(condition, message) {
 }
 
 async function run() {
+  const realAiAvailable = hasLiveOpenAiValidation();
   const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'realtime-dev-agent-vscode-'));
   fs.mkdirSync(path.join(workspaceRoot, 'src'), { recursive: true });
   fs.mkdirSync(path.join(workspaceRoot, 'tests', 'src'), { recursive: true });
@@ -590,30 +594,33 @@ async function run() {
       },
     };
 
-    assert(summary.commentTask.applied, 'VS Code smoke: comment_task nao aplicou o snippet esperado.');
-    assert(summary.commentTask.removedTrigger, 'VS Code smoke: comment_task nao removeu a linha gatilho.');
-    assert(summary.contextFile.removedTrigger, 'VS Code smoke: context_file nao removeu a linha gatilho.');
-    assert(summary.contextFile.createdContextFile, 'VS Code smoke: context_file nao criou o blueprint em .realtime-dev-agent/contexts/.');
-    assert(summary.contextFile.createdScaffoldEntity, 'VS Code smoke: context_file nao criou o scaffold da entidade.');
-    assert(summary.contextFile.updatedGitignore, 'VS Code smoke: context_file nao atualizou o .gitignore.');
     assert(summary.terminalTask.removedTrigger, 'VS Code smoke: terminal_task nao removeu a linha gatilho apos sucesso.');
     assert(summary.terminalTask.createdOutputFile, 'VS Code smoke: terminal_task nao executou o script de teste esperado.');
     assert(summary.terminalTask.sawTerminalReady, 'VS Code smoke: terminal_task nao sinalizou readiness do terminal.');
     assert(summary.terminalTask.sawTerminalOutput, 'VS Code smoke: terminal_task nao transmitiu o output do comando.');
     assert(summary.terminalRisk.preservedTrigger, 'VS Code smoke: modo de risco removeu o gatilho de um comando bloqueado.');
     assert(summary.terminalRisk.blockedByRiskMode, 'VS Code smoke: modo de risco nao sinalizou o bloqueio do comando.');
-    assert(summary.followUp.diagnosticsCount > 0, 'VS Code smoke: follow-up nao encontrou diagnostico elegivel.');
-    assert(summary.followUp.hasFollowUpAction, 'VS Code smoke: follow-up nao expôs code action.');
-    assert(summary.followUp.insertedFollowUp, 'VS Code smoke: follow-up nao inseriu comentario acionavel.');
     assert(summary.scopedAutoFix.correctedUndefinedVariable, 'VS Code smoke: undefined_variable nao corrigiu a referencia digitada errado.');
     assert(summary.scopedAutoFix.removedTypoReference, 'VS Code smoke: typo no escopo da funcao permaneceu apos auto-fix.');
-    assert(summary.scopedAutoFix.createdBehaviorTest, 'VS Code smoke: unit_test nao gerou teste de comportamento para a funcao corrigida.');
-    assert(summary.contextRootResolution.writesContextAtProjectRoot, 'VS Code smoke: context_file disparado dentro de tests/ nao escreveu o contexto na raiz do projeto.');
-    assert(summary.contextRootResolution.avoidsNestedTestsContext, 'VS Code smoke: context_file recriou .realtime-dev-agent dentro de tests/.');
+    if (realAiAvailable) {
+      assert(summary.commentTask.applied, 'VS Code smoke: comment_task nao aplicou o snippet esperado.');
+      assert(summary.commentTask.removedTrigger, 'VS Code smoke: comment_task nao removeu a linha gatilho.');
+      assert(summary.contextFile.removedTrigger, 'VS Code smoke: context_file nao removeu a linha gatilho.');
+      assert(summary.contextFile.createdContextFile, 'VS Code smoke: context_file nao criou o blueprint em .realtime-dev-agent/contexts/.');
+      assert(summary.contextFile.createdScaffoldEntity, 'VS Code smoke: context_file nao criou o scaffold da entidade.');
+      assert(summary.contextFile.updatedGitignore, 'VS Code smoke: context_file nao atualizou o .gitignore.');
+      assert(summary.followUp.diagnosticsCount > 0, 'VS Code smoke: follow-up nao encontrou diagnostico elegivel.');
+      assert(summary.followUp.hasFollowUpAction, 'VS Code smoke: follow-up nao expôs code action.');
+      assert(summary.followUp.insertedFollowUp, 'VS Code smoke: follow-up nao inseriu comentario acionavel.');
+      assert(summary.scopedAutoFix.createdBehaviorTest, 'VS Code smoke: unit_test nao gerou teste de comportamento para a funcao corrigida.');
+      assert(summary.contextRootResolution.writesContextAtProjectRoot, 'VS Code smoke: context_file disparado dentro de tests/ nao escreveu o contexto na raiz do projeto.');
+      assert(summary.contextRootResolution.avoidsNestedTestsContext, 'VS Code smoke: context_file recriou .realtime-dev-agent dentro de tests/.');
+    }
 
     console.log(JSON.stringify({
       ok: true,
       workspaceRoot,
+      hasLiveOpenAiValidation: realAiAvailable,
       summary,
     }, null, 2));
   } finally {

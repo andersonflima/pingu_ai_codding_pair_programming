@@ -1,25 +1,35 @@
 'use strict';
 
-function requireRealAiCommand(contextLabel = 'validation') {
-  const configuredCommand = String(process.env.PINGU_COMMENT_TASK_AI_CMD || '').trim();
-  if (!configuredCommand) {
-    throw new Error(
-      `[${contextLabel}] PINGU_COMMENT_TASK_AI_CMD e obrigatorio. Configure um comando real de IA para executar esta validacao.`,
-    );
+function isLiveOpenAiValidationEnabled() {
+  return /^(?:1|true|yes)$/i.test(String(process.env.PINGU_VALIDATE_WITH_OPENAI || '').trim());
+}
+
+function hasLiveOpenAiValidation() {
+  const openAiKey = String(process.env.OPENAI_API_KEY || '').trim();
+  return isLiveOpenAiValidationEnabled() && openAiKey.length > 0;
+}
+
+function requireLiveOpenAiValidation(contextLabel = 'validation') {
+  const openAiKey = String(process.env.OPENAI_API_KEY || '').trim();
+  if (isLiveOpenAiValidationEnabled() && openAiKey) {
+    const timeout = Number.parseInt(String(process.env.PINGU_OPENAI_TIMEOUT_MS || ''), 10);
+    if (!Number.isFinite(timeout) || timeout <= 0) {
+      process.env.PINGU_OPENAI_TIMEOUT_MS = '30000';
+    }
+    return;
   }
 
-  if (/mock_comment_task_ai\.js/i.test(configuredCommand)) {
-    throw new Error(
-      `[${contextLabel}] comando mock de IA bloqueado. Configure um provedor real em PINGU_COMMENT_TASK_AI_CMD.`,
-    );
-  }
-
-  const timeout = Number.parseInt(String(process.env.PINGU_COMMENT_TASK_AI_TIMEOUT_MS || ''), 10);
+  const timeout = Number.parseInt(String(process.env.PINGU_OPENAI_TIMEOUT_MS || ''), 10);
   if (!Number.isFinite(timeout) || timeout <= 0) {
-    process.env.PINGU_COMMENT_TASK_AI_TIMEOUT_MS = '30000';
+    process.env.PINGU_OPENAI_TIMEOUT_MS = '30000';
   }
+
+  throw new Error(
+    `[${contextLabel}] OPENAI_API_KEY e obrigatoria com PINGU_VALIDATE_WITH_OPENAI=1 para executar esta validacao live com Codex.`,
+  );
 }
 
 module.exports = {
-  requireRealAiCommand,
+  hasLiveOpenAiValidation,
+  requireLiveOpenAiValidation,
 };

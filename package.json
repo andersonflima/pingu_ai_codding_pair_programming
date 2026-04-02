@@ -64,15 +64,15 @@
           "default": 120,
           "description": "Limite maximo de caracteres considerado pela analise."
         },
-        "realtimeDevAgent.commentTaskAiCommand": {
+        "realtimeDevAgent.openAiModel": {
           "type": "string",
-          "default": "",
-          "description": "Comando obrigatorio para os fluxos orientados por IA do agente. O comando recebe JSON via stdin e deve responder JSON com snippet e action quando necessario."
+          "default": "gpt-5-codex",
+          "description": "Modelo OpenAI Codex usado pelos fluxos orientados por IA do agente."
         },
-        "realtimeDevAgent.commentTaskAiTimeoutMs": {
+        "realtimeDevAgent.openAiTimeoutMs": {
           "type": "number",
-          "default": 4000,
-          "description": "Tempo maximo em milissegundos para as etapas orientadas por IA do agente."
+          "default": 30000,
+          "description": "Tempo maximo em milissegundos para as chamadas OpenAI Codex do agente."
         },
         "realtimeDevAgent.realtimeOnSave": {
           "type": "boolean",
@@ -158,8 +158,10 @@
     "validate:quality-gate:elixir": "npm run validate:snippets:elixir && npm run validate:matrix && npm run validate:intent-contract && npm run validate:checkup:elixir && npm run validate:vscode:autofix-guard",
     "validate:quality-gate:javascript": "PINGU_ACTIVE_LANGUAGE_IDS=elixir,javascript npm run validate:matrix:node && PINGU_ACTIVE_LANGUAGE_IDS=elixir,javascript npm run validate:checkup:node && npm run validate:vscode:autofix-guard",
     "validate:quality-gate:python": "PINGU_ACTIVE_LANGUAGE_IDS=elixir,javascript,python npm run validate:matrix:python && PINGU_ACTIVE_LANGUAGE_IDS=elixir,javascript,python npm run validate:checkup:python && npm run validate:vscode:autofix-guard",
+    "validate:quality-gate:active-contract": "node scripts/validate_active_language_quality_gates.js",
+    "validate:quality-gate:active": "node scripts/validate_active_language_quality_gates.js --run",
     "validate:editors": "node scripts/validate_editor_integrations.js",
     "validate:external-editors": "node scripts/validate_external_editor_suite.js",
-    "validate:all": "npm run validate:matrix && npm run validate:intent-contract && npm run validate:editors"
+    "validate:all": "npm run validate:matrix && npm run validate:intent-contract && npm run validate:quality-gate:active-contract && npm run validate:editors"
   }
 }

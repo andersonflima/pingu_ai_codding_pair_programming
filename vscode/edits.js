@@ -1,5 +1,11 @@
 'use strict';
 
+const {
+  captureFileSnapshot,
+  collectAffectedFilePaths,
+  evaluateAutofixGuard,
+  restoreFileSnapshot,
+} = require('../lib/autofix-guard');
 const { resolvePreferredInsertBeforeLine } = require('../lib/snippet-placement');
 
 function createEditRuntime(deps) {
@@ -23,6 +29,12 @@ function createEditRuntime(deps) {
     }
     if (action.op === 'run_command') {
       return String(action.command || '');
+    }
+    if (action.range && typeof action.text === 'string') {
+      return JSON.stringify({
+        range: action.range,
+        text: action.text,
+      });
     }
     return String(issue && issue.snippet || '');
   }
@@ -69,6 +81,23 @@ function createEditRuntime(deps) {
 
   function lineReplaceRange(document, lineIndex) {
     return document.lineAt(lineIndex).range;
+  }
+
+  function resolveActionRange(document, action) {
+    const range = action && action.range;
+    if (!range || typeof range !== 'object') {
+      return null;
+    }
+
+    const startLine = Math.max(0, Number(range.start && range.start.line || 0));
+    const startCharacter = Math.max(0, Number(range.start && range.start.character || 0));
+    const endLine = Math.max(startLine, Number(range.end && range.end.line || startLine));
+    const endCharacter = Math.max(0, Number(range.end && range.end.character || 0));
+
+    return new vscode.Range(
+      new vscode.Position(startLine, startCharacter),
+      new vscode.Position(endLine, endCharacter),
+    );
   }
 
   function resolveTriggerDeleteRange(document, issue, triggerText) {
@@ -255,15 +284,19 @@ function createEditRuntime(deps) {
     const snippetText = snippetLines.join('\n');
 
     if (op === 'replace_line') {
+      const replacementRange = resolveActionRange(liveDocument, action);
+      const replacementText = replacementRange && typeof action.text === 'string'
+        ? String(action.text || '')
+        : snippetText;
       if (snippetLines.length === 1 && currentLine === snippetLines[0]) {
         return false;
       }
 
       const edit = new vscode.WorkspaceEdit();
-      const replaceRange = kind === 'syntax_extra_delimiter'
+      const replaceRange = replacementRange || (kind === 'syntax_extra_delimiter'
         ? lineDeleteRange(liveDocument, boundedLineIndex)
-        : lineReplaceRange(liveDocument, boundedLineIndex);
-      edit.replace(liveDocument.uri, replaceRange, snippetText);
+        : lineReplaceRange(liveDocument, boundedLineIndex));
+      edit.replace(liveDocument.uri, replaceRange, replacementText);
       const applied = await vscode.workspace.applyEdit(edit);
       if (applied && kind === 'comment_task') {
         await removeTriggerResidue(liveDocument, triggerText);
@@ -311,59 +344,6 @@ function createEditRuntime(deps) {
     return issueActionIdentity(left).localeCompare(issueActionIdentity(right));
   }
 
-  function countIssuesByKind(issues, kind) {
-    return (Array.isArray(issues) ? issues : [])
-      .filter((issue) => String(issue && issue.kind || '') === String(kind || ''))
-      .length;
-  }
-
-  function collectAffectedFiles(document, batch) {
-    const affected = new Set([document.uri.fsPath]);
-    (Array.isArray(batch) ? batch : []).forEach((issue) => {
-      const action = resolveIssueAction(issue);
-      if (String(action.op || '') !== 'write_file') {
-        return;
-      }
-      const targetFile = String(action.target_file || '').trim();
-      if (targetFile) {
-        affected.add(targetFile);
-      }
-    });
-    return Array.from(affected);
-  }
-
-  function captureFileSnapshot(filePaths) {
-    const snapshot = new Map();
-    (Array.isArray(filePaths) ? filePaths : []).forEach((filePath) => {
-      if (!filePath) {
-        return;
-      }
-      const exists = fs.existsSync(filePath);
-      snapshot.set(filePath, {
-        exists,
-        contents: exists ? fs.readFileSync(filePath, 'utf8') : '',
-      });
-    });
-    return snapshot;
-  }
-
-  function restoreFileSnapshot(snapshot) {
-    if (!(snapshot instanceof Map)) {
-      return;
-    }
-    snapshot.forEach((state, filePath) => {
-      if (!state || !filePath) {
-        return;
-      }
-      if (!state.exists) {
-        fs.rmSync(filePath, { force: true });
-        return;
-      }
-      fs.mkdirSync(path.dirname(filePath), { recursive: true });
-      fs.writeFileSync(filePath, String(state.contents || ''), 'utf8');
-    });
-  }
-
   function resolveMustClearKinds(issue) {
     if (typeof mustClearKindsForIssue === 'function') {
       return mustClearKindsForIssue(issue);
@@ -372,25 +352,21 @@ function createEditRuntime(deps) {
     return kind ? [kind] : [];
   }
 
-  function mustClearValidationFailures(appliedIssues, beforeIssues, afterIssues) {
-    const failures = [];
-    (Array.isArray(appliedIssues) ? appliedIssues : []).forEach((issue) => {
-      resolveMustClearKinds(issue).forEach((kind) => {
-        const beforeCount = countIssuesByKind(beforeIssues, kind);
-        if (beforeCount <= 0) {
-          return;
-        }
-        const afterCount = countIssuesByKind(afterIssues, kind);
-        if (afterCount >= beforeCount) {
-          failures.push({
-            kind,
-            beforeCount,
-            afterCount,
-          });
-        }
-      });
+  async function buildGuardFileEntries(document, filePaths) {
+    const liveDocument = await vscode.workspace.openTextDocument(document.uri);
+    return (Array.isArray(filePaths) ? filePaths : []).map((filePath) => {
+      const normalizedPath = path.resolve(String(filePath || ''));
+      if (normalizedPath === path.resolve(document.uri.fsPath)) {
+        return {
+          path: normalizedPath,
+          contents: liveDocument.getText(),
+        };
+      }
+      return {
+        path: normalizedPath,
+        contents: fs.existsSync(normalizedPath) ? fs.readFileSync(normalizedPath, 'utf8') : '',
+      };
     });
-    return failures;
   }
 
   async function applyAutoFixes(document, issues) {
@@ -431,7 +407,8 @@ function createEditRuntime(deps) {
     const inlineCandidates = candidates.filter((issue) => resolveIssueAction(issue).op !== 'write_file');
     const deferredWriteCandidates = candidates.filter((issue) => resolveIssueAction(issue).op === 'write_file');
     const batch = inlineCandidates.length > 0 ? inlineCandidates : deferredWriteCandidates;
-    const snapshot = captureFileSnapshot(collectAffectedFiles(document, batch));
+    const affectedFiles = collectAffectedFilePaths(document.uri.fsPath, batch, resolveIssueAction);
+    const snapshot = captureFileSnapshot(affectedFiles);
 
     let applied = false;
     const appliedIssues = [];
@@ -447,20 +424,22 @@ function createEditRuntime(deps) {
       return false;
     }
 
-    if (typeof collectIssues === 'function') {
-      const refreshedDocument = await vscode.workspace.openTextDocument(document.uri);
-      const refreshedIssues = await collectIssues(refreshedDocument);
-      const validationFailures = mustClearValidationFailures(appliedIssues, baselineIssues, refreshedIssues);
-      if (validationFailures.length > 0) {
-        restoreFileSnapshot(snapshot);
-        return false;
-      }
-
-      await analyzeDocument(refreshedDocument, 'autofix');
-      return true;
+    const refreshedDocument = await vscode.workspace.openTextDocument(document.uri);
+    const refreshedIssues = typeof collectIssues === 'function'
+      ? await collectIssues(refreshedDocument)
+      : [];
+    const guardResult = evaluateAutofixGuard({
+      appliedIssues,
+      beforeIssues: baselineIssues,
+      afterIssues: refreshedIssues,
+      fileEntries: await buildGuardFileEntries(refreshedDocument, affectedFiles),
+      resolveMustClearKinds,
+    });
+    if (!guardResult.ok) {
+      restoreFileSnapshot(snapshot);
+      return false;
     }
 
-    const refreshedDocument = await vscode.workspace.openTextDocument(document.uri);
     await analyzeDocument(refreshedDocument, 'autofix');
     return true;
   }

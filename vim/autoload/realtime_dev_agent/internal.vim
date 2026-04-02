@@ -72,6 +72,68 @@ function! s:realtime_dev_agent_script_label() abort
   return 'Node.js'
 endfunction
 
+function! s:realtime_dev_agent_guard_cli_path() abort
+  let l:script = fnamemodify(expand(g:realtime_dev_agent_script), ':p')
+  if empty(l:script) || !filereadable(l:script)
+    return ''
+  endif
+
+  let l:guard_script = fnamemodify(l:script, ':h') . '/scripts/autofix_guard_cli.js'
+  let l:guard_script = fnamemodify(l:guard_script, ':p')
+  return filereadable(l:guard_script) ? l:guard_script : ''
+endfunction
+
+function! s:sh_binary() abort
+  return executable('sh') ? exepath('sh') : 'sh'
+endfunction
+
+function! s:shell_escape_list(argv) abort
+  return join(map(copy(a:argv), {_, val -> shellescape('' . val)}), ' ')
+endfunction
+
+function! s:project_command_argv(argv, cwd) abort
+  let l:inner = s:shell_escape_list(a:argv)
+  if !empty(a:cwd)
+    let l:inner = 'cd ' . shellescape(a:cwd) . ' && ' . l:inner
+  endif
+  return [s:sh_binary(), '-lc', l:inner]
+endfunction
+
+function! s:run_systemlist(argv, cwd, ...) abort
+  let l:command = s:project_command_argv(a:argv, a:cwd)
+  try
+    if a:0 > 0
+      return systemlist(l:command, a:1)
+    endif
+    return systemlist(l:command)
+  catch
+    let l:fallback = s:shell_escape_list(l:command)
+    if a:0 > 0
+      return systemlist(l:fallback, a:1)
+    endif
+    return systemlist(l:fallback)
+  endtry
+endfunction
+
+function! s:run_shell_systemlist(command, cwd, ...) abort
+  let l:inner = !empty(a:cwd)
+        \ ? 'cd ' . shellescape(a:cwd) . ' && ' . a:command
+        \ : a:command
+  let l:command_argv = [s:sh_binary(), '-lc', l:inner]
+  try
+    if a:0 > 0
+      return systemlist(l:command_argv, a:1)
+    endif
+    return systemlist(l:command_argv)
+  catch
+    let l:fallback = s:shell_escape_list(l:command_argv)
+    if a:0 > 0
+      return systemlist(l:fallback, a:1)
+    endif
+    return systemlist(l:fallback)
+  endtry
+endfunction
+
 function! s:project_root(file) abort
   " Usa a raiz do git como raiz do projeto para evitar comando no diretorio errado.
   let l:dir = fnamemodify(a:file, ':p:h')
@@ -593,6 +655,175 @@ function! s:issue_target_buffer(file) abort
   return l:target_buf
 endfunction
 
+function! s:collect_affected_files(file, items) abort
+  let l:affected = {}
+  let l:current_file = fnamemodify(a:file, ':p')
+  if !empty(l:current_file)
+    let l:affected[l:current_file] = 1
+  endif
+
+  for l:item in a:items
+    let l:action = s:issue_effective_action(l:item)
+    if get(l:action, 'op', '') !=# 'write_file'
+      continue
+    endif
+    let l:target_file = trim(get(l:action, 'target_file', ''))
+    if empty(l:target_file)
+      continue
+    endif
+    let l:affected[fnamemodify(l:target_file, ':p')] = 1
+  endfor
+
+  return keys(l:affected)
+endfunction
+
+function! s:file_lines_for_guard(file) abort
+  let l:target_file = fnamemodify(a:file, ':p')
+  if empty(l:target_file)
+    return []
+  endif
+
+  let l:target_buf = bufnr(l:target_file)
+  if l:target_buf > 0 && bufloaded(l:target_buf)
+    return getbufline(l:target_buf, 1, '$')
+  endif
+
+  if filereadable(l:target_file)
+    return readfile(l:target_file, 'b')
+  endif
+
+  return []
+endfunction
+
+function! s:capture_file_snapshot(file_paths) abort
+  let l:snapshot = {}
+  for l:file in a:file_paths
+    let l:target_file = fnamemodify(l:file, ':p')
+    if empty(l:target_file) || has_key(l:snapshot, l:target_file)
+      continue
+    endif
+
+    let l:target_buf = bufnr(l:target_file)
+    let l:buf_loaded = l:target_buf > 0 && bufloaded(l:target_buf)
+    let l:exists = filereadable(l:target_file)
+    let l:lines = l:buf_loaded
+          \ ? getbufline(l:target_buf, 1, '$')
+          \ : (l:exists ? readfile(l:target_file, 'b') : [])
+    let l:snapshot[l:target_file] = {
+          \ 'bufnr': l:target_buf,
+          \ 'exists': l:exists,
+          \ 'lines': copy(l:lines),
+          \ }
+  endfor
+
+  return l:snapshot
+endfunction
+
+function! s:restore_buffer_lines(bufnr, lines) abort
+  if a:bufnr <= 0 || !bufloaded(a:bufnr)
+    return
+  endif
+  if !getbufvar(a:bufnr, '&modifiable', 0)
+    return
+  endif
+
+  let l:existing = len(getbufline(a:bufnr, 1, '$'))
+  if l:existing > 0
+    noautocmd call deletebufline(a:bufnr, 1, '$')
+  endif
+
+  let l:lines = empty(a:lines) ? [''] : copy(a:lines)
+  noautocmd call setbufline(a:bufnr, 1, l:lines[0])
+  if len(l:lines) > 1
+    noautocmd call appendbufline(a:bufnr, 1, l:lines[1:])
+  endif
+  call setbufvar(a:bufnr, '&modified', 1)
+endfunction
+
+function! s:restore_file_snapshot(snapshot) abort
+  for [l:file, l:state] in items(a:snapshot)
+    let l:bufnr = get(l:state, 'bufnr', -1)
+    if l:bufnr > 0
+      call s:restore_buffer_lines(l:bufnr, get(l:state, 'lines', []))
+    endif
+
+    if get(l:state, 'exists', v:false)
+      call mkdir(fnamemodify(l:file, ':h'), 'p')
+      call writefile(copy(get(l:state, 'lines', [])), l:file, 'b')
+    else
+      silent! call delete(l:file)
+    endif
+  endfor
+endfunction
+
+function! s:build_guard_file_entries(file_paths) abort
+  let l:entries = []
+  for l:file in a:file_paths
+    call add(l:entries, {
+          \ 'path': fnamemodify(l:file, ':p'),
+          \ 'contents': join(s:file_lines_for_guard(l:file), "\n"),
+          \ })
+  endfor
+  return l:entries
+endfunction
+
+function! s:run_autofix_guard(payload, file) abort
+  let l:runner = s:realtime_dev_agent_script_runner()
+  let l:guard_script = s:realtime_dev_agent_guard_cli_path()
+  if empty(l:runner) || empty(l:guard_script)
+    return {'ok': v:false, 'error': 'guard cli nao encontrada'}
+  endif
+
+  let l:root = s:project_root(a:file)
+  let l:output = s:run_systemlist([l:runner, l:guard_script], l:root, json_encode(a:payload))
+  if v:shell_error != 0
+    return {
+          \ 'ok': v:false,
+          \ 'error': join(l:output, "\n"),
+          \ }
+  endif
+
+  try
+    return json_decode(join(l:output, "\n"))
+  catch
+    return {
+          \ 'ok': v:false,
+          \ 'error': join(l:output, "\n"),
+          \ }
+  endtry
+endfunction
+
+function! s:format_guard_failure(result) abort
+  let l:parts = []
+  for l:failure in get(a:result, 'validationFailures', [])
+    call add(
+          \ l:parts,
+          \ printf(
+          \   '%s(%d->%d)',
+          \   get(l:failure, 'kind', 'issue'),
+          \   get(l:failure, 'beforeCount', 0),
+          \   get(l:failure, 'afterCount', 0)
+          \ ))
+  endfor
+
+  for l:failure in get(a:result, 'runtimeFailures', [])
+    call add(
+          \ l:parts,
+          \ printf(
+          \   '%s em %s',
+          \   get(l:failure, 'command', 'validacao'),
+          \   fnamemodify(get(l:failure, 'filePath', ''), ':t')
+          \ ))
+  endfor
+
+  let l:error = trim(get(a:result, 'error', ''))
+  if !empty(l:error)
+    call add(l:parts, l:error)
+  endif
+
+  return join(l:parts, ' | ')
+endfunction
+
 function! s:issue_trigger_line_text(issue) abort
   let l:filename = get(a:issue, 'filename', '')
   let l:lnum = get(a:issue, 'lnum', 1)
@@ -996,9 +1227,7 @@ function! s:apply_issue_run_command_hidden(issue, keep_focus_code) abort
     let l:cwd = s:project_root(get(a:issue, 'filename', ''))
   endif
 
-  let l:system_command = s:issue_terminal_hidden_command(l:command, l:cwd)
-
-  let l:output = systemlist(l:system_command)
+  let l:output = s:run_shell_systemlist(l:command, l:cwd)
   if v:shell_error != 0
     echohl ErrorMsg
     echomsg '[RealtimeDevAgent] Falha ao executar acao de terminal'
@@ -1092,6 +1321,44 @@ function! s:apply_issue_run_command(issue, keep_focus_code) abort
   return s:apply_issue_run_command_hidden(l:context, a:keep_focus_code)
 endfunction
 
+function! s:issue_action_range(action) abort
+  let l:range = get(a:action, 'range', {})
+  if type(l:range) != v:t_dict
+    return {}
+  endif
+  if type(get(l:range, 'start', {})) != v:t_dict || type(get(l:range, 'end', {})) != v:t_dict
+    return {}
+  endif
+  return l:range
+endfunction
+
+function! s:apply_issue_range_replacement(target_buf, action, lnum, current_line, fallback_text) abort
+  let l:range = s:issue_action_range(a:action)
+  if empty(l:range)
+    return v:false
+  endif
+
+  let l:start_line = get(get(l:range, 'start', {}), 'line', -1)
+  let l:end_line = get(get(l:range, 'end', {}), 'line', -1)
+  if l:start_line !=# l:end_line || l:start_line !=# (a:lnum - 1)
+    return v:false
+  endif
+
+  let l:start_col = max([0, get(get(l:range, 'start', {}), 'character', 0)])
+  let l:end_col = max([l:start_col, get(get(l:range, 'end', {}), 'character', l:start_col)])
+  let l:replacement = has_key(a:action, 'text') ? get(a:action, 'text', '') : a:fallback_text
+  let l:new_line = strpart(a:current_line, 0, l:start_col)
+        \ . l:replacement
+        \ . strpart(a:current_line, l:end_col)
+  if l:new_line ==# a:current_line
+    return v:false
+  endif
+
+  noautocmd call setbufline(a:target_buf, a:lnum, l:new_line)
+  call setbufvar(a:target_buf, '&modified', 1)
+  return v:true
+endfunction
+
 function! s:apply_issue_snippet(issue, keep_focus_code) abort
   let l:issue = a:issue
   let l:filename = get(l:issue, 'filename', '')
@@ -1179,11 +1446,21 @@ function! s:apply_issue_snippet(issue, keep_focus_code) abort
 
   let l:indent = get(l:action, 'indent', matchstr(l:line_content, '^\s*'))
   let l:snippet_lines = s:normalize_snippet_lines(l:snippet_lines, l:indent)
+  let l:snippet_text = join(l:snippet_lines, "\n")
   if empty(l:op)
     let l:op = get(s:issue_default_action(l:kind), 'op', 'insert_before')
   endif
 
   if l:op ==# 'replace_line'
+    if s:apply_issue_range_replacement(l:target_buf, l:action, l:lnum, l:line_content, l:snippet_text)
+      if l:kind ==# 'comment_task' && !empty(get(l:issue, '_trigger_line', ''))
+        call s:remove_issue_trigger_residue(l:issue, a:keep_focus_code)
+      endif
+      if !a:keep_focus_code && !empty(l:restore_view)
+        call winrestview(l:restore_view)
+      endif
+      return v:true
+    endif
     let l:normalized_current = substitute(l:line_content, '^\s*', '', '')
     let l:normalized_first = substitute(l:snippet_lines[0], '^\s*', '', '')
     if len(l:snippet_lines) == 1 && (empty(l:snippet_lines[0]) || l:normalized_current ==# l:normalized_first)
@@ -1410,7 +1687,11 @@ function! s:build_followup_instruction(issue) abort
     let l:unknown = s:extract_undefined_variable_name(l:message)
     let l:replacement = s:extract_undefined_variable_suggestion(l:suggestion)
     if !empty(l:unknown) && !empty(l:replacement)
-      return printf('substitua %s por %s', l:unknown, l:replacement)
+      return printf(
+            \ 'substitua %s por %s retornando apenas o trecho corrigido sem comentarios explicativos',
+            \ l:unknown,
+            \ l:replacement
+            \ )
     endif
   endif
 
@@ -1518,6 +1799,98 @@ function! s:issue_parse_parts(text) abort
   return [l:severity, trim(l:message), trim(l:suggestion)]
 endfunction
 
+function! s:collect_analysis_for_buffer(bufnr) abort
+  if a:bufnr <= 0 || !bufloaded(a:bufnr)
+    return {
+          \ 'ok': v:false,
+          \ 'file': '',
+          \ 'qf': [],
+          \ 'error': 'buffer indisponivel para analise',
+          \ }
+  endif
+
+  let l:file = fnamemodify(bufname(a:bufnr), ':p')
+  let l:runner = s:realtime_dev_agent_script_runner()
+  if empty(l:runner)
+    return {
+          \ 'ok': v:false,
+          \ 'file': l:file,
+          \ 'qf': [],
+          \ 'error': 'runtime nao encontrado',
+          \ }
+  endif
+
+  let l:target_file = l:file
+  let l:buffer_dirty_tmp = ''
+  if getbufvar(a:bufnr, '&modified')
+    let l:buffer_dirty_tmp = tempname()
+    call writefile(getbufline(a:bufnr, 1, '$'), l:buffer_dirty_tmp)
+    let l:target_file = l:buffer_dirty_tmp
+  endif
+
+  let l:root = s:project_root(l:file)
+  let l:output = s:run_systemlist([
+        \ l:runner,
+        \ g:realtime_dev_agent_script,
+        \ '--analyze',
+        \ l:target_file,
+        \ '--source-path',
+        \ l:file,
+        \ '--vim'
+        \ ], l:root)
+  if !empty(l:buffer_dirty_tmp)
+    silent! call delete(l:buffer_dirty_tmp)
+  endif
+
+  if v:shell_error != 0
+    return {
+          \ 'ok': v:false,
+          \ 'file': l:file,
+          \ 'qf': [],
+          \ 'error': join(l:output, "\n"),
+          \ }
+  endif
+
+  let l:qf = []
+  let l:target_norm = fnamemodify(l:file, ':p')
+  for l:line in l:output
+    let l:match = matchlist(l:line, '\v^(.*):(\d+):(\d+): (.*)$')
+    if empty(l:match)
+      continue
+    endif
+    let l:qf_file = l:match[1]
+    let l:qf_raw_text = l:match[4]
+    let l:qf_text = s:extract_issue_text(l:qf_raw_text)
+    let l:qf_action = s:extract_issue_action(l:qf_raw_text)
+    let l:qf_snippet = s:extract_issue_snippet(l:qf_raw_text)
+    let l:qf_kind = s:extract_issue_kind(l:qf_text)
+    if !empty(l:buffer_dirty_tmp) && l:qf_file ==# l:buffer_dirty_tmp
+      let l:qf_file = l:file
+    endif
+    let l:qf_file = fnamemodify(l:qf_file, ':p')
+    if l:qf_file !=# l:target_norm
+      continue
+    endif
+
+    call add(l:qf, {
+          \ 'filename': l:qf_file,
+          \ 'lnum': str2nr(l:match[2]),
+          \ 'col': str2nr(l:match[3]),
+          \ 'text': l:qf_text,
+          \ 'kind': l:qf_kind,
+          \ 'snippet': l:qf_snippet,
+          \ 'action': l:qf_action
+          \ })
+  endfor
+
+  return {
+        \ 'ok': v:true,
+        \ 'file': l:file,
+        \ 'qf': l:qf,
+        \ 'error': '',
+        \ }
+endfunction
+
 function! s:realtime_check_from_buffer(bufnr, open_qf, show_echo) abort
   if a:bufnr <= 0 || !bufloaded(a:bufnr)
     return
@@ -1571,16 +1944,18 @@ function! s:realtime_check_from_buffer(bufnr, open_qf, show_echo) abort
   endif
 
   let l:root = s:project_root(l:file)
-  let l:cmd = 'cd ' . shellescape(l:root)
-    \ . ' && ' . l:runner . ' ' . shellescape(g:realtime_dev_agent_script)
-    \ . ' --analyze ' . shellescape(l:target_file)
-    \ . ' --source-path ' . shellescape(l:file)
-    \ . ' --vim'
-
   if g:realtime_dev_agent_show_window && !s:realtime_dev_agent_is_realtime_check
     call s:window_set_busy(l:file)
   endif
-  let l:output = systemlist(l:cmd)
+  let l:output = s:run_systemlist([
+    \ l:runner,
+    \ g:realtime_dev_agent_script,
+    \ '--analyze',
+    \ l:target_file,
+    \ '--source-path',
+    \ l:file,
+    \ '--vim'
+    \ ], l:root)
 
   let l:target_norm = fnamemodify(l:file, ':p')
   if !empty(l:buffer_dirty_tmp)
@@ -1762,7 +2137,10 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
     return 0
   endif
 
+  let l:affected_files = s:collect_affected_files(a:file, l:auto_candidates)
+  let l:file_snapshot = s:capture_file_snapshot(l:affected_files)
   let l:applied = 0
+  let l:applied_items = []
   let l:max_to_apply = get(g:, 'realtime_dev_agent_auto_fix_max_per_check', 0)
   if type(l:max_to_apply) != v:t_number
     let l:max_to_apply = str2nr(string(l:max_to_apply))
@@ -1815,6 +2193,7 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
 
       if s:apply_issue_snippet(l:item, v:false)
         let l:applied += 1
+        call add(l:applied_items, l:item)
       endif
     endfor
     let s:realtime_dev_agent_fix_guard[l:file_key] = l:fix_guard
@@ -1823,6 +2202,30 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
   endtry
 
   if l:applied > 0
+    let l:analysis = s:collect_analysis_for_buffer(l:current_buf)
+    if !get(l:analysis, 'ok', v:false)
+      call s:restore_file_snapshot(l:file_snapshot)
+      echohl WarningMsg
+      echomsg '[RealtimeDevAgent] Auto-fix revertido: falha ao reanalisar o buffer'
+      echohl None
+      return 0
+    endif
+
+    let l:guard_payload = {
+          \ 'appliedIssues': l:applied_items,
+          \ 'beforeIssues': a:qf,
+          \ 'afterIssues': get(l:analysis, 'qf', []),
+          \ 'fileEntries': s:build_guard_file_entries(l:affected_files),
+          \ }
+    let l:guard_result = s:run_autofix_guard(l:guard_payload, a:file)
+    if !get(l:guard_result, 'ok', v:false)
+      call s:restore_file_snapshot(l:file_snapshot)
+      echohl WarningMsg
+      echomsg '[RealtimeDevAgent] Auto-fix revertido: ' . s:format_guard_failure(l:guard_result)
+      echohl None
+      return 0
+    endif
+
     let l:summary = printf('[RealtimeDevAgent] Auto-fix aplicado em %d sugerenca(s)', l:applied)
     echo l:summary
   endif

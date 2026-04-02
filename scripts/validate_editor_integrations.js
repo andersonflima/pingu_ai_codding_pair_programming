@@ -1,16 +1,103 @@
 #!/usr/bin/env node
 'use strict';
 
+process.env.PINGU_ACTIVE_LANGUAGE_IDS = process.env.PINGU_ACTIVE_LANGUAGE_IDS || 'elixir,javascript,python';
+
 const fs = require('fs');
 const path = require('path');
 const { spawnSync, spawn } = require('child_process');
 const { runEditorParityContract } = require('./editor_parity_contract');
+const { hasLiveOpenAiValidation } = require('./require_real_ai_command');
 const {
   canonicalVsixPath,
   legacyVsixPath,
 } = require('./vscode_package_meta');
 
 const repoRoot = path.resolve(__dirname, '..');
+const realAiAvailable = hasLiveOpenAiValidation();
+
+function splitDocumentLines(text) {
+  return String(text || '').replace(/\r\n/g, '\n').split('\n');
+}
+
+function applyRangeChange(text, range, replacement) {
+  const sourceLines = splitDocumentLines(text);
+  const safeRange = range || {
+    start: { line: 0, character: 0 },
+    end: { line: 0, character: 0 },
+  };
+  const startLine = Math.max(0, Number(safeRange.start && safeRange.start.line || 0));
+  const startCharacter = Math.max(0, Number(safeRange.start && safeRange.start.character || 0));
+  const endLine = Math.max(startLine, Number(safeRange.end && safeRange.end.line || startLine));
+  const endCharacter = Math.max(0, Number(safeRange.end && safeRange.end.character || 0));
+  const replacementLines = String(replacement || '').split('\n');
+  const prefix = String(sourceLines[startLine] || '').slice(0, startCharacter);
+  const suffix = String(sourceLines[endLine] || '').slice(endCharacter);
+  const before = sourceLines.slice(0, startLine);
+  const after = sourceLines.slice(endLine + 1);
+  const middle = replacementLines.length > 0 ? [...replacementLines] : [''];
+  middle[0] = `${prefix}${middle[0]}`;
+  middle[middle.length - 1] = `${middle[middle.length - 1]}${suffix}`;
+  return [...before, ...middle, ...after].join('\n');
+}
+
+function compareEditRangeDescending(left, right) {
+  const leftRange = left && left.range ? left.range : { start: { line: 0, character: 0 } };
+  const rightRange = right && right.range ? right.range : { start: { line: 0, character: 0 } };
+  const leftLine = Number(leftRange.start && leftRange.start.line || 0);
+  const rightLine = Number(rightRange.start && rightRange.start.line || 0);
+  if (leftLine !== rightLine) {
+    return rightLine - leftLine;
+  }
+  const leftCharacter = Number(leftRange.start && leftRange.start.character || 0);
+  const rightCharacter = Number(rightRange.start && rightRange.start.character || 0);
+  return rightCharacter - leftCharacter;
+}
+
+function applyTextEdits(text, edits) {
+  return (Array.isArray(edits) ? [...edits] : [])
+    .sort(compareEditRangeDescending)
+    .reduce(
+      (currentText, edit) => applyRangeChange(currentText, edit && edit.range, edit && edit.newText),
+      String(text || ''),
+    );
+}
+
+function applyWorkspaceEditToDocuments(documentTexts, edit) {
+  if (!edit || typeof edit !== 'object') {
+    return;
+  }
+
+  if (edit.changes && typeof edit.changes === 'object') {
+    Object.entries(edit.changes).forEach(([uri, edits]) => {
+      const currentText = documentTexts.get(uri) || '';
+      documentTexts.set(uri, applyTextEdits(currentText, edits));
+    });
+  }
+
+  const documentChanges = Array.isArray(edit.documentChanges) ? edit.documentChanges : [];
+  documentChanges.forEach((change) => {
+    if (!change || typeof change !== 'object') {
+      return;
+    }
+    if (change.kind === 'create') {
+      if (!documentTexts.has(change.uri)) {
+        documentTexts.set(change.uri, '');
+      }
+      return;
+    }
+    if (change.kind === 'delete') {
+      documentTexts.delete(change.uri);
+      return;
+    }
+    if (!change.textDocument || !Array.isArray(change.edits)) {
+      return;
+    }
+    const uri = change.textDocument.uri;
+    const currentText = documentTexts.get(uri) || '';
+    documentTexts.set(uri, applyTextEdits(currentText, change.edits));
+  });
+}
 
 function run(command, args, options = {}) {
   return spawnSync(command, args, {
@@ -23,6 +110,7 @@ function run(command, args, options = {}) {
 function runNodeChecks() {
   const files = [
     'realtime_dev_agent.js',
+    'lib/autofix-guard.js',
     'lib/analyzer.js',
     'lib/issue-kinds.js',
     'lib/language-capabilities.js',
@@ -40,10 +128,12 @@ function runNodeChecks() {
     'lib/terminal-risk.js',
     'lib/language-profiles.js',
     'lib/language-snippets.js',
+    'scripts/autofix_guard_cli.js',
     'scripts/editor_parity_contract.js',
     'scripts/nvim_functional_smoke.js',
     'scripts/open_vscode_validation.js',
     'scripts/rebuild_external_agent_test.js',
+    'scripts/validate_active_language_quality_gates.js',
     'scripts/validate_external_editor_suite.js',
     'scripts/vscode_extension_smoke.js',
     'vscode/agent-process.js',
@@ -203,6 +293,7 @@ function runZedLspSmoke() {
     const stderr = [];
     const logMessages = [];
     const diagnosticsByUri = new Map();
+    const documentTexts = new Map();
 
     function send(message) {
       const payload = JSON.stringify(message);
@@ -241,6 +332,16 @@ function runZedLspSmoke() {
         const body = buffer.slice(bodyStart, bodyStart + contentLength);
         buffer = buffer.slice(bodyStart + contentLength);
         const message = JSON.parse(body);
+
+        if (Object.prototype.hasOwnProperty.call(message, 'id') && message.method === 'workspace/applyEdit') {
+          applyWorkspaceEditToDocuments(documentTexts, message.params && message.params.edit);
+          send({
+            jsonrpc: '2.0',
+            id: message.id,
+            result: { applied: true },
+          });
+          continue;
+        }
 
         if (Object.prototype.hasOwnProperty.call(message, 'id') && !message.method) {
           const resolver = pendingResponses.get(message.id);
@@ -298,6 +399,7 @@ function runZedLspSmoke() {
           },
         },
       });
+      documentTexts.set(commentUri, '//: funcao soma\n');
 
       send({
         jsonrpc: '2.0',
@@ -311,6 +413,7 @@ function runZedLspSmoke() {
           },
         },
       });
+      documentTexts.set(followUpUri, 'function revisarPedido() {\n  // TODO: revisar fluxo principal\n  return true;\n}\n');
 
       send({
         jsonrpc: '2.0',
@@ -324,6 +427,7 @@ function runZedLspSmoke() {
           },
         },
       });
+      documentTexts.set(terminalUri, '// * git status\n');
 
       await new Promise((resolveDelay) => setTimeout(resolveDelay, 250));
 
@@ -355,7 +459,10 @@ function runZedLspSmoke() {
       });
 
       const commentHasEdit = Array.isArray(commentActions)
-        && commentActions.some((action) => action && action.edit);
+        && commentActions.some((action) =>
+          action
+          && action.command
+          && action.command.command === 'realtimeDevAgent.applyIssueFix');
       const terminalHasCommand = Array.isArray(terminalActions)
         && terminalActions.some((action) =>
           action
@@ -367,6 +474,18 @@ function runZedLspSmoke() {
           && action.title === 'Pingu - Dev Agent: Insert actionable follow-up'
           && action.edit
           && JSON.stringify(action.edit).includes('// : '));
+      const initialCommentDiagnosticsCount = (diagnosticsByUri.get(commentUri) || []).length;
+      const initialFollowUpDiagnosticsCount = (diagnosticsByUri.get(followUpUri) || []).length;
+
+      const commentQuickFix = Array.isArray(commentActions)
+        ? commentActions.find((action) =>
+          action
+          && action.command
+          && action.command.command === 'realtimeDevAgent.applyIssueFix')
+        : null;
+      if (commentQuickFix && commentQuickFix.command) {
+        await request('workspace/executeCommand', commentQuickFix.command);
+      }
 
       await request('workspace/executeCommand', {
         command: 'realtimeDevAgent.runTerminalTask',
@@ -382,16 +501,25 @@ function runZedLspSmoke() {
         ],
       });
 
-      await new Promise((resolveDelay) => setTimeout(resolveDelay, 350));
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 450));
 
-      const sawCommentDiagnostics = (diagnosticsByUri.get(commentUri) || []).length > 0;
-      const sawFollowUpDiagnostics = (diagnosticsByUri.get(followUpUri) || []).length > 0;
+      const sawCommentDiagnostics = initialCommentDiagnosticsCount > 0;
+      const commentDiagnosticsAfterQuickFix = diagnosticsByUri.get(commentUri) || [];
+      const sawFollowUpDiagnostics = initialFollowUpDiagnosticsCount > 0;
       const sawTerminalLog = logMessages.some((message) => message.includes('zed-terminal-ok'));
       const sawTerminalReady = logMessages.some((message) => message.includes('terminal pronto para o proximo comando.'));
-      const ok = sawCommentDiagnostics
+      const commentTextAfterQuickFix = documentTexts.get(commentUri) || '';
+      const commentQuickFixApplied = commentTextAfterQuickFix.includes('function soma(a, b)')
+        && !commentTextAfterQuickFix.includes('funcao soma');
+      const aiChecksOk = !realAiAvailable || (
+        sawCommentDiagnostics
         && sawFollowUpDiagnostics
         && commentHasEdit
+        && commentQuickFixApplied
+        && commentDiagnosticsAfterQuickFix.length === 0
         && followUpHasEdit
+      );
+      const ok = aiChecksOk
         && terminalHasCommand
         && sawTerminalLog
         && sawTerminalReady;
@@ -403,11 +531,14 @@ function runZedLspSmoke() {
         stdout: JSON.stringify({
           sawCommentDiagnostics,
           commentHasEdit,
+          commentQuickFixApplied,
+          commentDiagnosticsAfterQuickFix: commentDiagnosticsAfterQuickFix.length,
           sawFollowUpDiagnostics,
           followUpHasEdit,
           terminalHasCommand,
           sawTerminalLog,
           sawTerminalReady,
+          hasLiveOpenAiValidation: realAiAvailable,
         }),
         stderr: stderr.join(''),
       });

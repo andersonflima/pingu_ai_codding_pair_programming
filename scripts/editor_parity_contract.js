@@ -71,6 +71,17 @@ function runEditorParityContract(repoRoot) {
       'LazyVim precisa rotear terminal_task para VS Code terminal, ToggleTerm e fallback nativo.',
     ),
     buildCheck(
+      'parity:lazyvim:autofix-guard',
+      'lazyvim',
+      'autofix_guard',
+      includesAll(vimInternal, [
+        'function! s:collect_analysis_for_buffer(',
+        'function! s:restore_file_snapshot(',
+        'function! s:run_autofix_guard(',
+      ]),
+      'LazyVim precisa validar o lote aplicado e restaurar snapshot quando a guarda reprovar.',
+    ),
+    buildCheck(
       'parity:vscode:always-active',
       'vscode',
       'continuous_analysis',
@@ -99,6 +110,17 @@ function runEditorParityContract(repoRoot) {
         && issueKinds.context_file.defaultAction.op === 'write_file'
         && issueKinds.unit_test.defaultAction.op === 'write_file',
       'VS Code precisa expor auto-fix e acoes para comment_task, context_file e unit_test.',
+    ),
+    buildCheck(
+      'parity:vscode:autofix-guard',
+      'vscode',
+      'autofix_guard',
+      includesAll(vscodeEdits, [
+        'evaluateAutofixGuard(',
+        'captureFileSnapshot(',
+        'restoreFileSnapshot(',
+      ]),
+      'VS Code precisa validar must-clear e sintaxe antes de manter o autofix.',
     ),
     buildCheck(
       'parity:vscode:terminal-stream',
@@ -148,7 +170,9 @@ function runEditorParityContract(repoRoot) {
       'zed',
       'comment_context_tests',
       includesAll(zedLsp, [
+        'function buildQuickFixCodeAction(',
         'function buildWorkspaceEdit(',
+        "command: 'realtimeDevAgent.applyIssueFix'",
         'return resolveIssueAction(issue);',
       ])
         && issueKinds.comment_task.defaultAction.op === 'replace_line'
@@ -157,12 +181,24 @@ function runEditorParityContract(repoRoot) {
       'Zed precisa aplicar comment_task, context_file e unit_test via quick fix.',
     ),
     buildCheck(
+      'parity:zed:quickfix-guard',
+      'zed',
+      'autofix_guard',
+      includesAll(zedLsp, [
+        'executeIssueFix(',
+        'requestApplyEdit(',
+        'buildSnapshotRestoreEdit(',
+        'evaluateAutofixGuard(',
+      ]),
+      'Zed precisa aplicar quickfix com validacao e rollback programatico.',
+    ),
+    buildCheck(
       'parity:zed:terminal-task',
       'zed',
       'terminal_task',
       includesAll(zedLsp, [
         'executeCommandProvider',
-        "commands: ['realtimeDevAgent.runTerminalTask']",
+        "commands: ['realtimeDevAgent.runTerminalTask', 'realtimeDevAgent.applyIssueFix']",
         "if (message.method === 'workspace/executeCommand') {",
         "command: 'realtimeDevAgent.runTerminalTask'",
         'function executeTerminalTask(payload) {',

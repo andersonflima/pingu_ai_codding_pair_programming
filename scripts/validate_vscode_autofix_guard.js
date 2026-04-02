@@ -270,10 +270,99 @@ async function runSuccessScenario() {
   };
 }
 
+async function runRuntimeValidationRollbackScenario() {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pingu-vscode-guard-runtime-rollback-'));
+  const targetFile = path.join(tempRoot, 'sample.py');
+  const originalContent = [
+    'def soma(numero):',
+    '    return numero + 1',
+    '',
+  ].join('\n');
+  const rewrittenContent = [
+    'def soma(numero)',
+    '    return numero + 1',
+    '',
+  ].join('\n');
+  fs.writeFileSync(targetFile, originalContent, 'utf8');
+
+  const { runtime, vscode, analyzeCalls } = createRuntime({
+    collectIssuesPlan: [[]],
+  });
+  const document = await vscode.workspace.openTextDocument(createUri(targetFile));
+  const applied = await runtime.applyAutoFixes(document, [buildIssue(targetFile, rewrittenContent)]);
+  const finalContent = fs.readFileSync(targetFile, 'utf8');
+
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+
+  return {
+    id: 'rollback_when_language_validation_fails',
+    ok: applied === false && finalContent === originalContent && analyzeCalls.length === 0,
+    details: {
+      applied,
+      analyzeCalls,
+      restored: finalContent === originalContent,
+    },
+  };
+}
+
+async function runRangeReplacementScenario() {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pingu-vscode-guard-range-'));
+  const targetFile = path.join(tempRoot, 'sample.js');
+  const originalContent = [
+    'function soma(numero) {',
+    '  return numeroo + numeroo;',
+    '}',
+    '',
+  ].join('\n');
+  const expectedContent = [
+    'function soma(numero) {',
+    '  return numero + numeroo;',
+    '}',
+    '',
+  ].join('\n');
+  fs.writeFileSync(targetFile, originalContent, 'utf8');
+
+  const { runtime, vscode, analyzeCalls } = createRuntime({
+    collectIssuesPlan: [[]],
+  });
+  const document = await vscode.workspace.openTextDocument(createUri(targetFile));
+  const applied = await runtime.applyAutoFixes(document, [{
+    file: targetFile,
+    line: 2,
+    kind: 'undefined_variable',
+    message: "Variavel 'numeroo' nao declarada",
+    suggestion: "Substitua por 'numero'",
+    snippet: '  return numero + numeroo;',
+    action: {
+      op: 'replace_line',
+      range: {
+        start: { line: 1, character: 9 },
+        end: { line: 1, character: 16 },
+      },
+      text: 'numero',
+    },
+  }]);
+  const finalContent = fs.readFileSync(targetFile, 'utf8');
+
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+
+  return {
+    id: 'replace_only_target_identifier_when_range_is_present',
+    ok: applied === true && finalContent === expectedContent && analyzeCalls.includes('autofix'),
+    details: {
+      applied,
+      analyzeCalls,
+      committed: finalContent === expectedContent,
+    },
+  };
+}
+
 async function main() {
   const checks = [
     await runRollbackScenario(),
     await runSuccessScenario(),
+    await runRuntimeValidationRollbackScenario(),
+    await runRangeReplacementScenario(),
   ];
   const failures = checks.filter((check) => !check.ok);
 
