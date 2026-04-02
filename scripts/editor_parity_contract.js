@@ -29,6 +29,8 @@ function runEditorParityContract(repoRoot) {
   const vscodeEdits = readSource(repoRoot, 'vscode/edits.js');
   const vscodeTerminal = readSource(repoRoot, 'vscode/terminal.js');
   const vscodeCodeActions = readSource(repoRoot, 'vscode/code-actions.js');
+  const vscodeSmoke = readSource(repoRoot, 'scripts/vscode_extension_smoke.js');
+  const nvimSmoke = readSource(repoRoot, 'scripts/nvim_functional_smoke.js');
   const zedLsp = readSource(repoRoot, 'zed-extension/server/realtime_dev_agent_lsp.js');
   const issueKinds = JSON.parse(readSource(repoRoot, 'config/issue-kinds.json'));
 
@@ -154,6 +156,18 @@ function runEditorParityContract(repoRoot) {
       'VS Code precisa expor follow-up acionavel por code action.',
     ),
     buildCheck(
+      'parity:vscode:representative-languages',
+      'vscode',
+      'representative_language_smoke',
+      includesAll(vscodeSmoke, [
+        "path.join(workspaceRoot, 'lib', 'billing.rb')",
+        "path.join(workspaceRoot, 'scripts', 'run.sh')",
+        "path.join(workspaceRoot, 'infra', 'main.tf')",
+        "path.join(workspaceRoot, 'config', 'app.toml')",
+      ]),
+      'VS Code precisa exercitar Ruby, Shell, Terraform e TOML no smoke funcional.',
+    ),
+    buildCheck(
       'parity:zed:always-active',
       'zed',
       'continuous_analysis',
@@ -164,6 +178,18 @@ function runEditorParityContract(repoRoot) {
         "if (message.method === 'textDocument/didSave') {",
       ]),
       'Zed precisa manter diagnosticos ativos no ciclo didOpen/didChange/didSave.',
+    ),
+    buildCheck(
+      'parity:lazyvim:representative-languages',
+      'lazyvim',
+      'representative_language_smoke',
+      includesAll(nvimSmoke, [
+        "runCase('ruby-function-doc', buildRubyFunctionDocCase)",
+        "runCase('shell-missing-quote', buildShellMissingQuoteCase)",
+        "runCase('terraform-required-version', buildTerraformRequiredVersionCase)",
+        "runCase('toml-missing-quote', buildTomlMissingQuoteCase)",
+      ]),
+      'LazyVim precisa exercitar Ruby, Shell, Terraform e TOML no smoke funcional.',
     ),
     buildCheck(
       'parity:zed:quickfix-core',

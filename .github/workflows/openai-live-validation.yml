@@ -1,0 +1,32 @@
+name: openai-live-validation
+
+on:
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      PINGU_VALIDATE_WITH_OPENAI: '1'
+      PINGU_OPENAI_TIMEOUT_MS: '30000'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Assert OpenAI secret
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "OPENAI_API_KEY secret is required for live validation."
+            exit 1
+          fi
+
+      - name: Run live validation with OpenAI Codex
+        run: npm run validate:quality-gate:active

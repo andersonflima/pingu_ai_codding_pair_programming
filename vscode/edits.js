@@ -158,6 +158,14 @@ function createEditRuntime(deps) {
     return match ? match[0] : '';
   }
 
+  function issueIndent(action, kind, currentLine) {
+    const rawIndent = String(action.indent || detectIndent(currentLine));
+    if (String(kind || '') === 'tabs') {
+      return rawIndent.replace(/\t/g, '  ');
+    }
+    return rawIndent;
+  }
+
   function commonIndentLength(lines) {
     const nonEmpty = lines.filter((line) => String(line || '').trim() !== '');
     if (nonEmpty.length === 0) {
@@ -275,7 +283,7 @@ function createEditRuntime(deps) {
     }
 
     const currentLine = liveDocument.lineAt(boundedLineIndex).text;
-    const indent = String(action.indent || detectIndent(currentLine));
+    const indent = issueIndent(action, kind, currentLine);
     const snippetRaw = kind === 'trailing_whitespace' || kind === 'syntax_extra_delimiter'
       ? ''
       : String(issue.snippet || '');
@@ -447,6 +455,7 @@ function createEditRuntime(deps) {
   return {
     applyAutoFixes,
     detectIndent,
+    issueIndent,
     issueActionIdentity,
     issueIntersectsRange,
     issueKey,

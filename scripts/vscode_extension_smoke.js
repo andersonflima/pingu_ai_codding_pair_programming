@@ -427,6 +427,10 @@ async function run() {
   const realAiAvailable = hasLiveOpenAiValidation();
   const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'realtime-dev-agent-vscode-'));
   fs.mkdirSync(path.join(workspaceRoot, 'src'), { recursive: true });
+  fs.mkdirSync(path.join(workspaceRoot, 'lib'), { recursive: true });
+  fs.mkdirSync(path.join(workspaceRoot, 'scripts'), { recursive: true });
+  fs.mkdirSync(path.join(workspaceRoot, 'infra'), { recursive: true });
+  fs.mkdirSync(path.join(workspaceRoot, 'config'), { recursive: true });
   fs.mkdirSync(path.join(workspaceRoot, 'tests', 'src'), { recursive: true });
 
   fs.writeFileSync(
@@ -457,12 +461,20 @@ async function run() {
   const followUpFile = path.join(workspaceRoot, 'src', 'follow-up.js');
   const autofixFile = path.join(workspaceRoot, 'src', 'math.js');
   const nestedTestContextFile = path.join(workspaceRoot, 'tests', 'src', 'context-from-test.js');
+  const rubyFunctionDocFile = path.join(workspaceRoot, 'lib', 'billing.rb');
+  const shellTabsFile = path.join(workspaceRoot, 'scripts', 'run.sh');
+  const terraformRequiredVersionFile = path.join(workspaceRoot, 'infra', 'main.tf');
+  const tomlMissingQuoteFile = path.join(workspaceRoot, 'config', 'app.toml');
   fs.writeFileSync(commentFile, '//: funcao soma\n', 'utf8');
   fs.writeFileSync(contextFile, '// ** bff para crud de usuario\n', 'utf8');
   fs.writeFileSync(terminalFile, '// * rodar testes\n', 'utf8');
   fs.writeFileSync(blockedTerminalFile, '// * commit: feat: smoke bloqueado\n', 'utf8');
   fs.writeFileSync(followUpFile, 'function revisarPedido() {\n  // TODO: revisar fluxo principal\n  return true;\n}\n', 'utf8');
   fs.writeFileSync(nestedTestContextFile, '// ** bff para crud de pedido\n', 'utf8');
+  fs.writeFileSync(rubyFunctionDocFile, 'def soma(valor)\n  valor + 1\nend\n', 'utf8');
+  fs.writeFileSync(shellTabsFile, '\techo ok\n', 'utf8');
+  fs.writeFileSync(terraformRequiredVersionFile, 'resource "aws_s3_bucket" "example" {}\n', 'utf8');
+  fs.writeFileSync(tomlMissingQuoteFile, 'host = "localhost\n', 'utf8');
   fs.writeFileSync(
     autofixFile,
     [
@@ -554,6 +566,26 @@ async function run() {
     const rootContextFromTestFile = path.join(workspaceRoot, '.realtime-dev-agent', 'contexts', 'bff-crud-pedido.md');
     const nestedContextFromTestFile = path.join(workspaceRoot, 'tests', '.realtime-dev-agent', 'contexts', 'bff-crud-pedido.md');
 
+    const rubyFunctionDocDocument = await vscode.__mock.openFile(rubyFunctionDocFile);
+    vscode.__mock.setActiveDocument(rubyFunctionDocDocument);
+    await vscode.__mock.commands.get('realtimeDevAgent.analyzeCurrentFile')();
+    const rubyFunctionDocResult = fs.readFileSync(rubyFunctionDocFile, 'utf8');
+
+    const shellTabsDocument = await vscode.__mock.openFile(shellTabsFile);
+    vscode.__mock.setActiveDocument(shellTabsDocument);
+    await vscode.__mock.commands.get('realtimeDevAgent.analyzeCurrentFile')();
+    const shellTabsResult = fs.readFileSync(shellTabsFile, 'utf8');
+
+    const terraformRequiredVersionDocument = await vscode.__mock.openFile(terraformRequiredVersionFile);
+    vscode.__mock.setActiveDocument(terraformRequiredVersionDocument);
+    await vscode.__mock.commands.get('realtimeDevAgent.analyzeCurrentFile')();
+    const terraformRequiredVersionResult = fs.readFileSync(terraformRequiredVersionFile, 'utf8');
+
+    const tomlMissingQuoteDocument = await vscode.__mock.openFile(tomlMissingQuoteFile);
+    vscode.__mock.setActiveDocument(tomlMissingQuoteDocument);
+    await vscode.__mock.commands.get('realtimeDevAgent.analyzeCurrentFile')();
+    const tomlMissingQuoteResult = fs.readFileSync(tomlMissingQuoteFile, 'utf8');
+
     const summary = {
       commentTask: {
         applied: commentResult.includes('function soma(a, b)'),
@@ -590,6 +622,12 @@ async function run() {
         writesContextAtProjectRoot: fs.existsSync(rootContextFromTestFile),
         avoidsNestedTestsContext: !fs.existsSync(nestedContextFromTestFile),
       },
+      representativeLanguages: {
+        rubyFunctionDoc: rubyFunctionDocResult.includes('comportamento principal'),
+        shellTabs: shellTabsResult.includes('  echo ok') && !shellTabsResult.includes('\t'),
+        terraformRequiredVersion: terraformRequiredVersionResult.includes('required_version = ">= 1.5.0"'),
+        tomlMissingQuote: tomlMissingQuoteResult.includes('host = "localhost"'),
+      },
     };
 
     assert(summary.terminalTask.removedTrigger, 'VS Code smoke: terminal_task nao removeu a linha gatilho apos sucesso.');
@@ -600,6 +638,10 @@ async function run() {
     assert(summary.terminalRisk.blockedByRiskMode, 'VS Code smoke: modo de risco nao sinalizou o bloqueio do comando.');
     assert(summary.scopedAutoFix.correctedUndefinedVariable, 'VS Code smoke: undefined_variable nao corrigiu a referencia digitada errado.');
     assert(summary.scopedAutoFix.removedTypoReference, 'VS Code smoke: typo no escopo da funcao permaneceu apos auto-fix.');
+    assert(summary.representativeLanguages.rubyFunctionDoc, 'VS Code smoke: ruby function_doc nao inseriu a documentacao esperada.');
+    assert(summary.representativeLanguages.shellTabs, 'VS Code smoke: shell tabs nao converteu tabs em espacos.');
+    assert(summary.representativeLanguages.terraformRequiredVersion, 'VS Code smoke: terraform_required_version nao inseriu o bloco de versao.');
+    assert(summary.representativeLanguages.tomlMissingQuote, 'VS Code smoke: toml syntax_missing_quote nao fechou a aspa.');
     if (realAiAvailable) {
       assert(summary.commentTask.applied, 'VS Code smoke: comment_task nao aplicou o snippet esperado.');
       assert(summary.commentTask.removedTrigger, 'VS Code smoke: comment_task nao removeu a linha gatilho.');

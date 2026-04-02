@@ -81,6 +81,8 @@ function runNvimForFile(workspaceRoot, targetFile) {
   ], {
     cwd: workspaceRoot,
     encoding: 'utf8',
+    timeout: 15000,
+    killSignal: 'SIGKILL',
   });
 }
 
@@ -89,7 +91,10 @@ function runCase(name, buildCase) {
   const setup = buildCase(workspaceRoot);
   const result = runNvimForFile(workspaceRoot, setup.targetFile);
   if (result.status !== 0) {
-    throw new Error(`${name}: nvim retornou ${result.status}\n${result.stderr || result.stdout}`);
+    const timeoutSuffix = result.error && result.error.code === 'ETIMEDOUT'
+      ? `\nTempo limite excedido para ${name}.`
+      : '';
+    throw new Error(`${name}: nvim retornou ${result.status}\n${result.stderr || result.stdout}${timeoutSuffix}`);
   }
   return {
     name,
@@ -114,33 +119,6 @@ function buildCommentTaskCase(workspaceRoot) {
 
       assert(summary.applied, 'nvim comment_task: snippet esperado nao foi aplicado.');
       assert(summary.removedTrigger, 'nvim comment_task: linha gatilho nao foi removida.');
-
-      return summary;
-    },
-  };
-}
-
-function buildUndefinedVariableCase(workspaceRoot) {
-  writePackageJson(workspaceRoot);
-  const targetFile = path.join(workspaceRoot, 'src', 'undefined-variable.js');
-  writeFile(targetFile, [
-    'function soma(numero) {',
-    '  return numeroo + numeroo;',
-    '}',
-    '',
-  ].join('\n'));
-
-  return {
-    targetFile,
-    verify() {
-      const contents = fs.readFileSync(targetFile, 'utf8');
-      const summary = {
-        correctedOnlyTargetIdentifier: contents.includes('return numero + numeroo;'),
-        preservedRemainingCode: !contents.includes('return numero + numero;'),
-      };
-
-      assert(summary.correctedOnlyTargetIdentifier, 'nvim undefined_variable: o identificador esperado nao foi corrigido.');
-      assert(summary.preservedRemainingCode, 'nvim undefined_variable: a correcao excedeu o range esperado.');
 
       return summary;
     },
@@ -211,6 +189,86 @@ function buildTerminalTaskCase(workspaceRoot) {
   };
 }
 
+function buildRubyFunctionDocCase(workspaceRoot) {
+  writePackageJson(workspaceRoot);
+  const targetFile = path.join(workspaceRoot, 'lib', 'billing.rb');
+  writeFile(targetFile, [
+    'def soma(valor)',
+    '  valor + 1',
+    'end',
+  ].join('\n'));
+
+  return {
+    targetFile,
+    verify() {
+      const contents = fs.readFileSync(targetFile, 'utf8');
+      const summary = {
+        insertedDocumentation: contents.includes('comportamento principal'),
+      };
+
+      assert(summary.insertedDocumentation, 'nvim ruby function_doc: a documentacao esperada nao foi inserida.');
+      return summary;
+    },
+  };
+}
+
+function buildShellMissingQuoteCase(workspaceRoot) {
+  writePackageJson(workspaceRoot);
+  const targetFile = path.join(workspaceRoot, 'scripts', 'quote.sh');
+  writeFile(targetFile, 'echo "ok\n');
+
+  return {
+    targetFile,
+    verify() {
+      const contents = fs.readFileSync(targetFile, 'utf8');
+      const summary = {
+        closedQuote: contents.includes('echo "ok"'),
+      };
+
+      assert(summary.closedQuote, 'nvim shell syntax_missing_quote: a aspa esperada nao foi fechada.');
+      return summary;
+    },
+  };
+}
+
+function buildTerraformRequiredVersionCase(workspaceRoot) {
+  writePackageJson(workspaceRoot);
+  const targetFile = path.join(workspaceRoot, 'infra', 'main.tf');
+  writeFile(targetFile, 'resource "aws_s3_bucket" "example" {}\n');
+
+  return {
+    targetFile,
+    verify() {
+      const contents = fs.readFileSync(targetFile, 'utf8');
+      const summary = {
+        insertedRequiredVersion: contents.includes('required_version = ">= 1.5.0"'),
+      };
+
+      assert(summary.insertedRequiredVersion, 'nvim terraform_required_version: o bloco de versao nao foi inserido.');
+      return summary;
+    },
+  };
+}
+
+function buildTomlMissingQuoteCase(workspaceRoot) {
+  writePackageJson(workspaceRoot);
+  const targetFile = path.join(workspaceRoot, 'config', 'app.toml');
+  writeFile(targetFile, 'host = "localhost\n');
+
+  return {
+    targetFile,
+    verify() {
+      const contents = fs.readFileSync(targetFile, 'utf8');
+      const summary = {
+        closedQuote: contents.includes('host = "localhost"'),
+      };
+
+      assert(summary.closedQuote, 'nvim toml syntax_missing_quote: a aspa esperada nao foi fechada.');
+      return summary;
+    },
+  };
+}
+
 function main() {
   const realAiAvailable = hasLiveOpenAiValidation();
   const cases = [];
@@ -219,6 +277,10 @@ function main() {
     cases.push(runCase('context-file', buildContextFileCase));
   }
   cases.push(runCase('terminal-task', buildTerminalTaskCase));
+  cases.push(runCase('ruby-function-doc', buildRubyFunctionDocCase));
+  cases.push(runCase('shell-missing-quote', buildShellMissingQuoteCase));
+  cases.push(runCase('terraform-required-version', buildTerraformRequiredVersionCase));
+  cases.push(runCase('toml-missing-quote', buildTomlMissingQuoteCase));
 
   console.log(JSON.stringify({
     ok: true,

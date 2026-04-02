@@ -617,6 +617,18 @@ npm run validate:matrix
 npm run validate:editors
 ```
 
+### Quality gates de todas as linguagens ativas
+
+```bash
+npm run validate:quality-gate:active
+```
+
+### Contrato de linguagem 100% fechada
+
+```bash
+npm run validate:language:100-contract
+```
+
 ### Incluir tambem o empacotamento real da extensao do VS Code
 
 ```bash
@@ -628,6 +640,12 @@ PINGU_VALIDATE_PACKAGE=1 npm run validate:editors
 ```bash
 npm run validate:all
 ```
+
+No CI remoto, o repositorio roda tres trilhas:
+
+- `validate-all`: suite estrutural completa do repositorio
+- `active-language-quality-gates`: gates reais de todas as linguagens ativas
+- `openai-live-validation`: workflow manual para exercitar cenarios live com `OPENAI_API_KEY`
 
 ### Recriar a suite externa em `~/snippets/agent_test`
 

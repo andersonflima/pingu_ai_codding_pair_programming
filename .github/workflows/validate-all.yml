@@ -1,4 +1,4 @@
-name: elixir-quality-gate
+name: validate-all
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -23,5 +23,5 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Run Elixir quality gate
-        run: npm run validate:quality-gate:elixir
+      - name: Run repository validation suite
+        run: npm run validate:all

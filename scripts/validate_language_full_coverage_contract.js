@@ -12,6 +12,7 @@ const {
 
 function buildLanguageCoverageRow(languageId, registryIds) {
   const manifestEntry = validationManifestEntry(languageId);
+  const metadata = manifestEntry && manifestEntry.metadata ? manifestEntry.metadata : {};
   const row = {
     languageId,
     registry: registryIds.has(languageId),
@@ -19,11 +20,18 @@ function buildLanguageCoverageRow(languageId, registryIds) {
     checkup: Boolean(manifestEntry && manifestEntry.checkup),
     editorSmoke: Boolean(manifestEntry && manifestEntry.editorSmoke),
     qualityGate: Boolean(manifestEntry && manifestEntry.qualityGate),
+    matrixCases: Number(metadata.matrixCases || 0),
+    checkupCases: Number(metadata.checkupCases || 0),
+    offlineCheckupCases: Number(metadata.offlineCheckupCases || 0),
+    aiOptionalMatrixCases: Number(metadata.aiOptionalMatrixCases || 0),
+    representativeEditorSmoke: Boolean(metadata.representativeEditorSmoke),
   };
 
   return {
     ...row,
     closed: row.registry && row.matrix && row.checkup && row.editorSmoke && row.qualityGate,
+    maturity: String(metadata.maturity || 'basic'),
+    offlineSignalKinds: String(metadata.offlineSignalKinds || 'basic'),
   };
 }
 
@@ -42,9 +50,21 @@ function main() {
     ok: uncovered.length === 0,
     activeLanguages: activeIds,
     sharedEditorSmoke: Object.values(manifest)[0] ? Object.values(manifest)[0].editorSmoke : '',
+    representativeEditorSmokeLanguages: coverage
+      .filter((entry) => entry.representativeEditorSmoke)
+      .map((entry) => entry.languageId),
     coverage,
     uncovered,
     ruler: ['registry', 'matrix', 'checkup', 'editorSmoke', 'qualityGate'],
+    maturityRuler: [
+      'matrixCases',
+      'checkupCases',
+      'offlineCheckupCases',
+      'aiOptionalMatrixCases',
+      'representativeEditorSmoke',
+      'offlineSignalKinds',
+      'maturity',
+    ],
   }, null, 2)}\n`);
 
   if (uncovered.length > 0) {

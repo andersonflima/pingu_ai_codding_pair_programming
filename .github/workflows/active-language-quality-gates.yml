@@ -1,7 +1,9 @@
-name: javascript-quality-gate
+name: active-language-quality-gates
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '0 4 * * *'
   pull_request:
     branches:
       - main
@@ -12,7 +14,7 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
 
     steps:
       - name: Checkout
@@ -23,5 +25,5 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Run JavaScript quality gate
-        run: npm run validate:quality-gate:javascript
+      - name: Run active language quality gates
+        run: npm run validate:quality-gate:active
