@@ -3,12 +3,9 @@
 
 const { spawnSync } = require('child_process');
 const { activeLanguageIds } = require('../lib/language-capabilities');
+const { qualityGateScriptsByLanguage } = require('./language_validation_manifest');
 
-const QUALITY_GATE_BY_LANGUAGE = Object.freeze({
-  elixir: 'validate:quality-gate:elixir',
-  javascript: 'validate:quality-gate:javascript',
-  python: 'validate:quality-gate:python',
-});
+const QUALITY_GATE_BY_LANGUAGE = Object.freeze(qualityGateScriptsByLanguage());
 
 function buildReport(activeLanguages) {
   const gatedLanguages = activeLanguages.filter((languageId) => Boolean(QUALITY_GATE_BY_LANGUAGE[languageId]));
