@@ -56,6 +56,28 @@ const cases = [
     expectedSourceIncludesAfterApply: ['nome = usuario_mapa["nome"]'],
   },
   {
+    id: 'existing:undefined_variable:main_block_typo',
+    relativeFile: path.join('src', 'billing_main_block_typo.py'),
+    content: [
+      'import hashlib',
+      '',
+      'def create_16char_hash(input_string):',
+      '    sha256_hash = hashlib.sha256(input_string.encode()).hexdigest()',
+      '    return sha256_hash[:16]',
+      '',
+      'if __name__ == "__main__":',
+      '    input_string = "Hello, World! Hello, World! Hello, World! Hello, World!"',
+      '    hash_16inch = create_16char_hash(input_sting)',
+      '    print(f"16-inch hash of \'{input_string}\': {hash_16inch}")',
+    ].join('\n'),
+    expectedKinds: ['undefined_variable'],
+    expectedSnippetIncludes: ['hash_16inch = create_16char_hash(input_string)'],
+    forbiddenSnippetIncludes: ['pingu - correction'],
+    applyKinds: ['undefined_variable'],
+    mustClearKinds: ['undefined_variable'],
+    expectedSourceIncludesAfterApply: ['hash_16inch = create_16char_hash(input_string)'],
+  },
+  {
     id: 'existing:undefined_variable:ignore_docstring',
     relativeFile: path.join('src', 'billing_ignore_docstring.py'),
     content: [

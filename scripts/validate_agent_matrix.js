@@ -8,6 +8,7 @@ const { analyzeText } = require('../lib/analyzer');
 const { hasLiveOpenAiValidation } = require('./require_real_ai_command');
 const {
   activeLanguageIds,
+  DEFAULT_ACTIVE_LANGUAGE_IDS,
   getCapabilityProfile,
   languageCapabilityRegistry,
   requiresAiForFeature,
@@ -337,15 +338,17 @@ function validateFixtureMatrix() {
 function validateCapabilityRegistry() {
   const registry = languageCapabilityRegistry();
   const failures = [];
+  const expectedActiveIds = [...DEFAULT_ACTIVE_LANGUAGE_IDS].sort();
+  const expectedRegistryIds = ['default', ...expectedActiveIds].sort();
 
   const activeIds = activeLanguageIds().sort();
-  if (activeIds.join(',') !== 'elixir') {
-    failures.push(`activeLanguageIds esperado=elixir atual=${activeIds.join(',') || 'vazio'}`);
+  if (activeIds.join(',') !== expectedActiveIds.join(',')) {
+    failures.push(`activeLanguageIds esperado=${expectedActiveIds.join(',')} atual=${activeIds.join(',') || 'vazio'}`);
   }
 
   const ids = registry.map((entry) => entry.id).sort();
-  if (ids.join(',') !== 'default,elixir') {
-    failures.push(`registry ids esperados=default,elixir atuais=${ids.join(',')}`);
+  if (ids.join(',') !== expectedRegistryIds.join(',')) {
+    failures.push(`registry ids esperados=${expectedRegistryIds.join(',')} atuais=${ids.join(',')}`);
   }
 
   const elixirProfile = getCapabilityProfile(path.join(repoRoot, 'lib', 'sample.ex'));

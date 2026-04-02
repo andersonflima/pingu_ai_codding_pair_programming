@@ -565,6 +565,11 @@ Pre-requisitos:
 
 Os fluxos orientados por IA usam OpenAI Codex por padrao. O contrato principal agora e `OPENAI_API_KEY`.
 
+Linguagens ativas por padrao no runtime:
+
+- todas as linguagens mapeadas no registry, exceto o fallback `default`
+- hoje isso inclui `javascript`, `python`, `elixir`, `go`, `rust`, `ruby`, `lua`, `vim`, `c`, `terraform`, `yaml`, `markdown`, `mermaid`, `dockerfile`, `shell` e `toml`
+
 Variaveis comuns:
 
 - `OPENAI_API_KEY`

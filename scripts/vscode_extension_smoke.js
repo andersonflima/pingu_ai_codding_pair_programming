@@ -1,8 +1,6 @@
 #!/usr/bin/env node
 'use strict';
 
-process.env.PINGU_ACTIVE_LANGUAGE_IDS = process.env.PINGU_ACTIVE_LANGUAGE_IDS || 'elixir,javascript,python';
-
 const fs = require('fs');
 const os = require('os');
 const path = require('path');

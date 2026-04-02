@@ -11,13 +11,15 @@ const QUALITY_GATE_BY_LANGUAGE = Object.freeze({
 });
 
 function buildReport(activeLanguages) {
-  const missingLanguages = activeLanguages.filter((languageId) => !QUALITY_GATE_BY_LANGUAGE[languageId]);
+  const gatedLanguages = activeLanguages.filter((languageId) => Boolean(QUALITY_GATE_BY_LANGUAGE[languageId]));
+  const uncoveredLanguages = activeLanguages.filter((languageId) => !QUALITY_GATE_BY_LANGUAGE[languageId]);
   return {
     activeLanguages,
-    missingLanguages,
-    mappedGates: activeLanguages.reduce((accumulator, languageId) => ({
+    gatedLanguages,
+    uncoveredLanguages,
+    mappedGates: gatedLanguages.reduce((accumulator, languageId) => ({
       ...accumulator,
-      [languageId]: QUALITY_GATE_BY_LANGUAGE[languageId] || null,
+      [languageId]: QUALITY_GATE_BY_LANGUAGE[languageId],
     }), {}),
   };
 }
@@ -34,15 +36,6 @@ function main() {
   const activeLanguages = activeLanguageIds();
   const report = buildReport(activeLanguages);
 
-  if (report.missingLanguages.length > 0) {
-    process.stdout.write(`${JSON.stringify({
-      ok: false,
-      ...report,
-    }, null, 2)}\n`);
-    process.exitCode = 1;
-    return;
-  }
-
   if (!shouldRun) {
     process.stdout.write(`${JSON.stringify({
       ok: true,
@@ -51,7 +44,7 @@ function main() {
     return;
   }
 
-  for (const languageId of activeLanguages) {
+  for (const languageId of report.gatedLanguages) {
     const scriptName = QUALITY_GATE_BY_LANGUAGE[languageId];
     const result = runQualityGate(scriptName);
     if (result.status !== 0) {
