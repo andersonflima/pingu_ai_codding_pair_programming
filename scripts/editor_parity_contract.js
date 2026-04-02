@@ -81,6 +81,22 @@ function runEditorParityContract(repoRoot) {
       'LazyVim precisa aplicar auto-fix em lote com modo visual estavel, preservando a view e redesenhando uma vez no final.',
     ),
     buildCheck(
+      'parity:lazyvim:near-cursor-batch-scope',
+      'lazyvim',
+      'local_autofix_scope',
+      includesAll(vimPlugin, [
+        "let g:realtime_dev_agent_auto_fix_scope = 'near_cursor'",
+        "let g:realtime_dev_agent_auto_fix_near_cursor_radius = 24",
+        "let g:realtime_dev_agent_auto_fix_cluster_gap = 8",
+      ])
+        && includesAll(vimInternal, [
+          'function! s:auto_fix_scope() abort',
+          'function! s:build_auto_fix_clusters(items) abort',
+          'function! s:select_auto_fix_candidates_by_scope(items) abort',
+        ]),
+      'LazyVim precisa limitar o auto-fix automatico ao trecho mais proximo do cursor, em vez de aplicar o arquivo inteiro por ciclo.',
+    ),
+    buildCheck(
       'parity:lazyvim:autofix-core',
       'lazyvim',
       'comment_context_tests',

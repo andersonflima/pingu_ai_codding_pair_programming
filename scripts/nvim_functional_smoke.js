@@ -310,6 +310,33 @@ const buildRubyFunctionDocCase = buildTextAutofixCase({
   failureMessage: 'nvim ruby function_doc: a documentacao esperada nao foi inserida.',
 });
 
+function buildRubyFunctionDocFarFromCursorCase(workspaceRoot) {
+  writePackageJson(workspaceRoot);
+  const targetFile = path.join(workspaceRoot, 'lib', 'billing_far.rb');
+  const lines = Array.from({ length: 40 }, () => '');
+  lines.push('def soma_longe(valor)');
+  lines.push('  valor + 1');
+  lines.push('end');
+  writeFile(targetFile, lines.join('\n'));
+
+  return {
+    targetFile,
+    verify() {
+      const contents = fs.readFileSync(targetFile, 'utf8');
+      const summary = {
+        preservedFarFunctionWithoutAutofix: !String(contents || '').includes('comportamento principal'),
+      };
+
+      assert(
+        summary.preservedFarFunctionWithoutAutofix,
+        'nvim near_cursor scope: issue distante do cursor nao deveria entrar no batch automatico padrao.',
+      );
+
+      return summary;
+    },
+  };
+}
+
 const buildShellMissingQuoteCase = buildTextAutofixCase({
   relativePath: path.join('scripts', 'quote.sh'),
   content: 'echo "ok\n',
@@ -375,6 +402,7 @@ function main() {
   cases.push(runCase('mermaid-missing-delimiter', buildMermaidMissingDelimiterCase));
   cases.push(runCase('rust-function-doc', buildRustFunctionDocCase));
   cases.push(runCase('ruby-function-doc', buildRubyFunctionDocCase));
+  cases.push(runCase('ruby-function-doc-far-from-cursor', buildRubyFunctionDocFarFromCursorCase));
   cases.push(runCase('shell-missing-quote', buildShellMissingQuoteCase));
   cases.push(runCase('terraform-required-version', buildTerraformRequiredVersionCase));
   cases.push(runCase('toml-missing-quote', buildTomlMissingQuoteCase));

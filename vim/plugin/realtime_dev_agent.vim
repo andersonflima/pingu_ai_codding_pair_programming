@@ -297,8 +297,23 @@ if !exists('g:realtime_dev_agent_auto_fix_max_per_check')
 endif
 
 if !exists('g:realtime_dev_agent_auto_fix_cursor_only')
-  " 1: aplica apenas no cursor atual; 0: aplica no arquivo atual.
+  " Compatibilidade: 1 forca modo cursor_only; 0 respeita realtime_dev_agent_auto_fix_scope.
   let g:realtime_dev_agent_auto_fix_cursor_only = 0
+endif
+
+if !exists('g:realtime_dev_agent_auto_fix_scope')
+  " near_cursor: aplica apenas o trecho mais proximo do cursor; file: aplica o arquivo inteiro; cursor_only: aplica somente no cursor.
+  let g:realtime_dev_agent_auto_fix_scope = 'near_cursor'
+endif
+
+if !exists('g:realtime_dev_agent_auto_fix_near_cursor_radius')
+  " Numero maximo de linhas entre o cursor e o bloco elegivel para auto-fix.
+  let g:realtime_dev_agent_auto_fix_near_cursor_radius = 24
+endif
+
+if !exists('g:realtime_dev_agent_auto_fix_cluster_gap')
+  " Distancia maxima entre issues consecutivos para pertencerem ao mesmo trecho.
+  let g:realtime_dev_agent_auto_fix_cluster_gap = 8
 endif
 
 if !exists('g:realtime_dev_agent_auto_fix_visual_mode')

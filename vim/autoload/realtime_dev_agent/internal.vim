@@ -359,6 +359,122 @@ function! s:auto_fix_visual_mode() abort
   return l:mode
 endfunction
 
+function! s:auto_fix_scope() abort
+  if str2nr(string(get(g:, 'realtime_dev_agent_auto_fix_cursor_only', 0))) > 0
+    return 'cursor_only'
+  endif
+
+  let l:scope = tolower(trim(string(get(g:, 'realtime_dev_agent_auto_fix_scope', 'near_cursor'))))
+  if index(['near_cursor', 'file', 'cursor_only'], l:scope) == -1
+    return 'near_cursor'
+  endif
+  return l:scope
+endfunction
+
+function! s:auto_fix_near_cursor_radius() abort
+  let l:radius = get(g:, 'realtime_dev_agent_auto_fix_near_cursor_radius', 24)
+  if type(l:radius) != v:t_number
+    let l:radius = str2nr(string(l:radius))
+  endif
+  return max([0, l:radius])
+endfunction
+
+function! s:auto_fix_cluster_gap() abort
+  let l:gap = get(g:, 'realtime_dev_agent_auto_fix_cluster_gap', 8)
+  if type(l:gap) != v:t_number
+    let l:gap = str2nr(string(l:gap))
+  endif
+  return max([1, l:gap])
+endfunction
+
+function! s:compare_issue_line_asc(entry_a, entry_b) abort
+  let l:line_a = get(a:entry_a, 'lnum', 0)
+  let l:line_b = get(a:entry_b, 'lnum', 0)
+  if l:line_a == l:line_b
+    return s:compare_fix_order(a:entry_a, a:entry_b)
+  endif
+  return l:line_a < l:line_b ? -1 : 1
+endfunction
+
+function! s:build_auto_fix_clusters(items) abort
+  let l:ordered = copy(a:items)
+  call sort(l:ordered, function('s:compare_issue_line_asc'))
+
+  let l:clusters = []
+  let l:cluster = []
+  let l:last_line = -1
+  let l:gap = s:auto_fix_cluster_gap()
+  for l:item in l:ordered
+    let l:item_line = max([1, get(l:item, 'lnum', 1)])
+    if empty(l:cluster) || (l:item_line - l:last_line) <= l:gap
+      call add(l:cluster, l:item)
+    else
+      call add(l:clusters, l:cluster)
+      let l:cluster = [l:item]
+    endif
+    let l:last_line = l:item_line
+  endfor
+
+  if !empty(l:cluster)
+    call add(l:clusters, l:cluster)
+  endif
+  return l:clusters
+endfunction
+
+function! s:cluster_distance_to_cursor(cluster, cursor_line) abort
+  if empty(a:cluster)
+    return 999999
+  endif
+
+  let l:start_line = get(a:cluster[0], 'lnum', a:cursor_line)
+  let l:end_line = get(a:cluster[-1], 'lnum', a:cursor_line)
+  if a:cursor_line < l:start_line
+    return l:start_line - a:cursor_line
+  endif
+  if a:cursor_line > l:end_line
+    return a:cursor_line - l:end_line
+  endif
+  return 0
+endfunction
+
+function! s:select_auto_fix_candidates_by_scope(items) abort
+  let l:scope = s:auto_fix_scope()
+  if l:scope ==# 'file'
+    return a:items
+  endif
+
+  let l:cursor_line = line('.')
+  if l:scope ==# 'cursor_only'
+    return filter(copy(a:items), {_, item -> abs(get(item, 'lnum', 0) - l:cursor_line) <= 1})
+  endif
+
+  let l:radius = s:auto_fix_near_cursor_radius()
+  let l:clusters = s:build_auto_fix_clusters(a:items)
+  let l:best_cluster = []
+  let l:best_distance = -1
+  let l:best_span = -1
+
+  for l:cluster in l:clusters
+    let l:distance = s:cluster_distance_to_cursor(l:cluster, l:cursor_line)
+    if l:distance > l:radius
+      continue
+    endif
+
+    let l:start_line = get(l:cluster[0], 'lnum', l:cursor_line)
+    let l:end_line = get(l:cluster[-1], 'lnum', l:cursor_line)
+    let l:span = max([0, l:end_line - l:start_line])
+    if empty(l:best_cluster)
+          \ || l:distance < l:best_distance
+          \ || (l:distance == l:best_distance && l:span < l:best_span)
+      let l:best_cluster = l:cluster
+      let l:best_distance = l:distance
+      let l:best_span = l:span
+    endif
+  endfor
+
+  return l:best_cluster
+endfunction
+
 function! s:is_auto_fix_visual_batch_active() abort
   return get(s:realtime_dev_agent_visual_batch_context, 'active', v:false)
 endfunction
@@ -2201,16 +2317,7 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
     return 0
   endif
 
-  if g:realtime_dev_agent_auto_fix_cursor_only
-    let l:cursor_line = line('.')
-    let l:focus_candidates = []
-    for l:item in l:auto_candidates
-      if abs(get(l:item, 'lnum', 0) - l:cursor_line) <= 1
-        call add(l:focus_candidates, l:item)
-      endif
-    endfor
-    let l:auto_candidates = l:focus_candidates
-  endif
+  let l:auto_candidates = s:select_auto_fix_candidates_by_scope(l:auto_candidates)
 
   if empty(l:auto_candidates)
     return 0
