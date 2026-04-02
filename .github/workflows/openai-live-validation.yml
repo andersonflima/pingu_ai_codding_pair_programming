@@ -2,11 +2,18 @@ name: openai-live-validation
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '30 5 * * *'
+
+concurrency:
+  group: openai-live-validation
+  cancel-in-progress: false
 
 jobs:
   validate:
+    if: github.repository == 'andersonflima/pingu_ai_codding_pair_programming'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       PINGU_VALIDATE_WITH_OPENAI: '1'
@@ -29,4 +36,4 @@ jobs:
           fi
 
       - name: Run live validation with OpenAI Codex
-        run: npm run validate:quality-gate:active
+        run: npm run validate:live:openai

@@ -641,11 +641,17 @@ PINGU_VALIDATE_PACKAGE=1 npm run validate:editors
 npm run validate:all
 ```
 
+### Rodar a trilha live completa com OpenAI Codex
+
+```bash
+OPENAI_API_KEY="sua_chave_aqui" npm run validate:live:openai
+```
+
 No CI remoto, o repositorio roda tres trilhas:
 
 - `validate-all`: suite estrutural completa do repositorio
 - `active-language-quality-gates`: gates reais de todas as linguagens ativas
-- `openai-live-validation`: workflow manual para exercitar cenarios live com `OPENAI_API_KEY`
+- `openai-live-validation`: workflow manual e noturno para exercitar cenarios live com `OPENAI_API_KEY`
 
 ### Recriar a suite externa em `~/snippets/agent_test`
 

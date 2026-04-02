@@ -423,6 +423,138 @@ function assert(condition, message) {
   }
 }
 
+function representativeLanguageCases(workspaceRoot) {
+  return [
+    {
+      key: 'cMissingDelimiter',
+      failureMessage: 'VS Code smoke: c syntax_missing_delimiter nao fechou o bloco esperado.',
+      filePath: path.join(workspaceRoot, 'src', 'billing.c'),
+      content: [
+        'int soma(int valor) {',
+        '  return valor + 1;',
+      ].join('\n'),
+      isValid: (contents) => String(contents || '').trimEnd().endsWith('}'),
+    },
+    {
+      key: 'dockerfileWorkdir',
+      failureMessage: 'VS Code smoke: dockerfile_workdir nao inseriu WORKDIR /app.',
+      filePath: path.join(workspaceRoot, 'docker', 'Dockerfile'),
+      content: [
+        'FROM node:20',
+        'COPY . .',
+      ].join('\n'),
+      isValid: (contents) => String(contents || '').includes('WORKDIR /app'),
+    },
+    {
+      key: 'goFunctionDoc',
+      failureMessage: 'VS Code smoke: go function_doc nao inseriu a documentacao esperada.',
+      filePath: path.join(workspaceRoot, 'src', 'billing.go'),
+      content: [
+        'func Soma(valor int) int {',
+        '  return valor + 1',
+        '}',
+      ].join('\n'),
+      isValid: (contents) => String(contents || '').includes('comportamento principal'),
+    },
+    {
+      key: 'luaFunctionDoc',
+      failureMessage: 'VS Code smoke: lua function_doc nao inseriu a documentacao esperada.',
+      filePath: path.join(workspaceRoot, 'src', 'billing.lua'),
+      content: [
+        'local function soma(valor)',
+        '  return valor + 1',
+        'end',
+      ].join('\n'),
+      isValid: (contents) => String(contents || '').includes('Orquestra o comportamento principal'),
+    },
+    {
+      key: 'markdownTitle',
+      failureMessage: 'VS Code smoke: markdown_title nao inseriu o H1 esperado.',
+      filePath: path.join(workspaceRoot, 'docs', 'api.md'),
+      content: 'conteudo sem titulo\n',
+      isValid: (contents) => String(contents || '').includes('# Titulo do documento'),
+    },
+    {
+      key: 'mermaidMissingDelimiter',
+      failureMessage: 'VS Code smoke: mermaid syntax_missing_delimiter nao fechou o delimitador esperado.',
+      filePath: path.join(workspaceRoot, 'diagrams', 'authentication.mmd'),
+      content: [
+        'flowchart LR',
+        '  A[Inicio --> B[Fim]',
+      ].join('\n'),
+      isValid: (contents) => String(contents || '').includes('  ]'),
+    },
+    {
+      key: 'rustFunctionDoc',
+      failureMessage: 'VS Code smoke: rust function_doc nao inseriu a documentacao esperada.',
+      filePath: path.join(workspaceRoot, 'src', 'billing.rs'),
+      content: [
+        'pub fn soma(valor: i32) -> i32 {',
+        '    valor + 1',
+        '}',
+      ].join('\n'),
+      isValid: (contents) => String(contents || '').includes('Orquestra o comportamento principal'),
+    },
+    {
+      key: 'rubyFunctionDoc',
+      failureMessage: 'VS Code smoke: ruby function_doc nao inseriu a documentacao esperada.',
+      filePath: path.join(workspaceRoot, 'lib', 'billing.rb'),
+      content: [
+        'def soma(valor)',
+        '  valor + 1',
+        'end',
+      ].join('\n'),
+      isValid: (contents) => String(contents || '').includes('comportamento principal'),
+    },
+    {
+      key: 'shellTabs',
+      failureMessage: 'VS Code smoke: shell tabs nao converteu tabs em espacos.',
+      filePath: path.join(workspaceRoot, 'scripts', 'run.sh'),
+      content: '\techo ok\n',
+      isValid: (contents) => String(contents || '').includes('  echo ok') && !String(contents || '').includes('\t'),
+    },
+    {
+      key: 'terraformRequiredVersion',
+      failureMessage: 'VS Code smoke: terraform_required_version nao inseriu o bloco de versao.',
+      filePath: path.join(workspaceRoot, 'infra', 'main.tf'),
+      content: 'resource "aws_s3_bucket" "example" {}\n',
+      isValid: (contents) => String(contents || '').includes('required_version = ">= 1.5.0"'),
+    },
+    {
+      key: 'tomlMissingQuote',
+      failureMessage: 'VS Code smoke: toml syntax_missing_quote nao fechou a aspa.',
+      filePath: path.join(workspaceRoot, 'config', 'app.toml'),
+      content: 'host = "localhost\n',
+      isValid: (contents) => String(contents || '').includes('host = "localhost"'),
+    },
+    {
+      key: 'vimFunctionDoc',
+      failureMessage: 'VS Code smoke: vim function_doc nao inseriu a documentacao esperada.',
+      filePath: path.join(workspaceRoot, 'autoload', 'billing.vim'),
+      content: [
+        'function! Soma(valor)',
+        '  return a:valor + 1',
+        'endfunction',
+      ].join('\n'),
+      isValid: (contents) => String(contents || '').includes('Orquestra o comportamento principal'),
+    },
+    {
+      key: 'yamlMissingQuote',
+      failureMessage: 'VS Code smoke: yaml syntax_missing_quote nao fechou a aspa.',
+      filePath: path.join(workspaceRoot, 'config', 'app.yaml'),
+      content: 'name: "api\n',
+      isValid: (contents) => String(contents || '').includes('name: "api"'),
+    },
+  ];
+}
+
+async function analyzeDocumentFile(vscode, filePath) {
+  const document = await vscode.__mock.openFile(filePath);
+  vscode.__mock.setActiveDocument(document);
+  await vscode.__mock.commands.get('realtimeDevAgent.analyzeCurrentFile')();
+  return fs.readFileSync(filePath, 'utf8');
+}
+
 async function run() {
   const realAiAvailable = hasLiveOpenAiValidation();
   const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'realtime-dev-agent-vscode-'));
@@ -431,6 +563,10 @@ async function run() {
   fs.mkdirSync(path.join(workspaceRoot, 'scripts'), { recursive: true });
   fs.mkdirSync(path.join(workspaceRoot, 'infra'), { recursive: true });
   fs.mkdirSync(path.join(workspaceRoot, 'config'), { recursive: true });
+  fs.mkdirSync(path.join(workspaceRoot, 'docker'), { recursive: true });
+  fs.mkdirSync(path.join(workspaceRoot, 'docs'), { recursive: true });
+  fs.mkdirSync(path.join(workspaceRoot, 'diagrams'), { recursive: true });
+  fs.mkdirSync(path.join(workspaceRoot, 'autoload'), { recursive: true });
   fs.mkdirSync(path.join(workspaceRoot, 'tests', 'src'), { recursive: true });
 
   fs.writeFileSync(
@@ -461,20 +597,17 @@ async function run() {
   const followUpFile = path.join(workspaceRoot, 'src', 'follow-up.js');
   const autofixFile = path.join(workspaceRoot, 'src', 'math.js');
   const nestedTestContextFile = path.join(workspaceRoot, 'tests', 'src', 'context-from-test.js');
-  const rubyFunctionDocFile = path.join(workspaceRoot, 'lib', 'billing.rb');
-  const shellTabsFile = path.join(workspaceRoot, 'scripts', 'run.sh');
-  const terraformRequiredVersionFile = path.join(workspaceRoot, 'infra', 'main.tf');
-  const tomlMissingQuoteFile = path.join(workspaceRoot, 'config', 'app.toml');
+  const representativeCases = representativeLanguageCases(workspaceRoot);
   fs.writeFileSync(commentFile, '//: funcao soma\n', 'utf8');
   fs.writeFileSync(contextFile, '// ** bff para crud de usuario\n', 'utf8');
   fs.writeFileSync(terminalFile, '// * rodar testes\n', 'utf8');
   fs.writeFileSync(blockedTerminalFile, '// * commit: feat: smoke bloqueado\n', 'utf8');
   fs.writeFileSync(followUpFile, 'function revisarPedido() {\n  // TODO: revisar fluxo principal\n  return true;\n}\n', 'utf8');
   fs.writeFileSync(nestedTestContextFile, '// ** bff para crud de pedido\n', 'utf8');
-  fs.writeFileSync(rubyFunctionDocFile, 'def soma(valor)\n  valor + 1\nend\n', 'utf8');
-  fs.writeFileSync(shellTabsFile, '\techo ok\n', 'utf8');
-  fs.writeFileSync(terraformRequiredVersionFile, 'resource "aws_s3_bucket" "example" {}\n', 'utf8');
-  fs.writeFileSync(tomlMissingQuoteFile, 'host = "localhost\n', 'utf8');
+  representativeCases.forEach((entry) => {
+    fs.mkdirSync(path.dirname(entry.filePath), { recursive: true });
+    fs.writeFileSync(entry.filePath, entry.content, 'utf8');
+  });
   fs.writeFileSync(
     autofixFile,
     [
@@ -504,31 +637,19 @@ async function run() {
     };
     extension.activate(context);
 
-    const commentDocument = await vscode.__mock.openFile(commentFile);
-    vscode.__mock.setActiveDocument(commentDocument);
-    await vscode.__mock.commands.get('realtimeDevAgent.analyzeCurrentFile')();
-    const commentResult = fs.readFileSync(commentFile, 'utf8');
+    const commentResult = await analyzeDocumentFile(vscode, commentFile);
 
-    const contextDocument = await vscode.__mock.openFile(contextFile);
-    vscode.__mock.setActiveDocument(contextDocument);
-    await vscode.__mock.commands.get('realtimeDevAgent.analyzeCurrentFile')();
-    const contextResult = fs.readFileSync(contextFile, 'utf8');
+    const contextResult = await analyzeDocumentFile(vscode, contextFile);
     const contextBlueprintFile = path.join(workspaceRoot, '.realtime-dev-agent', 'contexts', 'bff-crud-usuario.md');
     const scaffoldEntityFile = path.join(workspaceRoot, 'src', 'domain', 'entities', 'usuario.js');
     const gitignoreFile = path.join(workspaceRoot, '.gitignore');
 
-    const terminalDocument = await vscode.__mock.openFile(terminalFile);
-    vscode.__mock.setActiveDocument(terminalDocument);
-    await vscode.__mock.commands.get('realtimeDevAgent.analyzeCurrentFile')();
-    const terminalResult = fs.readFileSync(terminalFile, 'utf8');
+    const terminalResult = await analyzeDocumentFile(vscode, terminalFile);
     const terminalOutputFile = path.join(workspaceRoot, 'terminal-smoke-ok.txt');
     const terminalLog = vscode.__mock.terminals.map((terminal) => terminal.output).join('\n');
 
     await vscode.workspace.getConfiguration().update('terminalRiskMode', 'safe');
-    const blockedTerminalDocument = await vscode.__mock.openFile(blockedTerminalFile);
-    vscode.__mock.setActiveDocument(blockedTerminalDocument);
-    await vscode.__mock.commands.get('realtimeDevAgent.analyzeCurrentFile')();
-    const blockedTerminalResult = fs.readFileSync(blockedTerminalFile, 'utf8');
+    const blockedTerminalResult = await analyzeDocumentFile(vscode, blockedTerminalFile);
     const blockedTerminalLogs = vscode.__mock.outputLines.join('\n');
 
     await vscode.workspace.getConfiguration().update('autoFixEnabled', false);
@@ -560,31 +681,14 @@ async function run() {
       ? fs.readFileSync(autofixTestFile, 'utf8')
       : '';
 
-    const nestedTestContextDocument = await vscode.__mock.openFile(nestedTestContextFile);
-    vscode.__mock.setActiveDocument(nestedTestContextDocument);
-    await vscode.__mock.commands.get('realtimeDevAgent.analyzeCurrentFile')();
+    await analyzeDocumentFile(vscode, nestedTestContextFile);
     const rootContextFromTestFile = path.join(workspaceRoot, '.realtime-dev-agent', 'contexts', 'bff-crud-pedido.md');
     const nestedContextFromTestFile = path.join(workspaceRoot, 'tests', '.realtime-dev-agent', 'contexts', 'bff-crud-pedido.md');
-
-    const rubyFunctionDocDocument = await vscode.__mock.openFile(rubyFunctionDocFile);
-    vscode.__mock.setActiveDocument(rubyFunctionDocDocument);
-    await vscode.__mock.commands.get('realtimeDevAgent.analyzeCurrentFile')();
-    const rubyFunctionDocResult = fs.readFileSync(rubyFunctionDocFile, 'utf8');
-
-    const shellTabsDocument = await vscode.__mock.openFile(shellTabsFile);
-    vscode.__mock.setActiveDocument(shellTabsDocument);
-    await vscode.__mock.commands.get('realtimeDevAgent.analyzeCurrentFile')();
-    const shellTabsResult = fs.readFileSync(shellTabsFile, 'utf8');
-
-    const terraformRequiredVersionDocument = await vscode.__mock.openFile(terraformRequiredVersionFile);
-    vscode.__mock.setActiveDocument(terraformRequiredVersionDocument);
-    await vscode.__mock.commands.get('realtimeDevAgent.analyzeCurrentFile')();
-    const terraformRequiredVersionResult = fs.readFileSync(terraformRequiredVersionFile, 'utf8');
-
-    const tomlMissingQuoteDocument = await vscode.__mock.openFile(tomlMissingQuoteFile);
-    vscode.__mock.setActiveDocument(tomlMissingQuoteDocument);
-    await vscode.__mock.commands.get('realtimeDevAgent.analyzeCurrentFile')();
-    const tomlMissingQuoteResult = fs.readFileSync(tomlMissingQuoteFile, 'utf8');
+    const representativeLanguages = {};
+    for (const entry of representativeCases) {
+      const contents = await analyzeDocumentFile(vscode, entry.filePath);
+      representativeLanguages[entry.key] = entry.isValid(contents);
+    }
 
     const summary = {
       commentTask: {
@@ -622,12 +726,7 @@ async function run() {
         writesContextAtProjectRoot: fs.existsSync(rootContextFromTestFile),
         avoidsNestedTestsContext: !fs.existsSync(nestedContextFromTestFile),
       },
-      representativeLanguages: {
-        rubyFunctionDoc: rubyFunctionDocResult.includes('comportamento principal'),
-        shellTabs: shellTabsResult.includes('  echo ok') && !shellTabsResult.includes('\t'),
-        terraformRequiredVersion: terraformRequiredVersionResult.includes('required_version = ">= 1.5.0"'),
-        tomlMissingQuote: tomlMissingQuoteResult.includes('host = "localhost"'),
-      },
+      representativeLanguages,
     };
 
     assert(summary.terminalTask.removedTrigger, 'VS Code smoke: terminal_task nao removeu a linha gatilho apos sucesso.');
@@ -638,10 +737,9 @@ async function run() {
     assert(summary.terminalRisk.blockedByRiskMode, 'VS Code smoke: modo de risco nao sinalizou o bloqueio do comando.');
     assert(summary.scopedAutoFix.correctedUndefinedVariable, 'VS Code smoke: undefined_variable nao corrigiu a referencia digitada errado.');
     assert(summary.scopedAutoFix.removedTypoReference, 'VS Code smoke: typo no escopo da funcao permaneceu apos auto-fix.');
-    assert(summary.representativeLanguages.rubyFunctionDoc, 'VS Code smoke: ruby function_doc nao inseriu a documentacao esperada.');
-    assert(summary.representativeLanguages.shellTabs, 'VS Code smoke: shell tabs nao converteu tabs em espacos.');
-    assert(summary.representativeLanguages.terraformRequiredVersion, 'VS Code smoke: terraform_required_version nao inseriu o bloco de versao.');
-    assert(summary.representativeLanguages.tomlMissingQuote, 'VS Code smoke: toml syntax_missing_quote nao fechou a aspa.');
+    representativeCases.forEach((entry) => {
+      assert(summary.representativeLanguages[entry.key], entry.failureMessage);
+    });
     if (realAiAvailable) {
       assert(summary.commentTask.applied, 'VS Code smoke: comment_task nao aplicou o snippet esperado.');
       assert(summary.commentTask.removedTrigger, 'VS Code smoke: comment_task nao removeu a linha gatilho.');

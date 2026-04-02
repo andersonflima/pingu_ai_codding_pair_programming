@@ -7,14 +7,14 @@ const {
 } = require('./language_validation_specs');
 
 const SHARED_EDITOR_SMOKE = 'validate:editors(shared_runtime)';
-const REPRESENTATIVE_EDITOR_SMOKE_LANGUAGES = Object.freeze([
+const SPECIALIZED_VALIDATION_LANGUAGE_IDS = Object.freeze([
   'elixir',
   'javascript',
   'python',
-  'ruby',
-  'shell',
-  'terraform',
-  'toml',
+]);
+const REPRESENTATIVE_EDITOR_SMOKE_LANGUAGES = Object.freeze([
+  ...SPECIALIZED_VALIDATION_LANGUAGE_IDS,
+  ...genericValidationLanguageIds(),
 ]);
 
 function hasRepresentativeEditorSmoke(languageId) {

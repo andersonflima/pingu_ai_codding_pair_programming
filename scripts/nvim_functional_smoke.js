@@ -103,6 +103,30 @@ function runCase(name, buildCase) {
   };
 }
 
+function buildTextAutofixCase({
+  relativePath,
+  content,
+  scripts = {},
+  summarize,
+  failureMessage,
+}) {
+  return function buildCase(workspaceRoot) {
+    writePackageJson(workspaceRoot, scripts);
+    const targetFile = path.join(workspaceRoot, relativePath);
+    writeFile(targetFile, content);
+
+    return {
+      targetFile,
+      verify() {
+        const contents = fs.readFileSync(targetFile, 'utf8');
+        const summary = summarize(contents, workspaceRoot);
+        assert(Object.values(summary).every(Boolean), failureMessage);
+        return summary;
+      },
+    };
+  };
+}
+
 function buildCommentTaskCase(workspaceRoot) {
   writePackageJson(workspaceRoot);
   const targetFile = path.join(workspaceRoot, 'src', 'comment.js');
@@ -189,85 +213,151 @@ function buildTerminalTaskCase(workspaceRoot) {
   };
 }
 
-function buildRubyFunctionDocCase(workspaceRoot) {
-  writePackageJson(workspaceRoot);
-  const targetFile = path.join(workspaceRoot, 'lib', 'billing.rb');
-  writeFile(targetFile, [
+const buildCMissingDelimiterCase = buildTextAutofixCase({
+  relativePath: path.join('src', 'billing.c'),
+  content: [
+    'int soma(int valor) {',
+    '  return valor + 1;',
+  ].join('\n'),
+  summarize: (contents) => ({
+    closedBlock: String(contents || '').trimEnd().endsWith('}'),
+  }),
+  failureMessage: 'nvim c syntax_missing_delimiter: o bloco esperado nao foi fechado.',
+});
+
+const buildDockerfileWorkdirCase = buildTextAutofixCase({
+  relativePath: path.join('docker', 'Dockerfile'),
+  content: [
+    'FROM node:20',
+    'COPY . .',
+  ].join('\n'),
+  summarize: (contents) => ({
+    insertedWorkdir: String(contents || '').includes('WORKDIR /app'),
+  }),
+  failureMessage: 'nvim dockerfile_workdir: WORKDIR /app nao foi inserido.',
+});
+
+const buildGoFunctionDocCase = buildTextAutofixCase({
+  relativePath: path.join('src', 'billing.go'),
+  content: [
+    'func Soma(valor int) int {',
+    '  return valor + 1',
+    '}',
+  ].join('\n'),
+  summarize: (contents) => ({
+    insertedDocumentation: String(contents || '').includes('comportamento principal'),
+  }),
+  failureMessage: 'nvim go function_doc: a documentacao esperada nao foi inserida.',
+});
+
+const buildLuaFunctionDocCase = buildTextAutofixCase({
+  relativePath: path.join('src', 'billing.lua'),
+  content: [
+    'local function soma(valor)',
+    '  return valor + 1',
+    'end',
+  ].join('\n'),
+  summarize: (contents) => ({
+    insertedDocumentation: String(contents || '').includes('Orquestra o comportamento principal'),
+  }),
+  failureMessage: 'nvim lua function_doc: a documentacao esperada nao foi inserida.',
+});
+
+const buildMarkdownTitleCase = buildTextAutofixCase({
+  relativePath: path.join('docs', 'api.md'),
+  content: 'conteudo sem titulo\n',
+  summarize: (contents) => ({
+    insertedTitle: String(contents || '').includes('# Titulo do documento'),
+  }),
+  failureMessage: 'nvim markdown_title: o H1 esperado nao foi inserido.',
+});
+
+const buildMermaidMissingDelimiterCase = buildTextAutofixCase({
+  relativePath: path.join('diagrams', 'authentication.mmd'),
+  content: [
+    'flowchart LR',
+    '  A[Inicio --> B[Fim]',
+  ].join('\n'),
+  summarize: (contents) => ({
+    closedDelimiter: String(contents || '').includes('  ]'),
+  }),
+  failureMessage: 'nvim mermaid syntax_missing_delimiter: o delimitador esperado nao foi fechado.',
+});
+
+const buildRustFunctionDocCase = buildTextAutofixCase({
+  relativePath: path.join('src', 'billing.rs'),
+  content: [
+    'pub fn soma(valor: i32) -> i32 {',
+    '    valor + 1',
+    '}',
+  ].join('\n'),
+  summarize: (contents) => ({
+    insertedDocumentation: String(contents || '').includes('Orquestra o comportamento principal'),
+  }),
+  failureMessage: 'nvim rust function_doc: a documentacao esperada nao foi inserida.',
+});
+
+const buildRubyFunctionDocCase = buildTextAutofixCase({
+  relativePath: path.join('lib', 'billing.rb'),
+  content: [
     'def soma(valor)',
     '  valor + 1',
     'end',
-  ].join('\n'));
+  ].join('\n'),
+  summarize: (contents) => ({
+    insertedDocumentation: String(contents || '').includes('comportamento principal'),
+  }),
+  failureMessage: 'nvim ruby function_doc: a documentacao esperada nao foi inserida.',
+});
 
-  return {
-    targetFile,
-    verify() {
-      const contents = fs.readFileSync(targetFile, 'utf8');
-      const summary = {
-        insertedDocumentation: contents.includes('comportamento principal'),
-      };
+const buildShellMissingQuoteCase = buildTextAutofixCase({
+  relativePath: path.join('scripts', 'quote.sh'),
+  content: 'echo "ok\n',
+  summarize: (contents) => ({
+    closedQuote: String(contents || '').includes('echo "ok"'),
+  }),
+  failureMessage: 'nvim shell syntax_missing_quote: a aspa esperada nao foi fechada.',
+});
 
-      assert(summary.insertedDocumentation, 'nvim ruby function_doc: a documentacao esperada nao foi inserida.');
-      return summary;
-    },
-  };
-}
+const buildTerraformRequiredVersionCase = buildTextAutofixCase({
+  relativePath: path.join('infra', 'main.tf'),
+  content: 'resource "aws_s3_bucket" "example" {}\n',
+  summarize: (contents) => ({
+    insertedRequiredVersion: String(contents || '').includes('required_version = ">= 1.5.0"'),
+  }),
+  failureMessage: 'nvim terraform_required_version: o bloco de versao nao foi inserido.',
+});
 
-function buildShellMissingQuoteCase(workspaceRoot) {
-  writePackageJson(workspaceRoot);
-  const targetFile = path.join(workspaceRoot, 'scripts', 'quote.sh');
-  writeFile(targetFile, 'echo "ok\n');
+const buildTomlMissingQuoteCase = buildTextAutofixCase({
+  relativePath: path.join('config', 'app.toml'),
+  content: 'host = "localhost\n',
+  summarize: (contents) => ({
+    closedQuote: String(contents || '').includes('host = "localhost"'),
+  }),
+  failureMessage: 'nvim toml syntax_missing_quote: a aspa esperada nao foi fechada.',
+});
 
-  return {
-    targetFile,
-    verify() {
-      const contents = fs.readFileSync(targetFile, 'utf8');
-      const summary = {
-        closedQuote: contents.includes('echo "ok"'),
-      };
+const buildVimFunctionDocCase = buildTextAutofixCase({
+  relativePath: path.join('autoload', 'billing.vim'),
+  content: [
+    'function! Soma(valor)',
+    '  return a:valor + 1',
+    'endfunction',
+  ].join('\n'),
+  summarize: (contents) => ({
+    insertedDocumentation: String(contents || '').includes('Orquestra o comportamento principal'),
+  }),
+  failureMessage: 'nvim vim function_doc: a documentacao esperada nao foi inserida.',
+});
 
-      assert(summary.closedQuote, 'nvim shell syntax_missing_quote: a aspa esperada nao foi fechada.');
-      return summary;
-    },
-  };
-}
-
-function buildTerraformRequiredVersionCase(workspaceRoot) {
-  writePackageJson(workspaceRoot);
-  const targetFile = path.join(workspaceRoot, 'infra', 'main.tf');
-  writeFile(targetFile, 'resource "aws_s3_bucket" "example" {}\n');
-
-  return {
-    targetFile,
-    verify() {
-      const contents = fs.readFileSync(targetFile, 'utf8');
-      const summary = {
-        insertedRequiredVersion: contents.includes('required_version = ">= 1.5.0"'),
-      };
-
-      assert(summary.insertedRequiredVersion, 'nvim terraform_required_version: o bloco de versao nao foi inserido.');
-      return summary;
-    },
-  };
-}
-
-function buildTomlMissingQuoteCase(workspaceRoot) {
-  writePackageJson(workspaceRoot);
-  const targetFile = path.join(workspaceRoot, 'config', 'app.toml');
-  writeFile(targetFile, 'host = "localhost\n');
-
-  return {
-    targetFile,
-    verify() {
-      const contents = fs.readFileSync(targetFile, 'utf8');
-      const summary = {
-        closedQuote: contents.includes('host = "localhost"'),
-      };
-
-      assert(summary.closedQuote, 'nvim toml syntax_missing_quote: a aspa esperada nao foi fechada.');
-      return summary;
-    },
-  };
-}
+const buildYamlMissingQuoteCase = buildTextAutofixCase({
+  relativePath: path.join('config', 'app.yaml'),
+  content: 'name: "api\n',
+  summarize: (contents) => ({
+    closedQuote: String(contents || '').includes('name: "api"'),
+  }),
+  failureMessage: 'nvim yaml syntax_missing_quote: a aspa esperada nao foi fechada.',
+});
 
 function main() {
   const realAiAvailable = hasLiveOpenAiValidation();
@@ -277,10 +367,19 @@ function main() {
     cases.push(runCase('context-file', buildContextFileCase));
   }
   cases.push(runCase('terminal-task', buildTerminalTaskCase));
+  cases.push(runCase('c-missing-delimiter', buildCMissingDelimiterCase));
+  cases.push(runCase('dockerfile-workdir', buildDockerfileWorkdirCase));
+  cases.push(runCase('go-function-doc', buildGoFunctionDocCase));
+  cases.push(runCase('lua-function-doc', buildLuaFunctionDocCase));
+  cases.push(runCase('markdown-title', buildMarkdownTitleCase));
+  cases.push(runCase('mermaid-missing-delimiter', buildMermaidMissingDelimiterCase));
+  cases.push(runCase('rust-function-doc', buildRustFunctionDocCase));
   cases.push(runCase('ruby-function-doc', buildRubyFunctionDocCase));
   cases.push(runCase('shell-missing-quote', buildShellMissingQuoteCase));
   cases.push(runCase('terraform-required-version', buildTerraformRequiredVersionCase));
   cases.push(runCase('toml-missing-quote', buildTomlMissingQuoteCase));
+  cases.push(runCase('vim-function-doc', buildVimFunctionDocCase));
+  cases.push(runCase('yaml-missing-quote', buildYamlMissingQuoteCase));
 
   console.log(JSON.stringify({
     ok: true,
