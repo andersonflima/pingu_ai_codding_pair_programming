@@ -301,6 +301,11 @@ if !exists('g:realtime_dev_agent_auto_fix_cursor_only')
   let g:realtime_dev_agent_auto_fix_cursor_only = 0
 endif
 
+if !exists('g:realtime_dev_agent_auto_fix_visual_mode')
+  " preserve: aplica o lote inteiro e redesenha uma vez ao final; step: mantem atualizacao incremental.
+  let g:realtime_dev_agent_auto_fix_visual_mode = 'preserve'
+endif
+
 let s:internal_script = fnamemodify(resolve(expand('<sfile>:p')), ':h:h') . '/autoload/realtime_dev_agent/internal.vim'
 if filereadable(s:internal_script)
   execute 'source ' . fnameescape(s:internal_script)

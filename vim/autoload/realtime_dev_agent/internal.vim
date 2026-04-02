@@ -14,6 +14,7 @@ let s:realtime_dev_agent_file_ticks = {}
 let s:realtime_dev_agent_fix_guard = {}
 let s:realtime_dev_agent_window_source_winid = -1
 let s:realtime_dev_agent_started = v:false
+let s:realtime_dev_agent_visual_batch_context = {}
 
 function! s:issue_kind_entry(kind) abort
   let l:registry = get(g:, 'realtime_dev_agent_issue_kind_registry', {})
@@ -348,6 +349,63 @@ function! s:focus_issue_target_file(file) abort
 
   call s:remember_code_window(win_getid())
   return v:true
+endfunction
+
+function! s:auto_fix_visual_mode() abort
+  let l:mode = tolower(trim(string(get(g:, 'realtime_dev_agent_auto_fix_visual_mode', 'preserve'))))
+  if index(['preserve', 'step'], l:mode) == -1
+    return 'preserve'
+  endif
+  return l:mode
+endfunction
+
+function! s:is_auto_fix_visual_batch_active() abort
+  return get(s:realtime_dev_agent_visual_batch_context, 'active', v:false)
+endfunction
+
+function! s:start_auto_fix_visual_batch(bufnr) abort
+  let l:context = {'active': v:false}
+  if s:auto_fix_visual_mode() !=# 'preserve'
+    return l:context
+  endif
+
+  let l:current_winid = win_getid()
+  let l:current_buf = winbufnr(l:current_winid)
+  let l:view = {}
+  if l:current_buf == a:bufnr
+    let l:view = winsaveview()
+  endif
+
+  let l:context = {
+        \ 'active': v:true,
+        \ 'winid': l:current_winid,
+        \ 'bufnr': l:current_buf,
+        \ 'view': l:view,
+        \ 'lazyredraw': &lazyredraw,
+        \ }
+  let &lazyredraw = 1
+  let s:realtime_dev_agent_visual_batch_context = l:context
+  return l:context
+endfunction
+
+function! s:end_auto_fix_visual_batch(context) abort
+  let l:context = type(a:context) == v:t_dict ? a:context : {}
+  let s:realtime_dev_agent_visual_batch_context = {}
+  if !get(l:context, 'active', v:false)
+    return
+  endif
+
+  let &lazyredraw = get(l:context, 'lazyredraw', 0)
+  let l:target_winid = get(l:context, 'winid', -1)
+  if l:target_winid > 0
+    call win_gotoid(l:target_winid)
+  endif
+
+  let l:view = get(l:context, 'view', {})
+  if type(l:view) == v:t_dict && !empty(l:view) && get(l:context, 'bufnr', -1) == bufnr('%')
+    call winrestview(l:view)
+  endif
+  redraw
 endfunction
 
 function! s:window_open() abort
@@ -1445,7 +1503,7 @@ function! s:apply_issue_snippet(issue, keep_focus_code) abort
     return v:false
   endif
 
-  if !a:keep_focus_code
+  if !a:keep_focus_code && !s:is_auto_fix_visual_batch_active()
     let l:restore_view = winsaveview()
   endif
 
@@ -2178,6 +2236,7 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
   let l:file_key = fnamemodify(a:file, ':p')
   let l:fix_guard = get(s:realtime_dev_agent_fix_guard, l:file_key, {})
   let l:line_kind_applied = {}
+  let l:visual_batch = s:start_auto_fix_visual_batch(l:current_buf)
   let s:realtime_dev_agent_auto_fix_busy = v:true
   try
     for l:item in l:auto_candidates
@@ -2228,6 +2287,7 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
     endfor
     let s:realtime_dev_agent_fix_guard[l:file_key] = l:fix_guard
   finally
+    call s:end_auto_fix_visual_batch(l:visual_batch)
     let s:realtime_dev_agent_auto_fix_busy = v:false
   endtry
 

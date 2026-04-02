@@ -67,6 +67,20 @@ function runEditorParityContract(repoRoot) {
       'LazyVim precisa navegar para o arquivo alvo por buffer, sem recarregar o arquivo com :edit durante aplicacao e navegacao do painel.',
     ),
     buildCheck(
+      'parity:lazyvim:stable-autofix-batch',
+      'lazyvim',
+      'batch_visual_stability',
+      includesAll(vimPlugin, [
+        "let g:realtime_dev_agent_auto_fix_visual_mode = 'preserve'",
+      ])
+        && includesAll(vimInternal, [
+          'function! s:start_auto_fix_visual_batch(bufnr) abort',
+          'function! s:end_auto_fix_visual_batch(context) abort',
+          "let &lazyredraw = 1",
+        ]),
+      'LazyVim precisa aplicar auto-fix em lote com modo visual estavel, preservando a view e redesenhando uma vez no final.',
+    ),
+    buildCheck(
       'parity:lazyvim:autofix-core',
       'lazyvim',
       'comment_context_tests',
