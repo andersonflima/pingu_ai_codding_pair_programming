@@ -57,6 +57,16 @@ function runEditorParityContract(repoRoot) {
       'LazyVim precisa iniciar o agente automaticamente e manter analise continua.',
     ),
     buildCheck(
+      'parity:lazyvim:preserve-visual-flow',
+      'lazyvim',
+      'buffer_navigation',
+      includesAll(vimInternal, [
+        'function! s:focus_issue_target_file(file) abort',
+        "execute 'silent! keepalt keepjumps buffer ' . l:target_buf",
+      ]),
+      'LazyVim precisa navegar para o arquivo alvo por buffer, sem recarregar o arquivo com :edit durante aplicacao e navegacao do painel.',
+    ),
+    buildCheck(
       'parity:lazyvim:autofix-core',
       'lazyvim',
       'comment_context_tests',

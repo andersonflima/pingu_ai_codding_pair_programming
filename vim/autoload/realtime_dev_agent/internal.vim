@@ -322,6 +322,34 @@ function! s:focus_code_window() abort
   return v:true
 endfunction
 
+function! s:focus_issue_target_file(file) abort
+  if !s:focus_code_window()
+    return v:false
+  endif
+
+  let l:target_buf = s:issue_target_buffer(a:file)
+  if l:target_buf <= 0
+    return v:false
+  endif
+
+  let l:target_winid = bufwinid(l:target_buf)
+  if l:target_winid > 0 && !s:is_panel_window(l:target_winid)
+    call win_gotoid(l:target_winid)
+    call s:remember_code_window(l:target_winid)
+    return v:true
+  endif
+
+  if bufnr('%') != l:target_buf
+    execute 'silent! keepalt keepjumps buffer ' . l:target_buf
+    if bufnr('%') != l:target_buf
+      return v:false
+    endif
+  endif
+
+  call s:remember_code_window(win_getid())
+  return v:true
+endfunction
+
 function! s:window_open() abort
   call s:remember_code_window(win_getid())
   let l:win = s:window_find()
@@ -450,11 +478,9 @@ function! s:window_jumpto_issue() abort
     return
   endif
 
-  if !s:focus_code_window()
+  if !s:focus_issue_target_file(l:issue.filename)
     return
   endif
-
-  silent! execute 'keepalt keepjumps edit ' . fnameescape(l:issue.filename)
   call cursor(l:issue.lnum, max([1, l:issue.col]))
   normal! zz
   redraw
@@ -479,10 +505,9 @@ function! s:window_insert_followup() abort
     return
   endif
 
-  if !s:focus_code_window()
+  if !s:focus_issue_target_file(l:issue.filename)
     return
   endif
-  execute 'silent! keepalt keepjumps edit ' . fnameescape(l:issue.filename)
   call cursor(l:issue.lnum, 1)
   normal! o
   call append('.', l:snippet)
@@ -1392,7 +1417,9 @@ function! s:apply_issue_snippet(issue, keep_focus_code) abort
   endif
 
   if a:keep_focus_code
-    call s:focus_code_window()
+    if !s:focus_issue_target_file(l:filename)
+      return v:false
+    endif
   endif
 
   let l:target_buf = bufnr('%')
@@ -1400,7 +1427,6 @@ function! s:apply_issue_snippet(issue, keep_focus_code) abort
   let l:target_file = fnamemodify(l:filename, ':p')
   if !empty(l:target_file) && l:target_file !=# l:current_file
     if a:keep_focus_code
-      execute 'silent! keepalt keepjumps edit ' . fnameescape(l:filename)
       let l:target_buf = bufnr('%')
       if !bufexists(l:target_buf) || l:target_buf < 1
         return v:false
