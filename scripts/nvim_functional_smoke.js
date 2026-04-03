@@ -39,9 +39,10 @@ function writePackageJson(workspaceRoot, scripts = {}) {
   );
 }
 
-function buildNvimScript(targetFile) {
+function buildNvimScript(targetFile, extraCommands = []) {
   const pluginFile = path.join(repoRoot, 'vim', 'plugin', 'realtime_dev_agent.vim');
   const internalFile = path.join(repoRoot, 'vim', 'autoload', 'realtime_dev_agent', 'internal.vim');
+  const extra = Array.isArray(extraCommands) ? extraCommands : [];
 
   return [
     'set nomore',
@@ -57,6 +58,7 @@ function buildNvimScript(targetFile) {
     'let g:realtime_dev_agent_open_qf = 0',
     'let g:realtime_dev_agent_realtime_open_qf = 0',
     "let g:realtime_dev_agent_terminal_strategy = 'headless-test'",
+    ...extra,
     `execute 'source ' . fnameescape(${vimString(pluginFile)})`,
     `execute 'source ' . fnameescape(${vimString(internalFile)})`,
     `execute 'edit ' . fnameescape(${vimString(targetFile)})`,
@@ -66,9 +68,9 @@ function buildNvimScript(targetFile) {
   ].join('\n');
 }
 
-function runNvimForFile(workspaceRoot, targetFile) {
+function runNvimForFile(workspaceRoot, targetFile, extraCommands = []) {
   const runnerScript = path.join(workspaceRoot, 'run-smoke.vim');
-  writeFile(runnerScript, buildNvimScript(targetFile));
+  writeFile(runnerScript, buildNvimScript(targetFile, extraCommands));
 
   return spawnSync('nvim', [
     '--headless',
@@ -89,7 +91,7 @@ function runNvimForFile(workspaceRoot, targetFile) {
 function runCase(name, buildCase) {
   const workspaceRoot = createWorkspace(`realtime-dev-agent-nvim-${name}-`);
   const setup = buildCase(workspaceRoot);
-  const result = runNvimForFile(workspaceRoot, setup.targetFile);
+  const result = runNvimForFile(workspaceRoot, setup.targetFile, setup.vimCommands || []);
   if (result.status !== 0) {
     const timeoutSuffix = result.error && result.error.code === 'ETIMEDOUT'
       ? `\nTempo limite excedido para ${name}.`
@@ -107,6 +109,7 @@ function buildTextAutofixCase({
   relativePath,
   content,
   scripts = {},
+  vimCommands = [],
   summarize,
   failureMessage,
 }) {
@@ -117,6 +120,7 @@ function buildTextAutofixCase({
 
     return {
       targetFile,
+      vimCommands,
       verify() {
         const contents = fs.readFileSync(targetFile, 'utf8');
         const summary = summarize(contents, workspaceRoot);
@@ -350,6 +354,151 @@ function buildJavaScriptLocalRequireSourceValidationCase(workspaceRoot) {
   };
 }
 
+function writeMockUndefinedVariableAnalyzer(workspaceRoot, issueMessage, issueSuggestion) {
+  const analyzerFile = path.join(workspaceRoot, 'mock-import-guard-analyzer.js');
+  const issueAction = {
+    op: 'replace_line',
+    range: {
+      start: { line: 1, character: 10 },
+      end: { line: 1, character: 21 },
+    },
+    text: 'createHash',
+  };
+  const issueText = `[error] undefined_variable: ${issueMessage} | ${issueSuggestion} || ACTION:${JSON.stringify(issueAction)} || SNIPPET:   const { createHash } = require('./hash');`;
+  writeFile(
+    analyzerFile,
+    [
+      '#!/usr/bin/env node',
+      '\'use strict\';',
+      'const fs = require(\'fs\');',
+      'const args = process.argv.slice(2);',
+      'const analyzeIndex = args.indexOf(\'--analyze\');',
+      'const sourceIndex = args.indexOf(\'--source-path\');',
+      'const analyzedFile = analyzeIndex >= 0 ? String(args[analyzeIndex + 1] || \'\') : \'\';',
+      'const sourceFile = sourceIndex >= 0 ? String(args[sourceIndex + 1] || analyzedFile) : analyzedFile;',
+      'const content = analyzedFile ? fs.readFileSync(analyzedFile, \'utf8\') : \'\';',
+      `const issueText = ${JSON.stringify(issueText)};`,
+      'if (content.includes(\'createHashh\')) {',
+      '  process.stdout.write(`${sourceFile}:2:11: ${issueText}\\n`);',
+      '}',
+    ].join('\n'),
+  );
+  return analyzerFile;
+}
+
+function writeMockAutofixGuard(workspaceRoot) {
+  const guardFile = path.join(workspaceRoot, 'scripts', 'autofix_guard_cli.js');
+  writeFile(
+    guardFile,
+    [
+      '#!/usr/bin/env node',
+      '\'use strict\';',
+      'process.stdout.write(JSON.stringify({ ok: true, validationFailures: [], runtimeFailures: [] }));',
+    ].join('\n'),
+  );
+  return guardFile;
+}
+
+function buildJavaScriptImportBindingGenericIssueBlockedCase(workspaceRoot) {
+  writePackageJson(workspaceRoot);
+  writeMockAutofixGuard(workspaceRoot);
+  writeFile(
+    path.join(workspaceRoot, 'src', 'hash.js'),
+    [
+      'function createHash(value) {',
+      '  return value;',
+      '}',
+      '',
+      'module.exports = { createHash };',
+    ].join('\n'),
+  );
+  const mockAnalyzer = writeMockUndefinedVariableAnalyzer(
+    workspaceRoot,
+    'Variavel \'createHashh\' nao declarada',
+    'Substitua por \'createHash\' para manter coerencia do escopo atual.',
+  );
+  const targetFile = path.join(workspaceRoot, 'src', 'billing_import_guard_generic.js');
+  writeFile(
+    targetFile,
+    [
+      'function buildHasher() {',
+      '  const { createHashh } = require(\'./hash\');',
+      '  return createHash(\'sha256\');',
+      '}',
+      '',
+      'module.exports = { buildHasher };',
+    ].join('\n'),
+  );
+
+  return {
+    targetFile,
+    vimCommands: [`let g:realtime_dev_agent_script = ${vimString(mockAnalyzer)}`],
+    verify() {
+      const contents = fs.readFileSync(targetFile, 'utf8');
+      const summary = {
+        preservedImportBinding: String(contents || '').includes('const { createHashh } = require(\'./hash\');'),
+      };
+
+      assert(
+        summary.preservedImportBinding,
+        'nvim javascript undefined_variable: issue generico nao deveria reescrever binding de import.',
+      );
+
+      return summary;
+    },
+  };
+}
+
+function buildJavaScriptImportBindingValidatedIssueCase(workspaceRoot) {
+  writePackageJson(workspaceRoot);
+  writeMockAutofixGuard(workspaceRoot);
+  writeFile(
+    path.join(workspaceRoot, 'src', 'hash.js'),
+    [
+      'function createHash(value) {',
+      '  return value;',
+      '}',
+      '',
+      'module.exports = { createHash };',
+    ].join('\n'),
+  );
+  const mockAnalyzer = writeMockUndefinedVariableAnalyzer(
+    workspaceRoot,
+    'Import \'createHashh\' nao exportado por \'./hash\'',
+    'Substitua por \'createHash\' para alinhar com a origem importada.',
+  );
+  const targetFile = path.join(workspaceRoot, 'src', 'billing_import_guard_validated.js');
+  writeFile(
+    targetFile,
+    [
+      'function buildHasher() {',
+      '  const { createHashh } = require(\'./hash\');',
+      '  return createHash(\'sha256\');',
+      '}',
+      '',
+      'module.exports = { buildHasher };',
+    ].join('\n'),
+  );
+
+  return {
+    targetFile,
+    vimCommands: [`let g:realtime_dev_agent_script = ${vimString(mockAnalyzer)}`],
+    verify() {
+      const contents = fs.readFileSync(targetFile, 'utf8');
+      const summary = {
+        correctedImportBinding: String(contents || '').includes('const { createHash } = require(\'./hash\');'),
+      };
+
+      assert(
+        summary.correctedImportBinding,
+        'nvim javascript undefined_variable: import validado pela origem deveria continuar aplicando.',
+      );
+
+      return summary;
+    },
+  };
+}
+
 const buildMarkdownTitleCase = buildTextAutofixCase({
   relativePath: path.join('docs', 'api.md'),
   content: 'conteudo sem titulo\n',
@@ -487,6 +636,8 @@ function main() {
   cases.push(runCase('javascript-function-doc-variants', buildJavaScriptFunctionDocVariantsCase));
   cases.push(runCase('javascript-require-binding-preserved', buildJavaScriptRequireBindingPreservedCase));
   cases.push(runCase('javascript-local-require-source-validation', buildJavaScriptLocalRequireSourceValidationCase));
+  cases.push(runCase('javascript-import-binding-generic-issue-blocked', buildJavaScriptImportBindingGenericIssueBlockedCase));
+  cases.push(runCase('javascript-import-binding-validated-issue', buildJavaScriptImportBindingValidatedIssueCase));
   cases.push(runCase('lua-function-doc', buildLuaFunctionDocCase));
   cases.push(runCase('markdown-title', buildMarkdownTitleCase));
   cases.push(runCase('mermaid-missing-delimiter', buildMermaidMissingDelimiterCase));

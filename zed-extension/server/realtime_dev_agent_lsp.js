@@ -380,6 +380,11 @@ function buildWorkspaceEdit(document, issue, action) {
   const lines = splitDocumentLines(text);
   const boundedLineIndex = Math.max(0, Math.min(lineIndex, Math.max(lines.length - 1, 0)));
   const currentLine = lines[boundedLineIndex] || '';
+  if (String(issue && issue.kind || '') === 'undefined_variable'
+    && isImportLikeLine(currentLine)
+    && !isValidatedImportBindingIssue(issue)) {
+    return null;
+  }
   const indent = detectIndent(action.indent || currentLine);
   const snippetLines = normalizeSnippetLines(splitSnippetLines(issue.snippet || ''), indent);
   const snippetText = snippetLines.join('\n');
@@ -520,6 +525,26 @@ function issueTriggerText(document, issue) {
   const lineIndex = issueLineIndex(issue);
   const boundedLineIndex = Math.max(0, Math.min(lineIndex, Math.max(lines.length - 1, 0)));
   return lines[boundedLineIndex] || '';
+}
+
+function isImportLikeLine(line) {
+  const content = String(line || '').trim();
+  if (!content) {
+    return false;
+  }
+
+  return /^\s*import\b/.test(content)
+    || /^\s*export\s+(?:\{|\*\s+from\b)/.test(content)
+    || /^\s*from\b.+\bimport\b/.test(content)
+    || /^\s*(?:const|let|var)\b.+?=\s*require\s*\(/.test(content)
+    || /^\s*(?:alias|use|require)\b/.test(content)
+    || /^\s*require_relative\b/.test(content)
+    || /^\s*#include\b/.test(content);
+}
+
+function isValidatedImportBindingIssue(issue) {
+  return String(issue && issue.kind || '') === 'undefined_variable'
+    && /^(?:undefined_variable:\s*)?Import '([^']+)' nao exportado por /.test(String(issue && issue.message || ''));
 }
 
 function diagnosticSeverity(severity) {

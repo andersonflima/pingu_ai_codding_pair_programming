@@ -1806,6 +1806,10 @@ function! s:realtime_issue_still_relevant(item, target_buf, lnum, line_content) 
     return v:false
   endif
 
+  if l:kind ==# 'undefined_variable' && s:is_import_like_line(l:content) && !s:is_validated_import_binding_issue(a:item)
+    return v:false
+  endif
+
   if l:op ==# 'replace_line'
     let l:snippet_lines = split(get(a:item, 'snippet', ''), "\n")
     let l:expected = ''
@@ -1862,6 +1866,32 @@ function! s:realtime_issue_still_relevant(item, target_buf, lnum, line_content) 
   endif
 
   return v:true
+endfunction
+
+function! s:is_import_like_line(line) abort
+  let l:content = trim(a:line)
+  if empty(l:content)
+    return v:false
+  endif
+
+  return l:content =~# '^\s*import\>'
+        \ || l:content =~# '^\s*export\s\+\%({\|\*\s\+from\>\)'
+        \ || l:content =~# '^\s*from\>.\+\s\+import\>'
+        \ || l:content =~# '^\s*\%(const\|let\|var\)\>.\+=\s*require\s*('
+        \ || l:content =~# '^\s*\%(alias\|use\|require\)\>'
+        \ || l:content =~# '^\s*require_relative\>'
+        \ || l:content =~# '^\s*#include\>'
+endfunction
+
+function! s:is_validated_import_binding_issue(item) abort
+  if get(a:item, 'kind', '') !=# 'undefined_variable'
+    return v:false
+  endif
+
+  let l:parts = s:issue_parse_parts(get(a:item, 'text', ''))
+  let l:message = get(l:parts, 1, '')
+  let l:message = substitute(l:message, '^undefined_variable:\s*', '', '')
+  return l:message =~# "^Import '\\([^']\\+\\)' nao exportado por "
 endfunction
 
 function! s:extract_undefined_variable_name(text) abort
