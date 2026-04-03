@@ -160,6 +160,7 @@ function buildContextFileCase(workspaceRoot) {
 
   return {
     targetFile,
+    vimCommands: ["let g:realtime_dev_agent_target_scope = 'workspace'"],
     verify() {
       const contents = fs.readFileSync(targetFile, 'utf8');
       const contextFile = path.join(workspaceRoot, '.realtime-dev-agent', 'contexts', 'bff-crud-usuario.md');
@@ -484,6 +485,37 @@ function writeMockAutofixGuard(workspaceRoot) {
   return guardFile;
 }
 
+function writeMockWriteFileAnalyzer(workspaceRoot, options) {
+  const analyzerFile = path.join(workspaceRoot, 'mock-write-file-analyzer.js');
+  const issueAction = {
+    op: 'write_file',
+    target_file: options.targetFile,
+    mkdir_p: true,
+    remove_trigger: Boolean(options.removeTrigger),
+  };
+  const issueText = `[info] context_file: ${options.message} | ${options.suggestion} || ACTION:${JSON.stringify(issueAction)} || SNIPPET:${options.snippet}`;
+  writeFile(
+    analyzerFile,
+    [
+      '#!/usr/bin/env node',
+      '\'use strict\';',
+      'const fs = require(\'fs\');',
+      'const args = process.argv.slice(2);',
+      'const analyzeIndex = args.indexOf(\'--analyze\');',
+      'const sourceIndex = args.indexOf(\'--source-path\');',
+      'const analyzedFile = analyzeIndex >= 0 ? String(args[analyzeIndex + 1] || \'\') : \'\';',
+      'const sourceFile = sourceIndex >= 0 ? String(args[sourceIndex + 1] || analyzedFile) : analyzedFile;',
+      'const content = analyzedFile ? fs.readFileSync(analyzedFile, \'utf8\') : \'\';',
+      `const issueText = ${JSON.stringify(issueText)};`,
+      `const triggerText = ${JSON.stringify(String(options.triggerText || ''))};`,
+      'if (sourceFile && (!triggerText || content.includes(triggerText))) {',
+      '  process.stdout.write(`${sourceFile}:1:1: ${issueText}\\n`);',
+      '}',
+    ].join('\n'),
+  );
+  return analyzerFile;
+}
+
 function buildJavaScriptImportBindingGenericIssueBlockedCase(workspaceRoot) {
   writePackageJson(workspaceRoot);
   writeMockAutofixGuard(workspaceRoot);
@@ -577,6 +609,45 @@ function buildJavaScriptImportBindingValidatedIssueCase(workspaceRoot) {
       assert(
         summary.correctedImportBinding,
         'nvim javascript undefined_variable: import validado pela origem deveria continuar aplicando.',
+      );
+
+      return summary;
+    },
+  };
+}
+
+function buildCrossFileWriteFileBlockedByDefaultCase(workspaceRoot) {
+  writePackageJson(workspaceRoot);
+  writeMockAutofixGuard(workspaceRoot);
+  const generatedFile = path.join(workspaceRoot, '.realtime-dev-agent', 'contexts', 'demo.md');
+  const mockAnalyzer = writeMockWriteFileAnalyzer(workspaceRoot, {
+    targetFile: generatedFile,
+    message: 'Contexto derivado do arquivo atual',
+    suggestion: 'Crie o arquivo de contexto correspondente.',
+    snippet: '<!-- realtime-dev-agent-context -->\\nentity: demo',
+    triggerText: 'gerar contexto',
+    removeTrigger: false,
+  });
+  const targetFile = path.join(workspaceRoot, 'src', 'cross_file_default.js');
+  writeFile(targetFile, '// ** gerar contexto\n');
+
+  return {
+    targetFile,
+    vimCommands: [`let g:realtime_dev_agent_script = ${vimString(mockAnalyzer)}`],
+    verify() {
+      const contents = fs.readFileSync(targetFile, 'utf8');
+      const summary = {
+        preservedSourceTrigger: String(contents || '').includes('gerar contexto'),
+        didNotCreateGeneratedFile: !fs.existsSync(generatedFile),
+      };
+
+      assert(
+        summary.preservedSourceTrigger,
+        'nvim target_scope current_file: trigger nao deveria ser removido quando a acao escreve fora do arquivo atual.',
+      );
+      assert(
+        summary.didNotCreateGeneratedFile,
+        'nvim target_scope current_file: acao write_file fora do arquivo atual nao deveria criar arquivo.',
       );
 
       return summary;
@@ -725,6 +796,7 @@ function main() {
   cases.push(runCase('javascript-local-require-source-validation', buildJavaScriptLocalRequireSourceValidationCase));
   cases.push(runCase('javascript-import-binding-generic-issue-blocked', buildJavaScriptImportBindingGenericIssueBlockedCase));
   cases.push(runCase('javascript-import-binding-validated-issue', buildJavaScriptImportBindingValidatedIssueCase));
+  cases.push(runCase('cross-file-write-file-blocked-by-default', buildCrossFileWriteFileBlockedByDefaultCase));
   cases.push(runCase('lua-function-doc', buildLuaFunctionDocCase));
   cases.push(runCase('python-multiline-import-preserved', buildPythonMultilineImportPreservedCase));
   cases.push(runCase('markdown-title', buildMarkdownTitleCase));

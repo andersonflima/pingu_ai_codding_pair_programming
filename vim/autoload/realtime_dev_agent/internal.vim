@@ -396,6 +396,38 @@ function! s:auto_fix_visual_mode() abort
   return l:mode
 endfunction
 
+function! s:target_scope() abort
+  let l:scope = tolower(trim(string(get(g:, 'realtime_dev_agent_target_scope', 'current_file'))))
+  if index(['current_file', 'workspace'], l:scope) == -1
+    return 'current_file'
+  endif
+  return l:scope
+endfunction
+
+function! s:issue_targets_active_scope(item, current_file) abort
+  let l:current_file = fnamemodify(a:current_file, ':p')
+  if empty(l:current_file)
+    return v:false
+  endif
+
+  let l:issue_file = fnamemodify(get(a:item, 'filename', ''), ':p')
+  if l:issue_file !=# l:current_file
+    return v:false
+  endif
+
+  let l:action = s:issue_effective_action(a:item)
+  if get(l:action, 'op', '') !=# 'write_file' || s:target_scope() ==# 'workspace'
+    return v:true
+  endif
+
+  let l:target_file = trim(get(l:action, 'target_file', ''))
+  if empty(l:target_file)
+    return v:false
+  endif
+
+  return fnamemodify(l:target_file, ':p') ==# l:current_file
+endfunction
+
 function! s:auto_fix_scope() abort
   if str2nr(string(get(g:, 'realtime_dev_agent_auto_fix_cursor_only', 0))) > 0
     return 'cursor_only'
@@ -896,6 +928,10 @@ function! s:collect_affected_files(file, items) abort
   let l:current_file = fnamemodify(a:file, ':p')
   if !empty(l:current_file)
     let l:affected[l:current_file] = 1
+  endif
+
+  if s:target_scope() !=# 'workspace'
+    return keys(l:affected)
   endif
 
   for l:item in a:items
@@ -1604,6 +1640,10 @@ function! s:apply_issue_snippet(issue, keep_focus_code) abort
   let l:snippet_raw = get(l:issue, 'snippet', '')
   let l:op = get(l:action, 'op', '')
   let l:restore_view = {}
+  if !s:issue_targets_active_scope(l:issue, l:filename)
+    echomsg '[RealtimeDevAgent] Acao descartada: fora do arquivo atual'
+    return v:false
+  endif
   if l:op ==# 'run_command'
     return s:apply_issue_run_command(l:issue, a:keep_focus_code)
   endif
@@ -2143,7 +2183,7 @@ function! s:collect_analysis_for_buffer(bufnr) abort
       continue
     endif
 
-    call add(l:qf, {
+    let l:item = {
           \ 'filename': l:qf_file,
           \ 'lnum': str2nr(l:match[2]),
           \ 'col': str2nr(l:match[3]),
@@ -2151,7 +2191,11 @@ function! s:collect_analysis_for_buffer(bufnr) abort
           \ 'kind': l:qf_kind,
           \ 'snippet': l:qf_snippet,
           \ 'action': l:qf_action
-          \ })
+          \ }
+    if !s:issue_targets_active_scope(l:item, l:file)
+      continue
+    endif
+    call add(l:qf, l:item)
   endfor
 
   return {
@@ -2270,7 +2314,7 @@ function! s:realtime_check_from_buffer(bufnr, open_qf, show_echo) abort
         continue
       endif
 
-      call add(l:qf, {
+      let l:item = {
         \ 'filename': l:qf_file,
         \ 'lnum': str2nr(l:match[2]),
         \ 'col': str2nr(l:match[3]),
@@ -2278,7 +2322,11 @@ function! s:realtime_check_from_buffer(bufnr, open_qf, show_echo) abort
         \ 'kind': l:qf_kind,
         \ 'snippet': l:qf_snippet,
         \ 'action': l:qf_action
-        \ })
+        \ }
+      if !s:issue_targets_active_scope(l:item, l:file)
+        continue
+      endif
+      call add(l:qf, l:item)
     endif
   endfor
 
@@ -2352,6 +2400,9 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
   for l:item in a:qf
     let l:item_file = get(l:item, 'filename', '')
     if fnamemodify(l:item_file, ':p') !=# fnamemodify(a:file, ':p')
+      continue
+    endif
+    if !s:issue_targets_active_scope(l:item, a:file)
       continue
     endif
     let l:item_kind = get(l:item, 'kind', '')

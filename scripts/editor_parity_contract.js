@@ -105,8 +105,13 @@ function runEditorParityContract(repoRoot) {
         "\\ 'context_file',",
         "\\ 'unit_test',",
         "\\ 'terminal_task',",
-      ]),
-      'LazyVim precisa autoaplicar comment_task, context_file, unit_test e terminal_task.',
+        "let g:realtime_dev_agent_target_scope = 'current_file'",
+      ])
+        && includesAll(vimInternal, [
+          'function! s:target_scope() abort',
+          'function! s:issue_targets_active_scope(item, current_file) abort',
+        ]),
+      'LazyVim precisa priorizar o arquivo atual por padrao, deixando acoes multi-arquivo como opt-in.',
     ),
     buildCheck(
       'parity:lazyvim:terminal-routing',

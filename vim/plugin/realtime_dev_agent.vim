@@ -332,6 +332,11 @@ if !exists('g:realtime_dev_agent_auto_fix_visual_mode')
   let g:realtime_dev_agent_auto_fix_visual_mode = 'preserve'
 endif
 
+if !exists('g:realtime_dev_agent_target_scope')
+  " current_file: limita analise exibida e auto-fix ao arquivo atual; workspace: permite acoes multi-arquivo.
+  let g:realtime_dev_agent_target_scope = 'current_file'
+endif
+
 let s:internal_script = fnamemodify(resolve(expand('<sfile>:p')), ':h:h') . '/autoload/realtime_dev_agent/internal.vim'
 if filereadable(s:internal_script)
   execute 'source ' . fnameescape(s:internal_script)
