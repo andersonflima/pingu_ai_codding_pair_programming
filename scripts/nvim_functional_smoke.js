@@ -268,6 +268,45 @@ const buildLuaFunctionDocCase = buildTextAutofixCase({
   failureMessage: 'nvim lua function_doc: a documentacao esperada nao foi inserida.',
 });
 
+const buildPythonFunctionDocCase = buildTextAutofixCase({
+  relativePath: path.join('src', 'billing_docs.py'),
+  content: [
+    'def soma(',
+    '    valor: int,',
+    '    escala: int = 2,',
+    ') -> int:',
+    '    total = valor * escala',
+    '    return total',
+  ].join('\n'),
+  summarize: (contents) => ({
+    insertedDocstring: /def soma\([\s\S]+?\) -> int:\n\s+"""/.test(String(contents || '')),
+    insertedArgsSection: String(contents || '').includes('Args:'),
+    insertedReturnsSection: String(contents || '').includes('Returns:'),
+  }),
+  failureMessage: 'nvim python function_doc: a docstring esperada nao foi inserida dentro da funcao.',
+});
+
+const buildPythonVariableDocCase = buildTextAutofixCase({
+  relativePath: path.join('src', 'billing_variable_doc.py'),
+  content: [
+    'from dataclasses import dataclass',
+    'from typing import Any',
+    '',
+    'JsonDict = dict[str, Any]',
+    '',
+    '@dataclass',
+    'class RuntimeState:',
+    '    chat_state: JsonDict',
+    '    lock: Any',
+  ].join('\n'),
+  summarize: (contents) => ({
+    documentedAlias: /# .+\nJsonDict = dict\[str, Any\]/.test(String(contents || '')),
+    documentedChatStateField: /# .+\n    chat_state: JsonDict/.test(String(contents || '')),
+    documentedLockField: /# .+\n    lock: Any/.test(String(contents || '')),
+  }),
+  failureMessage: 'nvim python variable_doc: alias e campos de classe deveriam receber comentario contextual.',
+});
+
 const buildPythonMultilineImportPreservedCase = buildTextAutofixCase({
   relativePath: path.join('src', 'billing_multiline_import.py'),
   vimCommands: ["let g:realtime_dev_agent_auto_fix_kinds = ['undefined_variable']"],
@@ -798,6 +837,8 @@ function main() {
   cases.push(runCase('javascript-import-binding-validated-issue', buildJavaScriptImportBindingValidatedIssueCase));
   cases.push(runCase('cross-file-write-file-blocked-by-default', buildCrossFileWriteFileBlockedByDefaultCase));
   cases.push(runCase('lua-function-doc', buildLuaFunctionDocCase));
+  cases.push(runCase('python-function-doc', buildPythonFunctionDocCase));
+  cases.push(runCase('python-variable-doc', buildPythonVariableDocCase));
   cases.push(runCase('python-multiline-import-preserved', buildPythonMultilineImportPreservedCase));
   cases.push(runCase('markdown-title', buildMarkdownTitleCase));
   cases.push(runCase('mermaid-missing-delimiter', buildMermaidMissingDelimiterCase));

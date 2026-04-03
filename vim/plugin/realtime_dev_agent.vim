@@ -285,6 +285,7 @@ if !exists('g:realtime_dev_agent_auto_fix_kinds')
           \ 'function_spec',
           \ 'function_doc',
           \ 'class_doc',
+          \ 'variable_doc',
           \ 'flow_comment',
           \ 'functional_reassignment',
           \ 'debug_output',
