@@ -194,6 +194,37 @@ function! s:should_check_file(file) abort
   return index(g:realtime_dev_agent_extensions, l:ext) >= 0
 endfunction
 
+function! s:buffer_line_count(bufnr) abort
+  if a:bufnr <= 0 || !bufloaded(a:bufnr)
+    return 0
+  endif
+
+  if exists('*getbufinfo')
+    let l:info = getbufinfo(a:bufnr)
+    if type(l:info) == v:t_list && !empty(l:info)
+      return get(l:info[0], 'linecount', 0)
+    endif
+  endif
+
+  return len(getbufline(a:bufnr, 1, '$'))
+endfunction
+
+function! s:auto_check_max_lines() abort
+  let l:max_lines = get(g:, 'realtime_dev_agent_auto_check_max_lines', 600)
+  if type(l:max_lines) != v:t_number
+    let l:max_lines = str2nr(string(l:max_lines))
+  endif
+  return l:max_lines > 0 ? l:max_lines : 0
+endfunction
+
+function! s:should_run_auto_check(bufnr) abort
+  let l:max_lines = s:auto_check_max_lines()
+  if l:max_lines <= 0
+    return v:true
+  endif
+  return s:buffer_line_count(a:bufnr) <= l:max_lines
+endfunction
+
 function! s:realtime_dev_agent_open_review() abort
   if s:realtime_dev_agent_start_current_buffer()
     return
@@ -213,6 +244,9 @@ function! s:realtime_dev_agent_open_review() abort
 
   let l:file = fnamemodify(bufname(l:bufnr), ':p')
   if empty(l:file) || !s:should_check_file(l:file)
+    return
+  endif
+  if !s:should_run_auto_check(l:bufnr)
     return
   endif
 
@@ -240,6 +274,9 @@ function! s:realtime_dev_agent_start_current_buffer() abort
 
   let l:file = fnamemodify(bufname(l:bufnr), ':p')
   if empty(l:file) || !s:should_check_file(l:file)
+    return v:false
+  endif
+  if !s:should_run_auto_check(l:bufnr)
     return v:false
   endif
 
@@ -2481,6 +2518,9 @@ function! s:realtime_dev_agent_schedule_check() abort
   if empty(l:file) || !s:should_check_file(l:file)
     return
   endif
+  if !s:should_run_auto_check(l:bufnr)
+    return
+  endif
 
   let s:realtime_dev_agent_realtime_pending_buf = l:bufnr
 
@@ -2514,6 +2554,9 @@ function! s:realtime_dev_agent_run_pending_check(timer_id) abort
 
   try
     if l:bufnr <= 0 || !bufloaded(l:bufnr)
+      return
+    endif
+    if !s:should_run_auto_check(l:bufnr)
       return
     endif
 
@@ -2704,7 +2747,10 @@ if g:realtime_dev_agent_realtime_on_change
   " Checagem em tempo real com debounce enquanto edita texto.
   augroup realtime_dev_agent_realtime
     autocmd!
-    autocmd TextChanged,TextChangedI * call s:realtime_dev_agent_schedule_check()
+    autocmd TextChanged * call s:realtime_dev_agent_schedule_check()
+    if get(g:, 'realtime_dev_agent_realtime_insert_mode', 0)
+      autocmd TextChangedI * call s:realtime_dev_agent_schedule_check()
+    endif
     autocmd InsertLeave * if g:realtime_dev_agent_realtime_on_change | call s:realtime_dev_agent_drain_pending_auto_fixes() | call s:realtime_dev_agent_schedule_check() | endif
   augroup END
 endif

@@ -31,6 +31,33 @@ const cases = [
     expectedSourceIncludesAfterApply: ['/**', 'function soma(a, b)', 'function listar(itens)'],
   },
   {
+    id: 'existing:function_doc:variants',
+    relativeFile: path.join('src', 'billing_docs_variants.js'),
+    content: [
+      'const soma = (a, b) => a + b;',
+      '',
+      'class Calculadora {',
+      '  total(valor) {',
+      '    return valor + 1;',
+      '  }',
+      '',
+      '  parcial = (valor) => valor;',
+      '}',
+      '',
+      'module.exports = { soma, Calculadora };',
+    ].join('\n'),
+    expectedKinds: ['function_doc'],
+    expectedSnippetIncludes: ['Orquestra o comportamento principal de soma'],
+    applyKinds: ['function_doc', 'function_doc', 'function_doc'],
+    mustClearKinds: ['function_doc'],
+    expectedSourceIncludesAfterApply: [
+      '/**',
+      'const soma = (a, b) => a + b;',
+      '  total(valor) {',
+      '  parcial = (valor) => valor;',
+    ],
+  },
+  {
     id: 'existing:undefined_variable:param_typo',
     relativeFile: path.join('src', 'billing_param_typo.js'),
     content: [
@@ -81,6 +108,53 @@ const cases = [
     applyKinds: ['undefined_variable'],
     mustClearKinds: ['undefined_variable'],
     expectedSourceIncludesAfterApply: ['return itens.map((item) => item + 1);'],
+  },
+  {
+    id: 'existing:undefined_variable:preserve_require_binding',
+    relativeFile: path.join('src', 'billing_require_binding.js'),
+    content: [
+      'function buildHasher(createHashh) {',
+      '  const { createHash } = require(\'node:crypto\');',
+      '  return createHash(\'sha256\');',
+      '}',
+      '',
+      'module.exports = { buildHasher };',
+    ].join('\n'),
+    forbiddenKinds: ['undefined_variable'],
+    forbiddenSnippetIncludes: ['createHashh } = require', 'createHashh(\'sha256\')'],
+  },
+  {
+    id: 'existing:undefined_variable:validate_local_require_source',
+    relativeFile: path.join('src', 'billing_local_require_source.js'),
+    supportFiles: [
+      {
+        relativeFile: path.join('src', 'hash.js'),
+        content: [
+          'function createHash(value) {',
+          '  return value;',
+          '}',
+          '',
+          'module.exports = { createHash };',
+        ].join('\n'),
+      },
+    ],
+    content: [
+      'function buildHasher() {',
+      '  const { createHashh } = require(\'./hash\');',
+      '  return createHash(\'sha256\');',
+      '}',
+      '',
+      'module.exports = { buildHasher };',
+    ].join('\n'),
+    expectedKinds: ['undefined_variable'],
+    expectedSnippetIncludes: ['const { createHash } = require(\'./hash\');'],
+    forbiddenSnippetIncludes: ['createHashh(\'sha256\')'],
+    applyKinds: ['undefined_variable'],
+    mustClearKinds: ['undefined_variable'],
+    expectedSourceIncludesAfterApply: [
+      'const { createHash } = require(\'./hash\');',
+      'return createHash(\'sha256\');',
+    ],
   },
   {
     id: 'existing:debug_output',
@@ -288,12 +362,18 @@ function validateCase(workspace, testCase) {
   }
 
   const filePath = path.join(workspace.root, testCase.relativeFile);
+  (testCase.supportFiles || []).forEach((supportFile) => {
+    const supportPath = path.join(workspace.root, supportFile.relativeFile);
+    fs.mkdirSync(path.dirname(supportPath), { recursive: true });
+    fs.writeFileSync(supportPath, `${supportFile.content}\n`, 'utf8');
+  });
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, `${testCase.content}\n`, 'utf8');
 
   let currentIssues = analyzeFile(filePath);
   const issueKinds = new Set(currentIssues.map((issue) => issue.kind));
   const missingKinds = (testCase.expectedKinds || []).filter((kind) => !issueKinds.has(kind));
+  const forbiddenKinds = (testCase.forbiddenKinds || []).filter((kind) => issueKinds.has(kind));
   const snippetPayload = currentIssues.map((issue) => String(issue.snippet || '')).join('\n---\n');
   const missingSnippets = (testCase.expectedSnippetIncludes || []).filter((fragment) => !snippetPayload.includes(fragment));
   const forbiddenSnippets = (testCase.forbiddenSnippetIncludes || []).filter((fragment) => snippetPayload.includes(fragment));
@@ -301,7 +381,7 @@ function validateCase(workspace, testCase) {
   if (
     !realAiAvailable
     && issueKinds.has('ai_required')
-    && (missingKinds.length > 0 || missingSnippets.length > 0 || forbiddenSnippets.length > 0)
+    && (missingKinds.length > 0 || forbiddenKinds.length > 0 || missingSnippets.length > 0 || forbiddenSnippets.length > 0)
   ) {
     return {
       id: testCase.id,
@@ -309,6 +389,7 @@ function validateCase(workspace, testCase) {
       ok: true,
       skipped: true,
       missingKinds,
+      forbiddenKinds,
       missingSnippets,
       forbiddenSnippets,
       applyFailures: [],
@@ -372,12 +453,14 @@ function validateCase(workspace, testCase) {
     id: testCase.id,
     filePath,
     ok: missingKinds.length === 0
+      && forbiddenKinds.length === 0
       && missingSnippets.length === 0
       && forbiddenSnippets.length === 0
       && applyFailures.length === 0
       && sourceExpectationFailures.length === 0
       && targetExpectationFailures.length === 0,
     missingKinds,
+    forbiddenKinds,
     missingSnippets,
     forbiddenSnippets,
     applyFailures,
@@ -406,6 +489,7 @@ function main() {
       id: failure.id,
       file: failure.filePath,
       missingKinds: failure.missingKinds,
+      forbiddenKinds: failure.forbiddenKinds,
       missingSnippets: failure.missingSnippets,
       forbiddenSnippets: failure.forbiddenSnippets,
       applyFailures: failure.applyFailures,

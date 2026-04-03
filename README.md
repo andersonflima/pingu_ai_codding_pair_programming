@@ -456,14 +456,16 @@ O repositorio expoe `plugin/` e `autoload/` na raiz, entao pode ser instalado di
   "andersonflima/pingu_ai_codding_pair_programming",
   config = function()
     vim.g.realtime_dev_agent_start_on_editor_enter = 1
-    vim.g.realtime_dev_agent_open_window_on_start = 1
+    vim.g.realtime_dev_agent_open_window_on_start = 0
     vim.g.realtime_dev_agent_auto_fix_enabled = 1
     vim.g.realtime_dev_agent_auto_fix_scope = "near_cursor"
     vim.g.realtime_dev_agent_auto_fix_near_cursor_radius = 24
     vim.g.realtime_dev_agent_auto_fix_cluster_gap = 8
     vim.g.realtime_dev_agent_auto_fix_visual_mode = "preserve"
-    vim.g.realtime_dev_agent_review_on_open = 1
+    vim.g.realtime_dev_agent_review_on_open = 0
     vim.g.realtime_dev_agent_realtime_on_change = 1
+    vim.g.realtime_dev_agent_realtime_insert_mode = 0
+    vim.g.realtime_dev_agent_auto_check_max_lines = 600
   end,
 }
 ```
@@ -477,15 +479,19 @@ Plug 'andersonflima/pingu_ai_codding_pair_programming'
 ### Startup automatico no Vim
 
 - inicia no primeiro buffer suportado
-- abre o painel por padrao
+- mantem o painel fechado por padrao
 - `let g:realtime_dev_agent_open_window_on_start = 0` mantem o agente ativo sem abrir painel
+- `let g:realtime_dev_agent_open_window_on_start = 1` reabre o painel no startup automatico
 - `let g:realtime_dev_agent_start_on_editor_enter = 0` desliga o startup automatico
+- `let g:realtime_dev_agent_review_on_open = 1` reativa revisao automatica ao abrir arquivos
 - `let g:realtime_dev_agent_auto_fix_scope = 'near_cursor'` aplica apenas o trecho mais proximo do cursor
 - `let g:realtime_dev_agent_auto_fix_scope = 'file'` volta para o comportamento de arquivo inteiro por ciclo
 - `let g:realtime_dev_agent_auto_fix_scope = 'cursor_only'` restringe ao cursor imediato
 - `let g:realtime_dev_agent_auto_fix_near_cursor_radius = 24` controla a distancia maxima entre cursor e trecho elegivel
 - `let g:realtime_dev_agent_auto_fix_cluster_gap = 8` controla a distancia maxima entre issues do mesmo trecho
 - `let g:realtime_dev_agent_auto_fix_visual_mode = 'preserve'` reduz ruido visual durante o batch
+- `let g:realtime_dev_agent_realtime_insert_mode = 1` volta a analisar tambem no meio da digitacao
+- `let g:realtime_dev_agent_auto_check_max_lines = 600` limita checks automaticos a arquivos menores
 
 ### Terminal no Vim / Neovim
 

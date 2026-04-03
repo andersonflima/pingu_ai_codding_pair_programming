@@ -263,6 +263,93 @@ const buildLuaFunctionDocCase = buildTextAutofixCase({
   failureMessage: 'nvim lua function_doc: a documentacao esperada nao foi inserida.',
 });
 
+const buildJavaScriptFunctionDocVariantsCase = buildTextAutofixCase({
+  relativePath: path.join('src', 'billing_variants.js'),
+  content: [
+    'const soma = (a, b) => a + b;',
+    '',
+    'class Calculadora {',
+    '  total(valor) {',
+    '    return valor + 1;',
+    '  }',
+    '',
+    '  parcial = (valor) => valor;',
+    '}',
+    '',
+    'module.exports = { soma, Calculadora };',
+  ].join('\n'),
+  summarize: (contents) => ({
+    insertedArrowDocumentation: String(contents || '').includes('Orquestra o comportamento principal de soma'),
+    insertedMethodDocumentation: String(contents || '').includes('Orquestra o comportamento principal de total'),
+    insertedFieldDocumentation: String(contents || '').includes('Orquestra o comportamento principal de parcial'),
+  }),
+  failureMessage: 'nvim javascript function_doc: variacoes de funcao nao receberam documentacao esperada.',
+});
+
+const buildJavaScriptRequireBindingPreservedCase = buildTextAutofixCase({
+  relativePath: path.join('src', 'billing_require_binding.js'),
+  content: [
+    'function buildHasher(createHashh) {',
+    '  const { createHash } = require(\'node:crypto\');',
+    '  return createHash(\'sha256\');',
+    '}',
+    '',
+    'module.exports = { buildHasher };',
+  ].join('\n'),
+  summarize: (contents) => ({
+    preservedRequireBinding: String(contents || '').includes('const { createHash } = require(\'node:crypto\');'),
+    preservedUsage: String(contents || '').includes('return createHash(\'sha256\');'),
+  }),
+  failureMessage: 'nvim javascript undefined_variable: a linha de require/destructuring nao deveria ter sido renomeada.',
+});
+function buildJavaScriptLocalRequireSourceValidationCase(workspaceRoot) {
+  writePackageJson(workspaceRoot);
+  writeFile(
+    path.join(workspaceRoot, 'src', 'hash.js'),
+    [
+      'function createHash(value) {',
+      '  return value;',
+      '}',
+      '',
+      'module.exports = { createHash };',
+    ].join('\n'),
+  );
+  const targetFile = path.join(workspaceRoot, 'src', 'billing_require_local_source.js');
+  writeFile(
+    targetFile,
+    [
+      'function buildHasher() {',
+      '  const { createHashh } = require(\'./hash\');',
+      '  return createHash(\'sha256\');',
+      '}',
+      '',
+      'module.exports = { buildHasher };',
+    ].join('\n'),
+  );
+
+  return {
+    targetFile,
+    verify() {
+      const contents = fs.readFileSync(targetFile, 'utf8');
+      const summary = {
+        correctedRequireBinding: String(contents || '').includes('const { createHash } = require(\'./hash\');'),
+        preservedUsage: String(contents || '').includes('return createHash(\'sha256\');'),
+      };
+
+      assert(
+        summary.correctedRequireBinding,
+        'nvim javascript undefined_variable: o binding local deveria ser validado pela origem do require e corrigido.',
+      );
+      assert(
+        summary.preservedUsage,
+        'nvim javascript undefined_variable: o uso do metodo nao deveria ser trocado para acompanhar um import invalido.',
+      );
+
+      return summary;
+    },
+  };
+}
+
 const buildMarkdownTitleCase = buildTextAutofixCase({
   relativePath: path.join('docs', 'api.md'),
   content: 'conteudo sem titulo\n',
@@ -397,6 +484,9 @@ function main() {
   cases.push(runCase('c-missing-delimiter', buildCMissingDelimiterCase));
   cases.push(runCase('dockerfile-workdir', buildDockerfileWorkdirCase));
   cases.push(runCase('go-function-doc', buildGoFunctionDocCase));
+  cases.push(runCase('javascript-function-doc-variants', buildJavaScriptFunctionDocVariantsCase));
+  cases.push(runCase('javascript-require-binding-preserved', buildJavaScriptRequireBindingPreservedCase));
+  cases.push(runCase('javascript-local-require-source-validation', buildJavaScriptLocalRequireSourceValidationCase));
   cases.push(runCase('lua-function-doc', buildLuaFunctionDocCase));
   cases.push(runCase('markdown-title', buildMarkdownTitleCase));
   cases.push(runCase('mermaid-missing-delimiter', buildMermaidMissingDelimiterCase));

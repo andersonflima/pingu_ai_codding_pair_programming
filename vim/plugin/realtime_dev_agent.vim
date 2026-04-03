@@ -178,9 +178,14 @@ if !exists('g:realtime_dev_agent_realtime_on_change')
   let g:realtime_dev_agent_realtime_on_change = 1
 endif
 
+if !exists('g:realtime_dev_agent_realtime_insert_mode')
+  " 1 analisa tambem durante Insert mode; 0 concentra a checagem ao sair da insercao.
+  let g:realtime_dev_agent_realtime_insert_mode = 0
+endif
+
 if !exists('g:realtime_dev_agent_review_on_open')
-  " Executa uma primeira revisao imediatamente ao abrir arquivos do projeto.
-  let g:realtime_dev_agent_review_on_open = 1
+  " Desligado por padrao para reduzir custo em navegacao intensa no editor.
+  let g:realtime_dev_agent_review_on_open = 0
 endif
 
 if !exists('g:realtime_dev_agent_start_on_editor_enter')
@@ -189,8 +194,14 @@ if !exists('g:realtime_dev_agent_start_on_editor_enter')
 endif
 
 if !exists('g:realtime_dev_agent_open_window_on_start')
-  " Abre o painel junto do startup automatico do agente.
-  let g:realtime_dev_agent_open_window_on_start = 1
+  " Mantem o painel fechado no startup automatico para reduzir ruido e custo visual.
+  let g:realtime_dev_agent_open_window_on_start = 0
+endif
+
+if !exists('g:realtime_dev_agent_auto_check_max_lines')
+  " Limite de linhas para checks automaticos no editor.
+  " 0 desliga o limite.
+  let g:realtime_dev_agent_auto_check_max_lines = 600
 endif
 
 if !exists('g:realtime_dev_agent_realtime_delay')

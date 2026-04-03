@@ -78,6 +78,40 @@ const cases = [
     expectedSourceIncludesAfterApply: ['hash_16inch = create_16char_hash(input_string)'],
   },
   {
+    id: 'existing:undefined_variable:preserve_import_binding',
+    relativeFile: path.join('src', 'billing_import_binding.py'),
+    content: [
+      'def build_hasher(sha256h):',
+      '    from hashlib import sha256',
+      '    return sha256(b"value").hexdigest()',
+    ].join('\n'),
+    forbiddenKinds: ['undefined_variable'],
+    forbiddenSnippetIncludes: ['sha256h', 'import sha256h'],
+  },
+  {
+    id: 'existing:undefined_variable:validate_local_import_source',
+    relativeFile: path.join('src', 'billing_import_source.py'),
+    supportFiles: [
+      {
+        relativeFile: path.join('src', 'hash.py'),
+        content: [
+          'def build_hash(value):',
+          '    return value',
+        ].join('\n'),
+      },
+    ],
+    content: [
+      'def build_hasher():',
+      '    from .hash import build_hashh',
+      '    return build_hash("value")',
+    ].join('\n'),
+    expectedKinds: ['undefined_variable'],
+    expectedSnippetIncludes: ['from .hash import build_hash'],
+    applyKinds: ['undefined_variable'],
+    mustClearKinds: ['undefined_variable'],
+    expectedSourceIncludesAfterApply: ['from .hash import build_hash', 'return build_hash("value")'],
+  },
+  {
     id: 'existing:undefined_variable:ignore_docstring',
     relativeFile: path.join('src', 'billing_ignore_docstring.py'),
     content: [
@@ -362,6 +396,11 @@ function validateCase(workspace, testCase) {
   }
 
   const filePath = path.join(workspace.root, testCase.relativeFile);
+  (testCase.supportFiles || []).forEach((supportFile) => {
+    const supportPath = path.join(workspace.root, supportFile.relativeFile);
+    fs.mkdirSync(path.dirname(supportPath), { recursive: true });
+    fs.writeFileSync(supportPath, `${supportFile.content}\n`, 'utf8');
+  });
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, `${testCase.content}\n`, 'utf8');
 
