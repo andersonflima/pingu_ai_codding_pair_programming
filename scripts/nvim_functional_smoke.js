@@ -267,6 +267,37 @@ const buildLuaFunctionDocCase = buildTextAutofixCase({
   failureMessage: 'nvim lua function_doc: a documentacao esperada nao foi inserida.',
 });
 
+const buildPythonMultilineImportPreservedCase = buildTextAutofixCase({
+  relativePath: path.join('src', 'billing_multiline_import.py'),
+  vimCommands: ["let g:realtime_dev_agent_auto_fix_kinds = ['undefined_variable']"],
+  content: [
+    'from room_state import (',
+    '    ChatState,',
+    '    create_empty_state,',
+    '    create_invite,',
+    '    create_private_room,',
+    '    create_public_room,',
+    '    get_room,',
+    '    join_room,',
+    '    leave_room,',
+    '    list_rooms_for_client,',
+    '    serialize_room,',
+    ')',
+    '',
+    'state = {}',
+    'invite = {}',
+    'room = {}',
+    'joined_room_ids = []',
+    'factory = create_empty_state',
+  ].join('\n'),
+  summarize: (contents) => ({
+    preservedImportedStateFactory: String(contents || '').includes('    create_empty_state,'),
+    preservedImportedInviteFactory: String(contents || '').includes('    create_invite,'),
+    preservedImportedJoinRoom: String(contents || '').includes('    join_room,'),
+  }),
+  failureMessage: 'nvim python undefined_variable: bloco multiline import nao deveria ser reescrito por nomes globais parecidos.',
+});
+
 const buildJavaScriptFunctionDocVariantsCase = buildTextAutofixCase({
   relativePath: path.join('src', 'billing_variants.js'),
   content: [
@@ -639,6 +670,7 @@ function main() {
   cases.push(runCase('javascript-import-binding-generic-issue-blocked', buildJavaScriptImportBindingGenericIssueBlockedCase));
   cases.push(runCase('javascript-import-binding-validated-issue', buildJavaScriptImportBindingValidatedIssueCase));
   cases.push(runCase('lua-function-doc', buildLuaFunctionDocCase));
+  cases.push(runCase('python-multiline-import-preserved', buildPythonMultilineImportPreservedCase));
   cases.push(runCase('markdown-title', buildMarkdownTitleCase));
   cases.push(runCase('mermaid-missing-delimiter', buildMermaidMissingDelimiterCase));
   cases.push(runCase('rust-function-doc', buildRustFunctionDocCase));
