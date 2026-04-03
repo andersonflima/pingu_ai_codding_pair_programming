@@ -337,6 +337,31 @@ const buildJavaScriptRequireBindingPreservedCase = buildTextAutofixCase({
   }),
   failureMessage: 'nvim javascript undefined_variable: a linha de require/destructuring nao deveria ter sido renomeada.',
 });
+const buildJavaScriptMultilineRequireBindingPreservedCase = buildTextAutofixCase({
+  relativePath: path.join('src', 'billing_multiline_require_binding.js'),
+  vimCommands: ["let g:realtime_dev_agent_auto_fix_kinds = ['undefined_variable']"],
+  content: [
+    'function buildRoomState() {',
+    '  const {',
+    '    createEmptyState,',
+    '    createInvite,',
+    '    createRoom,',
+    '  } = require(\'./room_state\');',
+    '  const state = createEmptyState();',
+    '  const invite = createInvite();',
+    '  const room = createRoom(state, invite);',
+    '  return room;',
+    '}',
+    '',
+    'module.exports = { buildRoomState };',
+  ].join('\n'),
+  summarize: (contents) => ({
+    preservedImportedFactory: String(contents || '').includes('    createEmptyState,'),
+    preservedImportedInvite: String(contents || '').includes('    createInvite,'),
+    preservedImportedRoomFactory: String(contents || '').includes('    createRoom,'),
+  }),
+  failureMessage: 'nvim javascript undefined_variable: bloco multiline require nao deveria ser reescrito por variaveis locais parecidas.',
+});
 function buildJavaScriptLocalRequireSourceValidationCase(workspaceRoot) {
   writePackageJson(workspaceRoot);
   writeFile(
@@ -384,6 +409,35 @@ function buildJavaScriptLocalRequireSourceValidationCase(workspaceRoot) {
     },
   };
 }
+const buildElixirImportUsePreservedCase = buildTextAutofixCase({
+  relativePath: path.join('lib', 'billing_import_use_block.ex'),
+  vimCommands: ["let g:realtime_dev_agent_auto_fix_kinds = ['undefined_variable']"],
+  content: [
+    'defmodule BillingImportUseBlock do',
+    '  use RoomState',
+    '',
+    '  def build do',
+    '    import RoomState,',
+    '      only: [',
+    '        create_empty_state: 0,',
+    '        create_invite: 0,',
+    '        create_room: 2',
+    '      ]',
+    '',
+    '    state = create_empty_state()',
+    '    invite = create_invite()',
+    '    room = create_room(state, invite)',
+    '    room',
+    '  end',
+    'end',
+  ].join('\n'),
+  summarize: (contents) => ({
+    preservedUseDirective: String(contents || '').includes('  use RoomState'),
+    preservedImportedStateFactory: String(contents || '').includes('        create_empty_state: 0,'),
+    preservedImportedInviteFactory: String(contents || '').includes('        create_invite: 0,'),
+  }),
+  failureMessage: 'nvim elixir undefined_variable: blocos de use/import nao deveriam ser reescritos.',
+});
 
 function writeMockUndefinedVariableAnalyzer(workspaceRoot, issueMessage, issueSuggestion) {
   const analyzerFile = path.join(workspaceRoot, 'mock-import-guard-analyzer.js');
@@ -664,7 +718,9 @@ function main() {
   cases.push(runCase('c-missing-delimiter', buildCMissingDelimiterCase));
   cases.push(runCase('dockerfile-workdir', buildDockerfileWorkdirCase));
   cases.push(runCase('go-function-doc', buildGoFunctionDocCase));
+  cases.push(runCase('elixir-import-use-preserved', buildElixirImportUsePreservedCase));
   cases.push(runCase('javascript-function-doc-variants', buildJavaScriptFunctionDocVariantsCase));
+  cases.push(runCase('javascript-multiline-require-binding-preserved', buildJavaScriptMultilineRequireBindingPreservedCase));
   cases.push(runCase('javascript-require-binding-preserved', buildJavaScriptRequireBindingPreservedCase));
   cases.push(runCase('javascript-local-require-source-validation', buildJavaScriptLocalRequireSourceValidationCase));
   cases.push(runCase('javascript-import-binding-generic-issue-blocked', buildJavaScriptImportBindingGenericIssueBlockedCase));

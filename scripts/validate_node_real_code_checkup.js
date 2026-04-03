@@ -124,6 +124,27 @@ const cases = [
     forbiddenSnippetIncludes: ['createHashh } = require', 'createHashh(\'sha256\')'],
   },
   {
+    id: 'existing:undefined_variable:preserve_multiline_require_binding',
+    relativeFile: path.join('src', 'billing_multiline_require_binding.js'),
+    content: [
+      'function buildRoomState() {',
+      '  const {',
+      '    createEmptyState,',
+      '    createInvite,',
+      '    createRoom,',
+      '  } = require(\'./room_state\');',
+      '  const state = createEmptyState();',
+      '  const invite = createInvite();',
+      '  const room = createRoom(state, invite);',
+      '  return room;',
+      '}',
+      '',
+      'module.exports = { buildRoomState };',
+    ].join('\n'),
+    forbiddenKinds: ['undefined_variable'],
+    forbiddenSnippetIncludes: ['state,', 'invite,', 'room,'],
+  },
+  {
     id: 'existing:undefined_variable:validate_local_require_source',
     relativeFile: path.join('src', 'billing_local_require_source.js'),
     supportFiles: [

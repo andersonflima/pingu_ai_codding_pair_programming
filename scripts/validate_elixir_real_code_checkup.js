@@ -79,6 +79,31 @@ const cases = [
     expectedSourceIncludesAfterApply: ['item + 1'],
   },
   {
+    id: 'existing:undefined_variable:preserve_import_use_block',
+    relativeFile: path.join('lib', 'billing_import_use_block.ex'),
+    content: [
+      'defmodule BillingImportUseBlock do',
+      '  use RoomState',
+      '',
+      '  def build do',
+      '    import RoomState,',
+      '      only: [',
+      '        create_empty_state: 0,',
+      '        create_invite: 0,',
+      '        create_room: 2',
+      '      ]',
+      '',
+      '    state = create_empty_state()',
+      '    invite = create_invite()',
+      '    room = create_room(state, invite)',
+      '    room',
+      '  end',
+      'end',
+    ].join('\n'),
+    forbiddenKinds: ['undefined_variable'],
+    forbiddenSnippetIncludes: ['state,', 'invite,', 'room,'],
+  },
+  {
     id: 'existing:functional_reassignment',
     relativeFile: path.join('lib', 'billing_reassignment.ex'),
     content: [
@@ -334,6 +359,7 @@ function validateCase(workspace, testCase) {
   let currentIssues = analyzeFile(filePath);
   const issueKinds = new Set(currentIssues.map((issue) => issue.kind));
   const missingKinds = (testCase.expectedKinds || []).filter((kind) => !issueKinds.has(kind));
+  const forbiddenKinds = (testCase.forbiddenKinds || []).filter((kind) => issueKinds.has(kind));
   const snippetPayload = currentIssues.map((issue) => String(issue.snippet || '')).join('\n---\n');
   const missingSnippets = (testCase.expectedSnippetIncludes || []).filter((fragment) => !snippetPayload.includes(fragment));
   const forbiddenSnippets = (testCase.forbiddenSnippetIncludes || []).filter((fragment) => snippetPayload.includes(fragment));
@@ -341,7 +367,7 @@ function validateCase(workspace, testCase) {
   if (
     !realAiAvailable
     && issueKinds.has('ai_required')
-    && (missingKinds.length > 0 || missingSnippets.length > 0 || forbiddenSnippets.length > 0)
+    && (missingKinds.length > 0 || forbiddenKinds.length > 0 || missingSnippets.length > 0 || forbiddenSnippets.length > 0)
   ) {
     return {
       id: testCase.id,
@@ -349,6 +375,7 @@ function validateCase(workspace, testCase) {
       ok: true,
       skipped: true,
       missingKinds,
+      forbiddenKinds,
       missingSnippets,
       forbiddenSnippets,
       applyFailures: [],
@@ -412,12 +439,14 @@ function validateCase(workspace, testCase) {
     id: testCase.id,
     filePath,
     ok: missingKinds.length === 0
+      && forbiddenKinds.length === 0
       && missingSnippets.length === 0
       && forbiddenSnippets.length === 0
       && applyFailures.length === 0
       && sourceExpectationFailures.length === 0
       && targetExpectationFailures.length === 0,
     missingKinds,
+    forbiddenKinds,
     missingSnippets,
     forbiddenSnippets,
     applyFailures,
@@ -446,6 +475,7 @@ function main() {
       id: failure.id,
       file: failure.filePath,
       missingKinds: failure.missingKinds,
+      forbiddenKinds: failure.forbiddenKinds,
       missingSnippets: failure.missingSnippets,
       forbiddenSnippets: failure.forbiddenSnippets,
       applyFailures: failure.applyFailures,
