@@ -17,9 +17,11 @@ function createEditRuntime(deps) {
     collectIssues,
     configuredAutoFixKinds,
     fixPriorityForKind,
+    autoFixNoOpReason = () => '',
     isAutoFixEnabled,
     mustClearKindsForIssue,
     resolveIssueAction,
+    semanticPriorityForIssue = (issue) => Number(issue && issue.autofixPriority || fixPriorityForKind(issue && issue.kind)),
   } = deps;
 
   function issueActionIdentity(issue) {
@@ -414,16 +416,16 @@ function createEditRuntime(deps) {
   }
 
   function compareFixCandidates(left, right) {
+    const leftPriority = Number(left && left.autofixPriority || semanticPriorityForIssue(left));
+    const rightPriority = Number(right && right.autofixPriority || semanticPriorityForIssue(right));
+    if (leftPriority !== rightPriority) {
+      return leftPriority - rightPriority;
+    }
+
     const leftLine = Number(left.line || 1);
     const rightLine = Number(right.line || 1);
     if (leftLine !== rightLine) {
       return rightLine - leftLine;
-    }
-
-    const leftPriority = fixPriorityForKind(left.kind);
-    const rightPriority = fixPriorityForKind(right.kind);
-    if (leftPriority !== rightPriority) {
-      return leftPriority - rightPriority;
     }
 
     return issueActionIdentity(left).localeCompare(issueActionIdentity(right));
@@ -472,6 +474,9 @@ function createEditRuntime(deps) {
         return false;
       }
       if (!issue.snippet && action.op !== 'write_file' && kind !== 'trailing_whitespace' && kind !== 'syntax_extra_delimiter') {
+        return false;
+      }
+      if (String(autoFixNoOpReason(issue, { autoMode: true }) || '').trim()) {
         return false;
       }
 

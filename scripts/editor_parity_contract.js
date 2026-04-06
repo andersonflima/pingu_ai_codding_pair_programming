@@ -32,9 +32,60 @@ function runEditorParityContract(repoRoot) {
   const vscodeSmoke = readSource(repoRoot, 'scripts/vscode_extension_smoke.js');
   const nvimSmoke = readSource(repoRoot, 'scripts/nvim_functional_smoke.js');
   const zedLsp = readSource(repoRoot, 'zed-extension/server/realtime_dev_agent_lsp.js');
+  const issueConfidence = readSource(repoRoot, 'lib/issue-confidence.js');
+  const projectMemory = readSource(repoRoot, 'lib/project-memory.js');
+  const generation = readSource(repoRoot, 'lib/generation.js');
+  const followUp = readSource(repoRoot, 'lib/follow-up.js');
+  const commentTaskAi = readSource(repoRoot, 'lib/comment-task-ai.js');
+  const autofixGuard = readSource(repoRoot, 'lib/autofix-guard.js');
   const issueKinds = JSON.parse(readSource(repoRoot, 'config/issue-kinds.json'));
 
   const checks = [
+    buildCheck(
+      'parity:shared:semantic-orchestration',
+      'shared',
+      'semantic_priority_noop_confidence',
+      includesAll(issueConfidence, [
+        'function semanticPriorityForIssue(issue)',
+        'function autoFixNoOpReason(issue, options = {})',
+        'function buildIssueConfidenceReport(issues = [])',
+        'languages: {}',
+      ]),
+      'O runtime compartilhado precisa expor prioridade semantica, no-op defensivo e relatorio de confianca por kind e por linguagem.',
+    ),
+    buildCheck(
+      'parity:shared:project-memory',
+      'shared',
+      'project_memory',
+      includesAll(projectMemory, [
+        'function loadProjectMemory(file)',
+        'architecture',
+        'entity',
+        'sourceRoot',
+      ])
+        && includesAll(generation, [
+          'projectMemory: loadProjectMemory(',
+        ])
+        && includesAll(commentTaskAi, [
+          'projectMemory: loadProjectMemory(sourceFile)',
+        ])
+        && includesAll(followUp, [
+          'const projectMemory = loadProjectMemory(',
+          'function withProjectContext(baseInstruction)',
+        ]),
+      'O agente precisa carregar memoria local do repo para contextualizar geracao, comentarios e follow-up.',
+    ),
+    buildCheck(
+      'parity:shared:batch-guard-policy',
+      'shared',
+      'batch_guard_policy',
+      includesAll(autofixGuard, [
+        'function classifyAutofixBatch(appliedIssues, fileEntries = [])',
+        'requiresRuntimeValidation',
+        'batchProfile',
+      ]),
+      'O guard compartilhado precisa distinguir lote documental, estrutural e rewrite para validar apenas quando faz sentido.',
+    ),
     buildCheck(
       'parity:architecture:large-file-advisory-only',
       'shared',

@@ -202,6 +202,22 @@ const cases = [
     forbiddenSnippetIncludes: ['pingu - correction'],
   },
   {
+    id: 'existing:function_doc:async_def',
+    relativeFile: path.join('src', 'billing_async_signature.py'),
+    content: [
+      'async def normalizar_evento(payload: dict[str, str]) -> str:',
+      '    room_id = payload["room_id"]',
+      '    return room_id.strip()',
+    ].join('\n'),
+    expectedKinds: ['function_doc'],
+    expectedSnippetIncludes: ['"""', 'Args:', 'Returns:'],
+    applyKinds: ['function_doc'],
+    mustClearKinds: ['function_doc'],
+    expectedSourceIncludesAfterApply: ['async def normalizar_evento', '"""', 'Args:', 'Returns:'],
+    forbiddenKinds: ['undefined_variable'],
+    forbiddenSnippetIncludes: ['pingu - correction'],
+  },
+  {
     id: 'existing:class_doc',
     relativeFile: path.join('src', 'billing_class_doc.py'),
     content: [

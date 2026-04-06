@@ -844,6 +844,43 @@ function! s:issue_fix_priority(kind) abort
   return get(l:entry, 'autoFixPriority', 999)
 endfunction
 
+function! s:issue_confidence_score(item) abort
+  let l:confidence = get(a:item, 'confidence', {})
+  if type(l:confidence) == v:t_dict && has_key(l:confidence, 'score')
+    return float2nr(get(l:confidence, 'score', 0.0) * 100)
+  endif
+  return 0
+endfunction
+
+function! s:issue_auto_fix_noop_reason(item) abort
+  let l:kind = get(a:item, 'kind', '')
+  let l:action = s:issue_effective_action(a:item)
+  let l:score = s:issue_confidence_score(a:item)
+
+  if l:kind ==# 'ai_required'
+    return 'IA obrigatoria ainda indisponivel para este fluxo'
+  endif
+  if l:kind ==# 'large_file'
+    return 'diagnostico consultivo sem auto-fix'
+  endif
+  if get(l:action, 'op', '') ==# 'run_command' && l:kind !=# 'terminal_task'
+    return 'execucao de terminal exige confirmacao explicita'
+  endif
+  if l:kind ==# 'undefined_variable' && l:score > 0 && l:score < 80
+    return 'evidencia insuficiente para renomear simbolo automaticamente'
+  endif
+  if index(['class_doc', 'flow_comment', 'function_comment', 'function_doc', 'moduledoc', 'variable_doc'], l:kind) != -1 && l:score > 0 && l:score < 55
+    return 'contexto insuficiente para comentario automatico confiavel'
+  endif
+  if index(['context_contract', 'functional_reassignment', 'nested_condition'], l:kind) != -1 && l:score > 0 && l:score < 70
+    return 'refactor semantico com confianca insuficiente para auto-fix'
+  endif
+  if index(['comment_task', 'context_file', 'unit_test'], l:kind) != -1 && l:score > 0 && l:score < 65
+    return 'geracao estrutural com confianca insuficiente para aplicar automaticamente'
+  endif
+  return ''
+endfunction
+
 function! s:issue_effective_action(item) abort
   let l:kind = get(a:item, 'kind', '')
   let l:action = get(a:item, 'action', {})
@@ -2416,6 +2453,9 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
     if empty(get(l:item, 'snippet', '')) && l:item_kind !=# 'trailing_whitespace' && get(l:item_action, 'op', '') !=# 'run_command'
       continue
     endif
+    if !empty(s:issue_auto_fix_noop_reason(l:item))
+      continue
+    endif
 
     let l:item_key = printf(
           \ '%s|%d|%s|%s',
@@ -2606,21 +2646,22 @@ function! s:issue_line_delta(item) abort
 endfunction
 
 function! s:compare_fix_order(entry_a, entry_b) abort
+  let l:kind_a = get(a:entry_a, 'kind', '')
+  let l:kind_b = get(a:entry_b, 'kind', '')
+  let l:priority_a = get(a:entry_a, 'autofixPriority', s:issue_fix_priority(l:kind_a))
+  let l:priority_b = get(a:entry_b, 'autofixPriority', s:issue_fix_priority(l:kind_b))
+
+  if l:priority_a != l:priority_b
+    return l:priority_a < l:priority_b ? -1 : 1
+  endif
+
   let l:lnum_a = get(a:entry_a, 'lnum', 0)
   let l:lnum_b = get(a:entry_b, 'lnum', 0)
   if l:lnum_a != l:lnum_b
     return l:lnum_a < l:lnum_b ? 1 : -1
   endif
 
-  let l:kind_a = get(a:entry_a, 'kind', '')
-  let l:kind_b = get(a:entry_b, 'kind', '')
-  let l:priority_a = s:issue_fix_priority(l:kind_a)
-  let l:priority_b = s:issue_fix_priority(l:kind_b)
-
-  if l:priority_a == l:priority_b
-    return 0
-  endif
-  return l:priority_a < l:priority_b ? -1 : 1
+  return 0
 endfunction
 
 function! s:realtime_dev_agent_drain_pending_auto_fixes() abort

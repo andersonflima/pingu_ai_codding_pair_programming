@@ -12,6 +12,10 @@ const {
   resolveIssueAction,
   supportsFollowUp,
 } = require('../lib/issue-kinds');
+const {
+  autoFixNoOpReason,
+  semanticPriorityForIssue,
+} = require('../lib/issue-confidence');
 const { runAgent } = require('./agent-process');
 const { publishDiagnostics } = require('./diagnostics');
 const { createCodeActionRuntime } = require('./code-actions');
@@ -185,9 +189,11 @@ function activate(context) {
     collectIssues,
     configuredAutoFixKinds,
     fixPriorityForKind,
+    autoFixNoOpReason,
     isAutoFixEnabled,
     mustClearKindsForIssue,
     resolveIssueAction,
+    semanticPriorityForIssue,
   });
 
   terminalRuntime = createTerminalRuntime({

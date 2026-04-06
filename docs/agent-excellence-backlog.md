@@ -40,23 +40,23 @@ Itens bloqueadores. Sem isso o agente ainda atrapalha mais do que ajuda.
 
 Itens de alto impacto para qualidade percebida e fluidez de pareamento.
 
-- `pending`: hierarquia de prioridade por severidade real: sintaxe, import, contrato, comentario importante, teste, scaffold
-- `pending`: comentario contextual por semantica de dominio, nao so por heuristica textual de nome
-- `pending`: cobertura forte de assinatura multiline, decorators, dataclass, class fields, methods e overload-like declarations
-- `pending`: politicas de no-op explicitas para quando o agente nao tiver prova suficiente para corrigir
+- `done`: hierarquia de prioridade por severidade real: sintaxe, import, contrato, comentario importante, teste, scaffold
+- `in_progress`: comentario contextual por semantica de dominio, nao so por heuristica textual de nome
+- `in_progress`: cobertura forte de assinatura multiline, decorators, dataclass, class fields, methods e overload-like declarations
+- `done`: politicas de no-op explicitas para quando o agente nao tiver prova suficiente para corrigir
 - `in_progress`: smoke representativo por linguagem nos tres editores com casos de comentario, import preservado e rollback
 - `pending`: reduzir custo em tempo real por tamanho de arquivo, distancia do cursor e tipo de issue
-- `pending`: follow-up contextual melhor para continuar o pareamento sem sair do arquivo
+- `done`: follow-up contextual melhor para continuar o pareamento sem sair do arquivo
 
 ## P2
 
 Itens de maturidade. Nao bloqueiam utilidade basica, mas elevam consistencia e confianca.
 
 - `pending`: ranking semantico de comentarios para priorizar responsabilidade de dominio sobre ruido local
-- `pending`: memoria local de padroes arquiteturais do repo para ajustar snippet, docs e testes
-- `pending`: guardas especificas por linguagem para lotes puramente documentais versus lotes estruturais
+- `done`: memoria local de padroes arquiteturais do repo para ajustar snippet, docs e testes
+- `done`: guardas especificas por linguagem para lotes puramente documentais versus lotes estruturais
 - `pending`: contratos de qualidade por stack com metas objetivas de falso positivo, rollback e latencia
-- `pending`: relatorio consolidado de confianca por kind e por linguagem
+- `done`: relatorio consolidado de confianca por kind e por linguagem
 
 ## Criterios de Aceite
 
@@ -104,6 +104,7 @@ Os gates minimos para sustentar esta barra sao:
 - `node scripts/validate_python_real_code_checkup.js`
 - `node scripts/validate_node_real_code_checkup.js`
 - `node scripts/validate_elixir_real_code_checkup.js`
+- `node scripts/validate_issue_orchestration.js`
 - `node scripts/nvim_functional_smoke.js`
 - `node scripts/validate_vscode_autofix_guard.js`
 - `node scripts/editor_parity_contract.js`

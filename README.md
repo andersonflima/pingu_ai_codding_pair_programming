@@ -660,6 +660,18 @@ npm run validate:matrix
 npm run validate:editors
 ```
 
+### Orquestracao, memoria local e confianca
+
+```bash
+npm run validate:orchestration
+```
+
+Para inspecionar a confianca agregada de um arquivo com prioridades e contexto local:
+
+```bash
+node scripts/issue_confidence_report.js caminho/do/arquivo.py
+```
+
 ### Quality gates de todas as linguagens ativas
 
 ```bash
