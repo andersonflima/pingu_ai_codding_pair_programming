@@ -496,6 +496,10 @@ function! s:auto_fix_doc_cursor_context_only() abort
   return str2nr(string(get(g:, 'realtime_dev_agent_auto_fix_doc_cursor_context_only', 1))) > 0
 endfunction
 
+function! s:auto_fix_local_cursor_context_only() abort
+  return str2nr(string(get(g:, 'realtime_dev_agent_auto_fix_local_cursor_context_only', 1))) > 0
+endfunction
+
 function! s:auto_fix_doc_cursor_context_max_lines() abort
   let l:max_lines = get(g:, 'realtime_dev_agent_auto_fix_doc_cursor_context_max_lines', 80)
   if type(l:max_lines) != v:t_number
@@ -515,6 +519,32 @@ endfunction
 function! s:is_documentation_issue(item) abort
   let l:kind = get(a:item, 'kind', '')
   return index(['class_doc', 'flow_comment', 'function_comment', 'function_doc', 'moduledoc', 'variable_doc'], l:kind) != -1
+endfunction
+
+function! s:is_local_cursor_context_issue(item) abort
+  let l:kind = get(a:item, 'kind', '')
+  return index([
+        \ 'debug_output',
+        \ 'dockerfile_workdir',
+        \ 'function_spec',
+        \ 'markdown_title',
+        \ 'syntax_extra_delimiter',
+        \ 'syntax_missing_comma',
+        \ 'syntax_missing_delimiter',
+        \ 'syntax_missing_quote',
+        \ 'terraform_required_version',
+        \ 'trailing_whitespace'
+        \ ], l:kind) != -1
+endfunction
+
+function! s:should_limit_issue_to_cursor_context(item) abort
+  if s:is_documentation_issue(a:item)
+    return s:auto_fix_doc_cursor_context_only()
+  endif
+  if s:is_local_cursor_context_issue(a:item)
+    return s:auto_fix_local_cursor_context_only()
+  endif
+  return v:false
 endfunction
 
 function! s:buffer_line_text(bufnr, lnum) abort
@@ -599,11 +629,7 @@ function! s:current_cursor_context_key(bufnr) abort
   return printf('%s|%d|%d|%d', l:file, l:changedtick, l:start, l:end)
 endfunction
 
-function! s:limit_documentation_candidates_to_cursor_context(items) abort
-  if !s:auto_fix_doc_cursor_context_only()
-    return a:items
-  endif
-
+function! s:limit_cursor_context_auto_fix_candidates(items) abort
   let l:scope = s:auto_fix_scope()
   if l:scope ==# 'file'
     return a:items
@@ -617,7 +643,7 @@ function! s:limit_documentation_candidates_to_cursor_context(items) abort
   let [l:start, l:end] = s:cursor_context_bounds_for_buffer(l:bufnr, line('.'))
   let l:selected = []
   for l:item in a:items
-    if !s:is_documentation_issue(l:item)
+    if !s:should_limit_issue_to_cursor_context(l:item)
       call add(l:selected, l:item)
       continue
     endif
@@ -1868,6 +1894,13 @@ function! s:apply_issue_range_replacement(target_buf, action, lnum, current_line
   return v:true
 endfunction
 
+function! s:preserve_issue_snippet_indentation(issue, action) abort
+  if get(a:action, 'op', '') !=# 'replace_line'
+    return v:false
+  endif
+  return get(a:issue, 'kind', '') ==# 'tabs'
+endfunction
+
 function! s:apply_issue_snippet(issue, keep_focus_code) abort
   let l:issue = a:issue
   let l:filename = get(l:issue, 'filename', '')
@@ -1958,8 +1991,10 @@ function! s:apply_issue_snippet(issue, keep_focus_code) abort
     return v:false
   endif
 
-  let l:indent = get(l:action, 'indent', matchstr(l:line_content, '^\s*'))
-  let l:snippet_lines = s:normalize_snippet_lines(l:snippet_lines, l:indent)
+  if !s:preserve_issue_snippet_indentation(l:issue, l:action)
+    let l:indent = get(l:action, 'indent', matchstr(l:line_content, '^\s*'))
+    let l:snippet_lines = s:normalize_snippet_lines(l:snippet_lines, l:indent)
+  endif
   let l:snippet_text = join(l:snippet_lines, "\n")
   if empty(l:op)
     let l:op = get(s:issue_default_action(l:kind), 'op', 'insert_before')
@@ -2089,6 +2124,9 @@ function! s:realtime_issue_still_relevant(item, target_buf, lnum, line_content) 
 
   if l:op ==# 'replace_line'
     let l:snippet_lines = split(get(a:item, 'snippet', ''), "\n")
+    if l:kind ==# 'tabs'
+      return !empty(l:snippet_lines) && l:content !=# l:snippet_lines[0]
+    endif
     let l:expected = ''
     for l:snippet_line in l:snippet_lines
       let l:trimmed = substitute(l:snippet_line, '^\s*', '', '')
@@ -2676,7 +2714,7 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
   endif
 
   let l:auto_candidates = s:select_auto_fix_candidates_by_scope(l:auto_candidates)
-  let l:auto_candidates = s:limit_documentation_candidates_to_cursor_context(l:auto_candidates)
+  let l:auto_candidates = s:limit_cursor_context_auto_fix_candidates(l:auto_candidates)
 
   if empty(l:auto_candidates)
     return 0
@@ -3095,7 +3133,7 @@ function! s:extract_issue_snippet(raw) abort
     return ''
   endif
 
-  let l:snippet = trim(l:match[1])
+  let l:snippet = substitute(l:match[1], '\s\+$', '', '')
   let l:snippet = substitute(l:snippet, '\\\\', '__REALTIME_DEV_AGENT_BACKSLASH__', 'g')
   let l:snippet = substitute(l:snippet, '\\n', "\n", 'g')
   let l:snippet = substitute(l:snippet, '__REALTIME_DEV_AGENT_BACKSLASH__', '\\', 'g')

@@ -111,6 +111,7 @@ function buildTextAutofixCase({
   content,
   scripts = {},
   vimCommands = [],
+  scriptOptions = {},
   summarize,
   failureMessage,
 }) {
@@ -122,6 +123,7 @@ function buildTextAutofixCase({
     return {
       targetFile,
       vimCommands,
+      scriptOptions,
       verify() {
         const contents = fs.readFileSync(targetFile, 'utf8');
         const summary = summarize(contents, workspaceRoot);
@@ -161,7 +163,10 @@ function buildContextFileCase(workspaceRoot) {
 
   return {
     targetFile,
-    vimCommands: ["let g:realtime_dev_agent_target_scope = 'workspace'"],
+    vimCommands: [
+      "let g:realtime_dev_agent_target_scope = 'workspace'",
+      "let g:realtime_dev_agent_auto_fix_kinds = ['context_file']",
+    ],
     verify() {
       const contents = fs.readFileSync(targetFile, 'utf8');
       const contextFile = path.join(workspaceRoot, '.realtime-dev-agent', 'contexts', 'bff-crud-usuario.md');
@@ -203,6 +208,7 @@ function buildTerminalTaskCase(workspaceRoot) {
 
   return {
     targetFile,
+    vimCommands: ["let g:realtime_dev_agent_auto_fix_kinds = ['terminal_task']"],
     verify() {
       const contents = fs.readFileSync(targetFile, 'utf8');
       const outputFile = path.join(workspaceRoot, 'terminal-smoke-ok.txt');
@@ -296,6 +302,15 @@ const buildPythonCursorContextAutodocCase = buildTextAutofixCase({
     'let g:realtime_dev_agent_realtime_delay = 200',
     'let g:realtime_dev_agent_auto_fix_doc_cursor_context_only = 1',
   ],
+  scriptOptions: {
+    postEditCommands: [
+      'call cursor(1, 1)',
+      'doautocmd <nomodeline> CursorHold',
+      'sleep 350m',
+      'write',
+      'qa!',
+    ],
+  },
   content: [
     'def total(',
     '    valor: int,',
@@ -317,6 +332,89 @@ const buildPythonCursorContextAutodocCase = buildTextAutofixCase({
     };
   },
   failureMessage: 'nvim python cursor context: o agente deveria documentar automaticamente o bloco atual do cursor sem tocar no metodo distante.',
+});
+
+const buildJavaScriptCursorContextDebugOutputCase = buildTextAutofixCase({
+  relativePath: path.join('src', 'billing_cursor_debug.js'),
+  vimCommands: [
+    'let g:realtime_dev_agent_realtime_on_change = 1',
+    'let g:realtime_dev_agent_realtime_on_cursor_hold = 1',
+    'let g:realtime_dev_agent_realtime_on_buf_enter = 0',
+    'let g:realtime_dev_agent_realtime_delay = 200',
+    'let g:realtime_dev_agent_auto_fix_local_cursor_context_only = 1',
+  ],
+  scriptOptions: {
+    postEditCommands: [
+      'call cursor(1, 1)',
+      'doautocmd <nomodeline> CursorHold',
+      'sleep 350m',
+      'write',
+      'qa!',
+    ],
+  },
+  content: [
+    'function total(valor) {',
+    '  console.log(valor);',
+    '  return valor + 1;',
+    '}',
+    '',
+    'function frete(distancia) {',
+    '  console.log(distancia);',
+    '  return distancia * 2;',
+    '}',
+    '',
+    'module.exports = { total, frete };',
+  ].join('\n'),
+  summarize: (contents) => {
+    const normalized = String(contents || '');
+    const debugCalls = normalized.match(/console\.log\(/g) || [];
+    return {
+      removedCurrentBlockDebugOutput: !normalized.includes('console.log(valor);'),
+      preservedFarBlockDebugOutput: normalized.includes('console.log(distancia);'),
+      keptSingleRemainingDebugCall: debugCalls.length === 1,
+    };
+  },
+  failureMessage: 'nvim javascript cursor context: debug_output deveria agir sozinho no bloco atual sem limpar o bloco distante.',
+});
+
+const buildElixirCursorContextFunctionSpecCase = buildTextAutofixCase({
+  relativePath: path.join('lib', 'billing_cursor_spec.ex'),
+  vimCommands: [
+    'let g:realtime_dev_agent_realtime_on_change = 1',
+    'let g:realtime_dev_agent_realtime_on_cursor_hold = 1',
+    'let g:realtime_dev_agent_realtime_on_buf_enter = 0',
+    'let g:realtime_dev_agent_realtime_delay = 200',
+    'let g:realtime_dev_agent_auto_fix_local_cursor_context_only = 1',
+  ],
+  scriptOptions: {
+    postEditCommands: [
+      'call cursor(3, 1)',
+      'doautocmd <nomodeline> CursorHold',
+      'sleep 350m',
+      'write',
+      'qa!',
+    ],
+  },
+  content: [
+    'defmodule BillingCursorSpec do',
+    '',
+    '  def soma(valor) do',
+    '    valor + 1',
+    '  end',
+    '',
+    '  def frete(valor) do',
+    '    valor * 2',
+    '  end',
+    'end',
+  ].join('\n'),
+  summarize: (contents) => {
+    const normalized = String(contents || '');
+    return {
+      insertedCurrentFunctionSpec: normalized.includes('@spec soma(any()) :: any()'),
+      preservedFarFunctionWithoutSpec: !normalized.includes('@spec frete(any()) :: any()'),
+    };
+  },
+  failureMessage: 'nvim elixir cursor context: function_spec deveria entrar sozinho na funcao atual sem tocar a funcao distante.',
 });
 
 const buildPythonVariableDocCase = buildTextAutofixCase({
@@ -870,6 +968,39 @@ const buildTomlMissingQuoteCase = buildTextAutofixCase({
   failureMessage: 'nvim toml syntax_missing_quote: a aspa esperada nao foi fechada.',
 });
 
+const buildTomlCursorContextMissingQuoteCase = buildTextAutofixCase({
+  relativePath: path.join('config', 'cursor_app.toml'),
+  vimCommands: [
+    'let g:realtime_dev_agent_realtime_on_change = 1',
+    'let g:realtime_dev_agent_realtime_on_cursor_hold = 1',
+    'let g:realtime_dev_agent_realtime_on_buf_enter = 0',
+    'let g:realtime_dev_agent_realtime_delay = 200',
+    'let g:realtime_dev_agent_auto_fix_local_cursor_context_only = 1',
+  ],
+  scriptOptions: {
+    postEditCommands: [
+      'call cursor(1, 1)',
+      'doautocmd <nomodeline> CursorHold',
+      'sleep 350m',
+      'write',
+      'qa!',
+    ],
+  },
+  content: [
+    'host = "localhost',
+    '',
+    'port = "8080',
+  ].join('\n'),
+  summarize: (contents) => {
+    const lines = String(contents || '').split('\n');
+    return {
+      fixedCurrentBlockQuote: lines[0] === 'host = "localhost"',
+      preservedFarBlockQuote: lines[2] === 'port = "8080',
+    };
+  },
+  failureMessage: 'nvim toml cursor context: syntax_missing_quote deveria fechar apenas a aspa do bloco atual.',
+});
+
 const buildVimFunctionDocCase = buildTextAutofixCase({
   relativePath: path.join('autoload', 'billing.vim'),
   content: [
@@ -892,12 +1023,48 @@ const buildYamlMissingQuoteCase = buildTextAutofixCase({
   failureMessage: 'nvim yaml syntax_missing_quote: a aspa esperada nao foi fechada.',
 });
 
+function buildTerminalTaskNotAutoByDefaultCase(workspaceRoot) {
+  writePackageJson(workspaceRoot, {
+    test: 'node ./write-terminal-output.js',
+  });
+  writeFile(
+    path.join(workspaceRoot, 'write-terminal-output.js'),
+    [
+      'const fs = require("fs");',
+      'fs.writeFileSync("terminal-smoke-default-should-not-run.txt", "terminal-smoke-default-should-not-run\\n", "utf8");',
+      'console.log("terminal-smoke-default-should-not-run");',
+    ].join('\n'),
+  );
+
+  const targetFile = path.join(workspaceRoot, 'src', 'terminal_default.js');
+  writeFile(targetFile, '// * rodar testes\n');
+
+  return {
+    targetFile,
+    verify() {
+      const contents = fs.readFileSync(targetFile, 'utf8');
+      const outputFile = path.join(workspaceRoot, 'terminal-smoke-default-should-not-run.txt');
+      const summary = {
+        preservedTriggerWithoutOptIn: contents.includes('rodar testes'),
+        didNotRunCommandWithoutOptIn: !fs.existsSync(outputFile),
+      };
+
+      assert(summary.preservedTriggerWithoutOptIn, 'nvim terminal_task default: o trigger deveria permanecer sem opt-in explicito.');
+      assert(summary.didNotRunCommandWithoutOptIn, 'nvim terminal_task default: o comando nao deveria rodar no default automatico seguro.');
+
+      return summary;
+    },
+  };
+}
+
 function main() {
   const realAiAvailable = hasLiveOpenAiValidation();
   const cases = [];
   if (realAiAvailable) {
     cases.push(runCase('comment-task', buildCommentTaskCase));
     cases.push(runCase('context-file', buildContextFileCase));
+    cases.push(runCase('elixir-cursor-context-function-spec', buildElixirCursorContextFunctionSpecCase));
+    cases.push(runCase('javascript-cursor-context-debug-output', buildJavaScriptCursorContextDebugOutputCase));
   }
   cases.push(runCase('terminal-task', buildTerminalTaskCase));
   cases.push(runCase('c-missing-delimiter', buildCMissingDelimiterCase));
@@ -913,18 +1080,7 @@ function main() {
   cases.push(runCase('cross-file-write-file-blocked-by-default', buildCrossFileWriteFileBlockedByDefaultCase));
   cases.push(runCase('lua-function-doc', buildLuaFunctionDocCase));
   cases.push(runCase('python-function-doc', buildPythonFunctionDocCase));
-  cases.push(runCase('python-cursor-context-autodoc', (workspaceRoot) => ({
-    ...buildPythonCursorContextAutodocCase(workspaceRoot),
-    scriptOptions: {
-      postEditCommands: [
-        'call cursor(1, 1)',
-        'doautocmd <nomodeline> CursorHold',
-        'sleep 350m',
-        'write',
-        'qa!',
-      ],
-    },
-  })));
+  cases.push(runCase('python-cursor-context-autodoc', buildPythonCursorContextAutodocCase));
   cases.push(runCase('python-structured-comments', buildPythonStructuredCommentsCase));
   cases.push(runCase('python-variable-doc', buildPythonVariableDocCase));
   cases.push(runCase('python-multiline-import-preserved', buildPythonMultilineImportPreservedCase));
@@ -936,6 +1092,8 @@ function main() {
   cases.push(runCase('shell-missing-quote', buildShellMissingQuoteCase));
   cases.push(runCase('terraform-required-version', buildTerraformRequiredVersionCase));
   cases.push(runCase('toml-missing-quote', buildTomlMissingQuoteCase));
+  cases.push(runCase('toml-cursor-context-missing-quote', buildTomlCursorContextMissingQuoteCase));
+  cases.push(runCase('terminal-task-not-auto-by-default', buildTerminalTaskNotAutoByDefaultCase));
   cases.push(runCase('vim-function-doc', buildVimFunctionDocCase));
   cases.push(runCase('yaml-missing-quote', buildYamlMissingQuoteCase));
 

@@ -482,6 +482,7 @@ O repositorio expoe `plugin/` e `autoload/` na raiz, entao pode ser instalado di
     vim.g.realtime_dev_agent_realtime_insert_mode = 0
     vim.g.realtime_dev_agent_auto_check_max_lines = 600
     vim.g.realtime_dev_agent_auto_fix_doc_cursor_context_only = 1
+    vim.g.realtime_dev_agent_auto_fix_local_cursor_context_only = 1
   end,
 }
 ```
@@ -514,7 +515,9 @@ Plug 'andersonflima/pingu_ai_codding_pair_programming'
 - `let g:realtime_dev_agent_realtime_insert_mode = 1` volta a analisar tambem no meio da digitacao
 - `let g:realtime_dev_agent_auto_check_max_lines = 600` limita checks automaticos a arquivos menores
 - `let g:realtime_dev_agent_auto_fix_doc_cursor_context_only = 1` restringe `function_doc`, `class_doc`, `variable_doc` e `flow_comment` ao bloco textual atual do cursor
+- `let g:realtime_dev_agent_auto_fix_local_cursor_context_only = 1` restringe `debug_output`, syntax local, `trailing_whitespace`, `function_spec`, `markdown_title`, `terraform_required_version` e `dockerfile_workdir` ao bloco textual atual
 - `let g:realtime_dev_agent_auto_fix_doc_cursor_context_max_lines = 80` controla o tamanho maximo desse bloco automatico
+- por padrao no Vim o auto-fix automatico fica no conjunto local e seguro do arquivo atual; `context_file`, `unit_test` e `terminal_task` continuam disponiveis por quick fix ou por opt-in em `g:realtime_dev_agent_auto_fix_kinds`
 
 ### Terminal no Vim / Neovim
 

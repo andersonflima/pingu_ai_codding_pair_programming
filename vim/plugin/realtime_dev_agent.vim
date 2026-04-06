@@ -79,13 +79,31 @@ function! s:default_auto_fix_kinds_from_registry(registry) abort
   let l:kinds = []
   for l:kind in sort(keys(a:registry))
     let l:entry = get(a:registry, l:kind, {})
-    if type(l:entry) != v:t_dict || !get(l:entry, 'autoFixDefault', v:false)
+    if !s:is_safe_default_auto_fix_kind(l:kind, l:entry)
       continue
     endif
     call add(l:kinds, [get(l:entry, 'autoFixPriority', 999), l:kind])
   endfor
   call sort(l:kinds, {left, right -> left[0] == right[0] ? (left[1] ># right[1] ? 1 : -1) : (left[0] > right[0] ? 1 : -1)})
   return map(l:kinds, 'v:val[1]')
+endfunction
+
+function! s:is_safe_default_auto_fix_kind(kind, entry) abort
+  if type(a:entry) != v:t_dict || !get(a:entry, 'autoFixDefault', v:false)
+    return v:false
+  endif
+
+  let l:action = get(a:entry, 'defaultAction', {})
+  if type(l:action) != v:t_dict
+    let l:action = {}
+  endif
+
+  let l:op = get(l:action, 'op', '')
+  if l:op ==# 'write_file' || l:op ==# 'run_command'
+    return v:false
+  endif
+
+  return v:true
 endfunction
 
 if !exists('g:realtime_dev_agent_issue_kind_registry')
@@ -300,9 +318,6 @@ if !exists('g:realtime_dev_agent_auto_fix_kinds')
           \ 'functional_reassignment',
           \ 'debug_output',
           \ 'missing_dependency',
-          \ 'context_file',
-          \ 'unit_test',
-          \ 'terminal_task',
           \ 'trailing_whitespace',
           \ 'tabs',
           \ 'markdown_title',
@@ -361,6 +376,11 @@ endif
 if !exists('g:realtime_dev_agent_auto_fix_doc_cursor_context_only')
   " Restringe comentarios automaticos ao bloco textual atual do cursor.
   let g:realtime_dev_agent_auto_fix_doc_cursor_context_only = 1
+endif
+
+if !exists('g:realtime_dev_agent_auto_fix_local_cursor_context_only')
+  " Restringe syntax/debug/higiene/specs leves ao bloco textual atual do cursor.
+  let g:realtime_dev_agent_auto_fix_local_cursor_context_only = 1
 endif
 
 if !exists('g:realtime_dev_agent_auto_fix_doc_cursor_context_max_lines')

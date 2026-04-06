@@ -154,16 +154,18 @@ function runEditorParityContract(repoRoot) {
       'comment_context_tests',
       includesAll(vimPlugin, [
         "\\ 'comment_task',",
-        "\\ 'context_file',",
-        "\\ 'unit_test',",
-        "\\ 'terminal_task',",
         "let g:realtime_dev_agent_target_scope = 'current_file'",
+        "let g:realtime_dev_agent_auto_fix_local_cursor_context_only = 1",
       ])
+        && !String(vimPlugin || '').includes("\\ 'context_file',")
+        && !String(vimPlugin || '').includes("\\ 'unit_test',")
+        && !String(vimPlugin || '').includes("\\ 'terminal_task',")
         && includesAll(vimInternal, [
           'function! s:target_scope() abort',
           'function! s:issue_targets_active_scope(item, current_file) abort',
+          'function! s:limit_cursor_context_auto_fix_candidates(items) abort',
         ]),
-      'LazyVim precisa priorizar o arquivo atual por padrao, deixando acoes multi-arquivo como opt-in.',
+      'LazyVim precisa priorizar o arquivo atual com auto-fix seguro por padrao, deixando acoes multi-arquivo e terminal como opt-in.',
     ),
     buildCheck(
       'parity:lazyvim:terminal-routing',
