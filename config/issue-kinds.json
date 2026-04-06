@@ -23,14 +23,14 @@
   "context_contract": {
     "defaultAction": { "op": "write_file" },
     "autoFixDefault": true,
-    "autoFixPriority": 85,
+    "autoFixPriority": 75,
     "supportsQuickFix": true,
     "supportsFollowUp": true
   },
   "debug_output": {
     "defaultAction": { "op": "replace_line" },
     "autoFixDefault": true,
-    "autoFixPriority": 110,
+    "autoFixPriority": 55,
     "supportsQuickFix": true,
     "supportsFollowUp": true
   },
@@ -44,14 +44,14 @@
   "class_doc": {
     "defaultAction": { "op": "insert_after" },
     "autoFixDefault": true,
-    "autoFixPriority": 92,
+    "autoFixPriority": 212,
     "supportsQuickFix": true,
     "supportsFollowUp": true
   },
   "flow_comment": {
     "defaultAction": { "op": "insert_before" },
     "autoFixDefault": true,
-    "autoFixPriority": 320,
+    "autoFixPriority": 330,
     "supportsQuickFix": true,
     "supportsFollowUp": true
   },
@@ -65,7 +65,7 @@
   "function_doc": {
     "defaultAction": { "op": "insert_before" },
     "autoFixDefault": true,
-    "autoFixPriority": 90,
+    "autoFixPriority": 210,
     "supportsQuickFix": true,
     "supportsFollowUp": true
   },
@@ -107,7 +107,7 @@
   "missing_dependency": {
     "defaultAction": { "op": "insert_before" },
     "autoFixDefault": true,
-    "autoFixPriority": 120,
+    "autoFixPriority": 65,
     "supportsQuickFix": true,
     "supportsFollowUp": true
   },
@@ -198,7 +198,7 @@
   "variable_doc": {
     "defaultAction": { "op": "insert_before" },
     "autoFixDefault": true,
-    "autoFixPriority": 94,
+    "autoFixPriority": 214,
     "supportsQuickFix": true,
     "supportsFollowUp": true
   },

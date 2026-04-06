@@ -423,6 +423,55 @@ function assert(condition, message) {
   }
 }
 
+function writeFile(targetFile, content) {
+  fs.mkdirSync(path.dirname(targetFile), { recursive: true });
+  fs.writeFileSync(targetFile, content, 'utf8');
+}
+
+function writeMockUndefinedVariableAnalyzer(workspaceRoot, issueMessage, issueSuggestion, snippetText, lineNumber = 2, triggerText = 'createHashh') {
+  const analyzerFile = path.join(workspaceRoot, `mock-analyzer-${Math.random().toString(36).slice(2)}.js`);
+  writeFile(
+    analyzerFile,
+    [
+      '#!/usr/bin/env node',
+      '\'use strict\';',
+      'const args = process.argv.slice(2);',
+      'const sourceIndex = args.indexOf(\'--source-path\');',
+      'const sourceFile = sourceIndex >= 0 ? String(args[sourceIndex + 1] || \'\') : \'\';',
+      `const lineNumber = ${JSON.stringify(lineNumber)};`,
+      `const issueMessage = ${JSON.stringify(issueMessage)};`,
+      `const issueSuggestion = ${JSON.stringify(issueSuggestion)};`,
+      `const snippetText = ${JSON.stringify(snippetText)};`,
+      `const triggerText = ${JSON.stringify(triggerText)};`,
+      'let source = \'\';',
+      'process.stdin.setEncoding(\'utf8\');',
+      'process.stdin.on(\'data\', (chunk) => { source += String(chunk || \'\'); });',
+      'process.stdin.on(\'end\', () => {',
+      'if (!sourceFile) {',
+      '  process.stdout.write(\'[]\');',
+      '  return;',
+      '}',
+      'if (triggerText && !source.includes(triggerText)) {',
+      '  process.stdout.write(\'[]\');',
+      '  return;',
+      '}',
+      'const issues = [{',
+      '  file: sourceFile,',
+      '  line: lineNumber,',
+      '  severity: \'error\',',
+      '  kind: \'undefined_variable\',',
+      '  message: issueMessage,',
+      '  suggestion: issueSuggestion,',
+      '  snippet: snippetText,',
+      '  action: { op: \'replace_line\' },',
+      '}];',
+      'process.stdout.write(JSON.stringify(issues));',
+      '});',
+    ].join('\n'),
+  );
+  return analyzerFile;
+}
+
 function representativeLanguageCases(workspaceRoot) {
   return [
     {
@@ -479,7 +528,13 @@ function representativeLanguageCases(workspaceRoot) {
       failureMessage: 'VS Code smoke: python nao inseriu documentacao de classe, metodo e comentario de variavel.',
       filePath: path.join(workspaceRoot, 'src', 'pedido.py'),
       content: [
+        'from dataclasses import dataclass',
+        '',
+        '@dataclass',
         'class Pedido:',
+        '    room_id: str',
+        '    chat_state: dict[str, str]',
+        '',
         '    def total(',
         '        self,',
         '        valor: int,',
@@ -490,8 +545,39 @@ function representativeLanguageCases(workspaceRoot) {
       isValid: (contents) => {
         const normalized = String(contents || '');
         return normalized.includes('Representa a responsabilidade principal de Pedido.')
-          && normalized.includes('# Orquestra o comportamento principal de total')
+          && /def total\([\s\S]+?\) -> int:\n\s+"""/.test(normalized)
+          && /# .+\n    chat_state: dict\[str, str\]/.test(normalized)
           && normalized.includes('# Calcula subtotal para suportar o restante do fluxo.');
+      },
+    },
+    {
+      key: 'elixirImportUsePreserved',
+      failureMessage: 'VS Code smoke: elixir nao preservou use/import only ao corrigir o arquivo.',
+      filePath: path.join(workspaceRoot, 'lib', 'billing_import_use_block.ex'),
+      content: [
+        'defmodule BillingImportUseBlock do',
+        '  use RoomState',
+        '',
+        '  def build do',
+        '    import RoomState,',
+        '      only: [',
+        '        create_empty_state: 0,',
+        '        create_invite: 0,',
+        '        create_room: 2',
+        '      ]',
+        '',
+        '    state = create_empty_state()',
+        '    invite = create_invite()',
+        '    room = create_room(state, invite)',
+        '    room',
+        '  end',
+        'end',
+      ].join('\n'),
+      isValid: (contents) => {
+        const normalized = String(contents || '');
+        return normalized.includes('  use RoomState')
+          && normalized.includes('        create_empty_state: 0,')
+          && normalized.includes('        create_invite: 0,');
       },
     },
     {
@@ -616,6 +702,8 @@ async function run() {
   const blockedTerminalFile = path.join(workspaceRoot, 'src', 'blocked-terminal.js');
   const followUpFile = path.join(workspaceRoot, 'src', 'follow-up.js');
   const autofixFile = path.join(workspaceRoot, 'src', 'math.js');
+  const importGenericFile = path.join(workspaceRoot, 'src', 'billing_import_guard_generic.js');
+  const importValidatedFile = path.join(workspaceRoot, 'src', 'billing_import_guard_validated.js');
   const nestedTestContextFile = path.join(workspaceRoot, 'tests', 'src', 'context-from-test.js');
   const representativeCases = representativeLanguageCases(workspaceRoot);
   fs.writeFileSync(commentFile, '//: funcao soma\n', 'utf8');
@@ -624,6 +712,9 @@ async function run() {
   fs.writeFileSync(blockedTerminalFile, '// * commit: feat: smoke bloqueado\n', 'utf8');
   fs.writeFileSync(followUpFile, 'function revisarPedido() {\n  // TODO: revisar fluxo principal\n  return true;\n}\n', 'utf8');
   fs.writeFileSync(nestedTestContextFile, '// ** bff para crud de pedido\n', 'utf8');
+  fs.writeFileSync(importGenericFile, 'function buildHasher() {\n  const { createHashh } = require(\'./hash\');\n  return createHash(\'sha256\');\n}\n', 'utf8');
+  fs.writeFileSync(importValidatedFile, 'function buildHasher() {\n  const { createHashh } = require(\'./hash\');\n  return createHash(\'sha256\');\n}\n', 'utf8');
+  fs.writeFileSync(path.join(workspaceRoot, 'src', 'hash.js'), 'function createHash(value) {\n  return value;\n}\nmodule.exports = { createHash };\n', 'utf8');
   representativeCases.forEach((entry) => {
     fs.mkdirSync(path.dirname(entry.filePath), { recursive: true });
     fs.writeFileSync(entry.filePath, entry.content, 'utf8');
@@ -701,6 +792,25 @@ async function run() {
       ? fs.readFileSync(autofixTestFile, 'utf8')
       : '';
 
+    const genericImportAnalyzer = writeMockUndefinedVariableAnalyzer(
+      workspaceRoot,
+      'Variavel \'createHashh\' nao declarada',
+      'Substitua por \'createHash\' para manter coerencia do escopo atual.',
+      '  const { createHash } = require(\'./hash\');',
+    );
+    await vscode.workspace.getConfiguration().update('scriptPath', genericImportAnalyzer);
+    const genericImportResult = await analyzeDocumentFile(vscode, importGenericFile);
+
+    const validatedImportAnalyzer = writeMockUndefinedVariableAnalyzer(
+      workspaceRoot,
+      'Import \'createHashh\' nao exportado por \'./hash\'',
+      'Substitua por \'createHash\' para alinhar com a origem importada.',
+      '  const { createHash } = require(\'./hash\');',
+    );
+    await vscode.workspace.getConfiguration().update('scriptPath', validatedImportAnalyzer);
+    const validatedImportResult = await analyzeDocumentFile(vscode, importValidatedFile);
+    await vscode.workspace.getConfiguration().update('scriptPath', '');
+
     await analyzeDocumentFile(vscode, nestedTestContextFile);
     const rootContextFromTestFile = path.join(workspaceRoot, '.realtime-dev-agent', 'contexts', 'bff-crud-pedido.md');
     const nestedContextFromTestFile = path.join(workspaceRoot, 'tests', '.realtime-dev-agent', 'contexts', 'bff-crud-pedido.md');
@@ -742,6 +852,10 @@ async function run() {
         removedTypoReference: !autofixResult.includes('doiis'),
         createdBehaviorTest: autofixTestContents.includes('assert.equal(subject.soma_dois(5), 15);'),
       },
+      importGuard: {
+        preservedGenericImportBinding: genericImportResult.includes('const { createHashh } = require(\'./hash\');'),
+        appliedValidatedImportBinding: validatedImportResult.includes('const { createHash } = require(\'./hash\');'),
+      },
       contextRootResolution: {
         writesContextAtProjectRoot: fs.existsSync(rootContextFromTestFile),
         avoidsNestedTestsContext: !fs.existsSync(nestedContextFromTestFile),
@@ -757,6 +871,8 @@ async function run() {
     assert(summary.terminalRisk.blockedByRiskMode, 'VS Code smoke: modo de risco nao sinalizou o bloqueio do comando.');
     assert(summary.scopedAutoFix.correctedUndefinedVariable, 'VS Code smoke: undefined_variable nao corrigiu a referencia digitada errado.');
     assert(summary.scopedAutoFix.removedTypoReference, 'VS Code smoke: typo no escopo da funcao permaneceu apos auto-fix.');
+    assert(summary.importGuard.preservedGenericImportBinding, 'VS Code smoke: issue generico nao deveria reescrever binding de import.');
+    assert(summary.importGuard.appliedValidatedImportBinding, 'VS Code smoke: import validado pela origem deveria continuar aplicando.');
     representativeCases.forEach((entry) => {
       assert(summary.representativeLanguages[entry.key], entry.failureMessage);
     });

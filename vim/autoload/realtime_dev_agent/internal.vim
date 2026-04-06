@@ -2461,6 +2461,7 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
   let l:file_key = fnamemodify(a:file, ':p')
   let l:fix_guard = get(s:realtime_dev_agent_fix_guard, l:file_key, {})
   let l:line_kind_applied = {}
+  let l:line_shift_by_origin = {}
   let l:visual_batch = s:start_auto_fix_visual_batch(l:current_buf)
   let s:realtime_dev_agent_auto_fix_busy = v:true
   try
@@ -2505,9 +2506,14 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
       call add(l:line_kinds, l:item_apply_key)
       let l:line_kind_applied[l:item_line_key] = l:line_kinds
 
-      if s:apply_issue_snippet(l:item, v:false)
+      let l:shifted_item = s:shift_issue_for_batch(l:item, get(l:line_shift_by_origin, l:item_line_key, 0))
+      if s:apply_issue_snippet(l:shifted_item, v:false)
         let l:applied += 1
-        call add(l:applied_items, l:item)
+        call add(l:applied_items, l:shifted_item)
+        let l:line_delta = s:issue_line_delta(l:shifted_item)
+        if l:line_delta != 0
+          let l:line_shift_by_origin[l:item_line_key] = get(l:line_shift_by_origin, l:item_line_key, 0) + l:line_delta
+        endif
       endif
     endfor
     let s:realtime_dev_agent_fix_guard[l:file_key] = l:fix_guard
@@ -2545,6 +2551,58 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
     echo l:summary
   endif
   return l:applied
+endfunction
+
+function! s:shift_issue_for_batch(item, line_shift) abort
+  if type(a:item) != v:t_dict || a:line_shift == 0
+    return a:item
+  endif
+
+  let l:shifted = deepcopy(a:item)
+  let l:base_line = get(l:shifted, 'lnum', 0)
+  if l:base_line > 0
+    let l:shifted.lnum = l:base_line + a:line_shift
+  endif
+
+  let l:action = s:issue_effective_action(l:shifted)
+  if has_key(l:action, 'range') && type(l:action.range) == v:t_dict
+    if has_key(l:action.range, 'start') && type(l:action.range.start) == v:t_dict
+      let l:action.range.start.line = get(l:action.range.start, 'line', 0) + a:line_shift
+    endif
+    if has_key(l:action.range, 'end') && type(l:action.range.end) == v:t_dict
+      let l:action.range.end.line = get(l:action.range.end, 'line', 0) + a:line_shift
+    endif
+  endif
+  let l:shifted.action = l:action
+  return l:shifted
+endfunction
+
+function! s:issue_line_delta(item) abort
+  let l:action = s:issue_effective_action(a:item)
+  let l:op = get(l:action, 'op', '')
+  if l:op ==# 'write_file' || l:op ==# 'run_command'
+    return 0
+  endif
+
+  let l:snippet = get(a:item, 'snippet', '')
+  let l:snippet_lines = empty(l:snippet) ? [] : split(l:snippet, "\n", 1)
+  if l:op ==# 'insert_before' || l:op ==# 'insert_after'
+    return len(l:snippet_lines)
+  endif
+
+  if l:op ==# 'replace_line'
+    let l:replaced_lines = 1
+    if has_key(l:action, 'range') && type(l:action.range) == v:t_dict
+      let l:start_line = get(get(l:action, 'range', {}), 'start', {})
+      let l:end_line = get(get(l:action, 'range', {}), 'end', {})
+      if type(l:start_line) == v:t_dict && type(l:end_line) == v:t_dict
+        let l:replaced_lines = (get(l:end_line, 'line', 0) - get(l:start_line, 'line', 0)) + 1
+      endif
+    endif
+    return len(l:snippet_lines) - max([1, l:replaced_lines])
+  endif
+
+  return 0
 endfunction
 
 function! s:compare_fix_order(entry_a, entry_b) abort

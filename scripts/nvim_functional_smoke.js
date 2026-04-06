@@ -307,6 +307,35 @@ const buildPythonVariableDocCase = buildTextAutofixCase({
   failureMessage: 'nvim python variable_doc: alias e campos de classe deveriam receber comentario contextual.',
 });
 
+const buildPythonStructuredCommentsCase = buildTextAutofixCase({
+  relativePath: path.join('src', 'pedido.py'),
+  content: [
+    'from dataclasses import dataclass',
+    '',
+    '@dataclass',
+    'class Pedido:',
+    '    room_id: str',
+    '    chat_state: dict[str, str]',
+    '',
+    '    def total(',
+    '        self,',
+    '        valor: int,',
+    '    ) -> int:',
+    '        subtotal = valor + 1',
+    '        return subtotal',
+  ].join('\n'),
+  summarize: (contents) => {
+    const normalized = String(contents || '');
+    return {
+      insertedClassDoc: normalized.includes('Representa a responsabilidade principal de Pedido.'),
+      insertedMethodDocstring: /def total\([\s\S]+?\) -> int:\n\s+"""/.test(normalized),
+      insertedChatStateVariableDoc: /# .+\n    chat_state: dict\[str, str\]/.test(normalized),
+      insertedFlowComment: normalized.includes('# Calcula subtotal para suportar o restante do fluxo.'),
+    };
+  },
+  failureMessage: 'nvim python structured comments: classe, metodo, atributo relevante e passo do fluxo deveriam receber comentario contextual no mesmo arquivo.',
+});
+
 const buildPythonMultilineImportPreservedCase = buildTextAutofixCase({
   relativePath: path.join('src', 'billing_multiline_import.py'),
   vimCommands: ["let g:realtime_dev_agent_auto_fix_kinds = ['undefined_variable']"],
@@ -838,6 +867,7 @@ function main() {
   cases.push(runCase('cross-file-write-file-blocked-by-default', buildCrossFileWriteFileBlockedByDefaultCase));
   cases.push(runCase('lua-function-doc', buildLuaFunctionDocCase));
   cases.push(runCase('python-function-doc', buildPythonFunctionDocCase));
+  cases.push(runCase('python-structured-comments', buildPythonStructuredCommentsCase));
   cases.push(runCase('python-variable-doc', buildPythonVariableDocCase));
   cases.push(runCase('python-multiline-import-preserved', buildPythonMultilineImportPreservedCase));
   cases.push(runCase('markdown-title', buildMarkdownTitleCase));

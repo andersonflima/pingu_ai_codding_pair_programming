@@ -283,6 +283,9 @@ function createEditRuntime(deps) {
     }
 
     const currentLine = liveDocument.lineAt(boundedLineIndex).text;
+    if (kind === 'undefined_variable' && isImportLikeLine(currentLine) && !isValidatedImportBindingIssue(issue)) {
+      return false;
+    }
     const indent = issueIndent(action, kind, currentLine);
     const snippetRaw = kind === 'trailing_whitespace' || kind === 'syntax_extra_delimiter'
       ? ''
@@ -334,6 +337,80 @@ function createEditRuntime(deps) {
       edit.insert(liveDocument.uri, new vscode.Position(insertBeforeLineIndex, 0), `${snippetText}\n`);
     }
     return vscode.workspace.applyEdit(edit);
+  }
+
+  function isImportLikeLine(line) {
+    const content = String(line || '').trim();
+    if (!content) {
+      return false;
+    }
+
+    return /^\s*import\b/.test(content)
+      || /^\s*export\s+(?:\{|\*\s+from\b)/.test(content)
+      || /^\s*from\b.+\bimport\b/.test(content)
+      || /^\s*(?:const|let|var)\b.+?=\s*require\s*\(/.test(content)
+      || /^\s*(?:alias|use|require)\b/.test(content)
+      || /^\s*require_relative\b/.test(content)
+      || /^\s*#include\b/.test(content);
+  }
+
+  function isValidatedImportBindingIssue(issue) {
+    if (String(issue && issue.kind || '') !== 'undefined_variable') {
+      return false;
+    }
+    return /^Import '([^']+)' nao exportado por /.test(String(issue && issue.message || ''));
+  }
+
+  function shiftIssueForBatch(issue, lineShift) {
+    if (!lineShift) {
+      return issue;
+    }
+
+    const shifted = {
+      ...issue,
+      line: Number(issue && issue.line || 1) + lineShift,
+    };
+    const action = resolveIssueAction(issue);
+    if (action && action.range && typeof action.range === 'object') {
+      shifted.action = {
+        ...action,
+        range: {
+          start: {
+            ...(action.range.start || {}),
+            line: Number(action.range.start && action.range.start.line || 0) + lineShift,
+          },
+          end: {
+            ...(action.range.end || {}),
+            line: Number(action.range.end && action.range.end.line || 0) + lineShift,
+          },
+        },
+      };
+    }
+    return shifted;
+  }
+
+  function lineDeltaForIssue(issue) {
+    const action = resolveIssueAction(issue);
+    const op = String(action.op || '');
+    if (op === 'write_file' || op === 'run_command') {
+      return 0;
+    }
+
+    const snippetLines = splitSnippetLines(issue && issue.snippet || '');
+    const snippetLineCount = snippetLines.length === 1 && snippetLines[0] === ''
+      ? 0
+      : snippetLines.length;
+    if (op === 'insert_before' || op === 'insert_after') {
+      return snippetLineCount;
+    }
+    if (op === 'replace_line') {
+      const range = action.range || {};
+      const startLine = Number(range.start && range.start.line || 0);
+      const endLine = Number(range.end && range.end.line || startLine);
+      const replacedLines = Math.max(1, endLine - startLine + 1);
+      return snippetLineCount - replacedLines;
+    }
+    return 0;
   }
 
   function compareFixCandidates(left, right) {
@@ -420,11 +497,19 @@ function createEditRuntime(deps) {
 
     let applied = false;
     const appliedIssues = [];
+    const lineShiftByOrigin = new Map();
     for (const issue of batch) {
-      const changed = await applySnippetIssue(document, issue);
+      const originLine = Number(issue && issue.line || 1);
+      const lineShift = lineShiftByOrigin.get(originLine) || 0;
+      const shiftedIssue = shiftIssueForBatch(issue, lineShift);
+      const changed = await applySnippetIssue(document, shiftedIssue);
       if (changed) {
         applied = true;
-        appliedIssues.push(issue);
+        appliedIssues.push(shiftedIssue);
+        const delta = lineDeltaForIssue(shiftedIssue);
+        if (delta !== 0) {
+          lineShiftByOrigin.set(originLine, lineShift + delta);
+        }
       }
     }
 

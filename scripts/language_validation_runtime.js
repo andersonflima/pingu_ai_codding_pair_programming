@@ -146,6 +146,7 @@ function validateMatrixCase(workspace, testCase, realAiAvailable) {
   const issues = analyzeFile(filePath);
   const issueKinds = new Set(issues.map((issue) => issue.kind));
   const missingKinds = (testCase.expectedKinds || []).filter((kind) => !issueKinds.has(kind));
+  const forbiddenKinds = (testCase.forbiddenKinds || []).filter((kind) => issueKinds.has(kind));
   const snippets = issues.map((issue) => String(issue.snippet || '')).join('\n---\n');
   const missingSnippets = (testCase.expectedSnippetIncludes || []).filter((fragment) => !snippets.includes(fragment));
   const forbiddenSnippets = (testCase.forbiddenSnippetIncludes || []).filter((fragment) => snippets.includes(fragment));
@@ -172,6 +173,7 @@ function validateMatrixCase(workspace, testCase, realAiAvailable) {
 
   if (shouldSkipAiConditionalValidation(realAiAvailable, issueKinds, [
     missingKinds,
+    forbiddenKinds,
     missingSnippets,
     forbiddenSnippets,
     actionFailure,
@@ -188,11 +190,13 @@ function validateMatrixCase(workspace, testCase, realAiAvailable) {
   return {
     id: testCase.id,
     ok: missingKinds.length === 0
+      && forbiddenKinds.length === 0
       && missingSnippets.length === 0
       && forbiddenSnippets.length === 0
       && !actionFailure
       && !targetFailure,
     missingKinds,
+    forbiddenKinds,
     missingSnippets,
     forbiddenSnippets,
     actionFailure,
@@ -218,6 +222,7 @@ function runMatrixValidation(spec, realAiAvailable) {
       id: failure.id,
       file: failure.filePath,
       missingKinds: failure.missingKinds,
+      forbiddenKinds: failure.forbiddenKinds,
       missingSnippets: failure.missingSnippets,
       forbiddenSnippets: failure.forbiddenSnippets,
       actionFailure: failure.actionFailure,
@@ -253,11 +258,12 @@ function validateCheckupCase(workspace, spec, testCase, realAiAvailable) {
   let currentIssues = analyzeFile(filePath);
   const issueKinds = new Set(currentIssues.map((issue) => issue.kind));
   const missingKinds = (testCase.expectedKinds || []).filter((kind) => !issueKinds.has(kind));
+  const forbiddenKinds = (testCase.forbiddenKinds || []).filter((kind) => issueKinds.has(kind));
   const snippetPayload = currentIssues.map((issue) => String(issue.snippet || '')).join('\n---\n');
   const missingSnippets = (testCase.expectedSnippetIncludes || []).filter((fragment) => !snippetPayload.includes(fragment));
   const forbiddenSnippets = (testCase.forbiddenSnippetIncludes || []).filter((fragment) => snippetPayload.includes(fragment));
 
-  if (shouldSkipAiConditionalValidation(realAiAvailable, issueKinds, [missingKinds, missingSnippets, forbiddenSnippets])) {
+  if (shouldSkipAiConditionalValidation(realAiAvailable, issueKinds, [missingKinds, forbiddenKinds, missingSnippets, forbiddenSnippets])) {
     return {
       id: testCase.id,
       filePath,
@@ -319,12 +325,14 @@ function validateCheckupCase(workspace, spec, testCase, realAiAvailable) {
     id: testCase.id,
     filePath,
     ok: missingKinds.length === 0
+      && forbiddenKinds.length === 0
       && missingSnippets.length === 0
       && forbiddenSnippets.length === 0
       && applyFailures.length === 0
       && sourceExpectationFailures.length === 0
       && targetExpectationFailures.length === 0,
     missingKinds,
+    forbiddenKinds,
     missingSnippets,
     forbiddenSnippets,
     applyFailures,
@@ -352,6 +360,7 @@ function runCheckupValidation(spec, realAiAvailable) {
       id: failure.id,
       file: failure.filePath,
       missingKinds: failure.missingKinds,
+      forbiddenKinds: failure.forbiddenKinds,
       missingSnippets: failure.missingSnippets,
       forbiddenSnippets: failure.forbiddenSnippets,
       applyFailures: failure.applyFailures,
