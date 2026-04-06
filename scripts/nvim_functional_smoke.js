@@ -329,6 +329,7 @@ const buildPythonStructuredCommentsCase = buildTextAutofixCase({
     return {
       insertedClassDoc: normalized.includes('Representa a responsabilidade principal de Pedido.'),
       insertedMethodDocstring: /def total\([\s\S]+?\) -> int:\n\s+"""/.test(normalized),
+      skippedTrivialRoomIdField: !/# .+\n    room_id: str/.test(normalized),
       insertedChatStateVariableDoc: /# .+\n    chat_state: dict\[str, str\]/.test(normalized),
       insertedFlowComment: normalized.includes('# Calcula subtotal para suportar o restante do fluxo.'),
     };

@@ -30,11 +30,11 @@ Itens bloqueadores. Sem isso o agente ainda atrapalha mais do que ajuda.
 - `done`: limitar analise e auto-fix ao arquivo atual por padrao com `target_scope = current_file`
 - `done`: bloquear renomeacao generica de import quando a origem nao foi validada
 - `done`: manter rollback automatico quando um lote altera o codigo e piora o estado final
+- `done`: reaplicar lote com ancora estavel quando multiplas issues concorrem na mesma regiao
 - `in_progress`: garantir comentario contextual para funcao, metodo, classe e variavel relevante nas linguagens principais
 - `in_progress`: usar formato idiomatico de documentacao por linguagem em vez de comentario generico
-- `pending`: validar preservacao de import/use/include em todas as linguagens ativas, nao so nas ja cobertas
-- `pending`: fazer o editor reaplicar lote com ancora estavel quando multiplas issues concorrem na mesma regiao
-- `pending`: reduzir falsos positivos em variaveis temporarias, campos triviais e comentarios redundantes
+- `done`: validar preservacao de import/use/include nas linguagens com autofix de simbolo ativo: JavaScript, Python, Elixir, Go, Rust e C
+- `in_progress`: reduzir falsos positivos em variaveis temporarias, campos triviais e comentarios redundantes
 
 ## P1
 
@@ -44,7 +44,7 @@ Itens de alto impacto para qualidade percebida e fluidez de pareamento.
 - `pending`: comentario contextual por semantica de dominio, nao so por heuristica textual de nome
 - `pending`: cobertura forte de assinatura multiline, decorators, dataclass, class fields, methods e overload-like declarations
 - `pending`: politicas de no-op explicitas para quando o agente nao tiver prova suficiente para corrigir
-- `pending`: smoke representativo por linguagem nos tres editores com casos de comentario, import preservado e rollback
+- `in_progress`: smoke representativo por linguagem nos tres editores com casos de comentario, import preservado e rollback
 - `pending`: reduzir custo em tempo real por tamanho de arquivo, distancia do cursor e tipo de issue
 - `pending`: follow-up contextual melhor para continuar o pareamento sem sair do arquivo
 

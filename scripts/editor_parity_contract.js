@@ -295,6 +295,8 @@ function runEditorParityContract(repoRoot) {
         'requestApplyEdit(',
         'buildSnapshotRestoreEdit(',
         'evaluateAutofixGuard(',
+        'function isImportLikeLine(line) {',
+        'function isValidatedImportBindingIssue(issue) {',
       ]),
       'Zed precisa aplicar quickfix com validacao e rollback programatico.',
     ),

@@ -607,6 +607,9 @@ Variaveis comuns:
 - `OPENAI_API_KEY`
 - `PINGU_OPENAI_MODEL`
 - `PINGU_OPENAI_TIMEOUT_MS`
+- `PINGU_AUTOMATIC_AI_COMMENT_MAX_ISSUES`
+- `PINGU_FLOW_COMMENT_MAX_LINES`
+- `PINGU_VALIDATE_WITH_OPENAI`
 
 Exemplo:
 
@@ -620,6 +623,9 @@ Importante:
 - Vim, Neovim e VS Code herdam variaveis de ambiente no momento em que sao iniciados
 - se a chave mudar depois que o editor ja estiver aberto, reinicie o editor
 - nunca commite credenciais
+- `PINGU_AUTOMATIC_AI_COMMENT_MAX_ISSUES=8` limita quantas issues de comentario/documentacao podem subir para IA por ciclo automatico; use `0` para remover o limite
+- `PINGU_FLOW_COMMENT_MAX_LINES=260` evita `flow_comment` automatico em arquivos grandes; use `0` para remover o corte
+- `PINGU_VALIDATE_WITH_OPENAI=1` liga os cenarios live durante os validadores que ja suportam OpenAI Codex
 
 ## Validacao
 
@@ -636,6 +642,11 @@ Para executar tambem os cenarios live contra OpenAI Codex durante a validacao:
 ```bash
 export PINGU_VALIDATE_WITH_OPENAI="1"
 ```
+
+Importante para a trilha live:
+
+- a chave precisa ter acesso real ao endpoint `/v1/responses`
+- conta sem billing ativo ou sem permissao de uso live falha no preflight antes da suite completa
 
 ### Matriz do agente
 

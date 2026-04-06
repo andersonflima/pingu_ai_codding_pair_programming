@@ -131,6 +131,7 @@ function runNodeChecks() {
     'scripts/nvim_functional_smoke.js',
     'scripts/open_vscode_validation.js',
     'scripts/rebuild_external_agent_test.js',
+    'scripts/validate_live_openai_readiness.js',
     'scripts/validate_active_language_quality_gates.js',
     'scripts/validate_external_editor_suite.js',
     'scripts/vscode_extension_smoke.js',

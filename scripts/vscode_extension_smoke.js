@@ -546,6 +546,7 @@ function representativeLanguageCases(workspaceRoot) {
         const normalized = String(contents || '');
         return normalized.includes('Representa a responsabilidade principal de Pedido.')
           && /def total\([\s\S]+?\) -> int:\n\s+"""/.test(normalized)
+          && !/# .+\n    room_id: str/.test(normalized)
           && /# .+\n    chat_state: dict\[str, str\]/.test(normalized)
           && normalized.includes('# Calcula subtotal para suportar o restante do fluxo.');
       },

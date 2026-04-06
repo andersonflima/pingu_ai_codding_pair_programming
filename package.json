@@ -177,6 +177,6 @@
     "validate:editors": "node scripts/validate_editor_integrations.js",
     "validate:external-editors": "node scripts/validate_external_editor_suite.js",
     "validate:all": "npm run validate:matrix && npm run validate:intent-contract && npm run validate:quality-gate:active-contract && npm run validate:language:100-contract && npm run validate:editors",
-    "validate:live:openai": "PINGU_VALIDATE_WITH_OPENAI=1 npm run validate:all && PINGU_VALIDATE_WITH_OPENAI=1 npm run validate:quality-gate:active"
+    "validate:live:openai": "PINGU_VALIDATE_WITH_OPENAI=1 node scripts/validate_live_openai_readiness.js && PINGU_VALIDATE_WITH_OPENAI=1 npm run validate:all && PINGU_VALIDATE_WITH_OPENAI=1 npm run validate:quality-gate:active"
   }
 }
