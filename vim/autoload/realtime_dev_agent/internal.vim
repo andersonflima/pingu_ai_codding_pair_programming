@@ -12,6 +12,7 @@ let s:realtime_dev_agent_auto_fix_busy = v:false
 let s:realtime_dev_agent_is_realtime_check = v:false
 let s:realtime_dev_agent_file_ticks = {}
 let s:realtime_dev_agent_fix_guard = {}
+let s:realtime_dev_agent_last_cursor_context_key = ''
 let s:realtime_dev_agent_window_source_winid = -1
 let s:realtime_dev_agent_started = v:false
 let s:realtime_dev_agent_visual_batch_context = {}
@@ -491,6 +492,18 @@ function! s:auto_fix_doc_max_per_check_large_file() abort
   return max([0, l:limit])
 endfunction
 
+function! s:auto_fix_doc_cursor_context_only() abort
+  return str2nr(string(get(g:, 'realtime_dev_agent_auto_fix_doc_cursor_context_only', 1))) > 0
+endfunction
+
+function! s:auto_fix_doc_cursor_context_max_lines() abort
+  let l:max_lines = get(g:, 'realtime_dev_agent_auto_fix_doc_cursor_context_max_lines', 80)
+  if type(l:max_lines) != v:t_number
+    let l:max_lines = str2nr(string(l:max_lines))
+  endif
+  return max([0, l:max_lines])
+endfunction
+
 function! s:is_large_auto_fix_buffer() abort
   let l:threshold = s:auto_fix_large_file_line_threshold()
   if l:threshold <= 0
@@ -502,6 +515,118 @@ endfunction
 function! s:is_documentation_issue(item) abort
   let l:kind = get(a:item, 'kind', '')
   return index(['class_doc', 'flow_comment', 'function_comment', 'function_doc', 'moduledoc', 'variable_doc'], l:kind) != -1
+endfunction
+
+function! s:buffer_line_text(bufnr, lnum) abort
+  let l:lines = getbufline(a:bufnr, a:lnum)
+  if empty(l:lines)
+    return ''
+  endif
+  return l:lines[0]
+endfunction
+
+function! s:is_blank_buffer_line(bufnr, lnum) abort
+  return empty(trim(s:buffer_line_text(a:bufnr, a:lnum)))
+endfunction
+
+function! s:nearest_meaningful_cursor_line(bufnr, cursor_line) abort
+  let l:last_line = s:buffer_line_count(a:bufnr)
+  if l:last_line <= 0
+    return max([1, a:cursor_line])
+  endif
+
+  let l:anchor = max([1, min([a:cursor_line, l:last_line])])
+  if !s:is_blank_buffer_line(a:bufnr, l:anchor)
+    return l:anchor
+  endif
+
+  let l:max_seek = min([12, l:last_line])
+  for l:offset in range(1, l:max_seek)
+    let l:up = l:anchor - l:offset
+    if l:up >= 1 && !s:is_blank_buffer_line(a:bufnr, l:up)
+      return l:up
+    endif
+    let l:down = l:anchor + l:offset
+    if l:down <= l:last_line && !s:is_blank_buffer_line(a:bufnr, l:down)
+      return l:down
+    endif
+  endfor
+
+  return l:anchor
+endfunction
+
+function! s:cursor_context_bounds_for_buffer(bufnr, cursor_line) abort
+  let l:last_line = s:buffer_line_count(a:bufnr)
+  if l:last_line <= 0
+    return [1, 1]
+  endif
+
+  let l:max_lines = s:auto_fix_doc_cursor_context_max_lines()
+  let l:anchor = s:nearest_meaningful_cursor_line(a:bufnr, a:cursor_line)
+  let l:start = l:anchor
+  let l:end = l:anchor
+  let l:consumed = 1
+
+  while l:start > 1
+    if l:max_lines > 0 && l:consumed >= l:max_lines
+      break
+    endif
+    if s:is_blank_buffer_line(a:bufnr, l:start - 1)
+      break
+    endif
+    let l:start -= 1
+    let l:consumed += 1
+  endwhile
+
+  while l:end < l:last_line
+    if l:max_lines > 0 && l:consumed >= l:max_lines
+      break
+    endif
+    if s:is_blank_buffer_line(a:bufnr, l:end + 1)
+      break
+    endif
+    let l:end += 1
+    let l:consumed += 1
+  endwhile
+
+  return [l:start, l:end]
+endfunction
+
+function! s:current_cursor_context_key(bufnr) abort
+  let l:file = fnamemodify(bufname(a:bufnr), ':p')
+  let [l:start, l:end] = s:cursor_context_bounds_for_buffer(a:bufnr, line('.'))
+  let l:changedtick = getbufvar(a:bufnr, 'changedtick', 0)
+  return printf('%s|%d|%d|%d', l:file, l:changedtick, l:start, l:end)
+endfunction
+
+function! s:limit_documentation_candidates_to_cursor_context(items) abort
+  if !s:auto_fix_doc_cursor_context_only()
+    return a:items
+  endif
+
+  let l:scope = s:auto_fix_scope()
+  if l:scope ==# 'file'
+    return a:items
+  endif
+
+  let l:bufnr = bufnr('%')
+  if l:bufnr <= 0 || !bufloaded(l:bufnr)
+    return a:items
+  endif
+
+  let [l:start, l:end] = s:cursor_context_bounds_for_buffer(l:bufnr, line('.'))
+  let l:selected = []
+  for l:item in a:items
+    if !s:is_documentation_issue(l:item)
+      call add(l:selected, l:item)
+      continue
+    endif
+    let l:item_line = get(l:item, 'lnum', 0)
+    if l:item_line >= l:start && l:item_line <= l:end
+      call add(l:selected, l:item)
+    endif
+  endfor
+  return l:selected
 endfunction
 
 function! s:limit_documentation_candidates(items) abort
@@ -2551,6 +2676,7 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
   endif
 
   let l:auto_candidates = s:select_auto_fix_candidates_by_scope(l:auto_candidates)
+  let l:auto_candidates = s:limit_documentation_candidates_to_cursor_context(l:auto_candidates)
 
   if empty(l:auto_candidates)
     return 0
@@ -2790,7 +2916,7 @@ function! s:realtime_dev_agent_drain_pending_auto_fixes() abort
   call s:realtime_dev_agent_apply_auto_fixes(l:items, l:file)
 endfunction
 
-function! s:realtime_dev_agent_schedule_check() abort
+function! s:realtime_dev_agent_schedule_check(...) abort
   if !g:realtime_dev_agent_realtime_on_change || !has('timers')
     return
   endif
@@ -2810,6 +2936,17 @@ function! s:realtime_dev_agent_schedule_check() abort
   endif
   if !s:should_run_auto_check(l:bufnr)
     return
+  endif
+
+  let l:reason = a:0 > 0 ? a:1 : 'change'
+  if l:reason ==# 'cursor_context'
+    let l:context_key = s:current_cursor_context_key(l:bufnr)
+    if l:context_key ==# s:realtime_dev_agent_last_cursor_context_key
+      return
+    endif
+    let s:realtime_dev_agent_last_cursor_context_key = l:context_key
+  elseif l:reason ==# 'change'
+    let s:realtime_dev_agent_last_cursor_context_key = ''
   endif
 
   let s:realtime_dev_agent_realtime_pending_buf = l:bufnr
@@ -3042,6 +3179,12 @@ if g:realtime_dev_agent_realtime_on_change
       autocmd TextChangedI * call s:realtime_dev_agent_schedule_check()
     endif
     autocmd InsertLeave * if g:realtime_dev_agent_realtime_on_change | call s:realtime_dev_agent_drain_pending_auto_fixes() | call s:realtime_dev_agent_schedule_check() | endif
+    if get(g:, 'realtime_dev_agent_realtime_on_cursor_hold', 1)
+      autocmd CursorHold * if g:realtime_dev_agent_realtime_on_change | call s:realtime_dev_agent_schedule_check('cursor_context') | endif
+    endif
+    if get(g:, 'realtime_dev_agent_realtime_on_buf_enter', 1)
+      autocmd BufEnter * if g:realtime_dev_agent_realtime_on_change | call s:realtime_dev_agent_schedule_check('cursor_context') | endif
+    endif
   augroup END
 endif
 

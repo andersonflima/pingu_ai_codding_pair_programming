@@ -477,8 +477,11 @@ O repositorio expoe `plugin/` e `autoload/` na raiz, entao pode ser instalado di
     vim.g.realtime_dev_agent_auto_fix_visual_mode = "preserve"
     vim.g.realtime_dev_agent_review_on_open = 0
     vim.g.realtime_dev_agent_realtime_on_change = 1
+    vim.g.realtime_dev_agent_realtime_on_cursor_hold = 1
+    vim.g.realtime_dev_agent_realtime_on_buf_enter = 1
     vim.g.realtime_dev_agent_realtime_insert_mode = 0
     vim.g.realtime_dev_agent_auto_check_max_lines = 600
+    vim.g.realtime_dev_agent_auto_fix_doc_cursor_context_only = 1
   end,
 }
 ```
@@ -505,9 +508,13 @@ Plug 'andersonflima/pingu_ai_codding_pair_programming'
 - `let g:realtime_dev_agent_auto_fix_scope = 'cursor_only'` restringe ao cursor imediato
 - `let g:realtime_dev_agent_auto_fix_near_cursor_radius = 24` controla a distancia maxima entre cursor e trecho elegivel
 - `let g:realtime_dev_agent_auto_fix_cluster_gap = 8` controla a distancia maxima entre issues do mesmo trecho
+- `let g:realtime_dev_agent_realtime_on_cursor_hold = 1` faz o agente agir sozinho quando o cursor para sobre um bloco sem exigir edicao manual
+- `let g:realtime_dev_agent_realtime_on_buf_enter = 1` agenda uma checagem leve ao entrar no arquivo atual
 - `let g:realtime_dev_agent_auto_fix_visual_mode = 'preserve'` reduz ruido visual durante o batch
 - `let g:realtime_dev_agent_realtime_insert_mode = 1` volta a analisar tambem no meio da digitacao
 - `let g:realtime_dev_agent_auto_check_max_lines = 600` limita checks automaticos a arquivos menores
+- `let g:realtime_dev_agent_auto_fix_doc_cursor_context_only = 1` restringe `function_doc`, `class_doc`, `variable_doc` e `flow_comment` ao bloco textual atual do cursor
+- `let g:realtime_dev_agent_auto_fix_doc_cursor_context_max_lines = 80` controla o tamanho maximo desse bloco automatico
 
 ### Terminal no Vim / Neovim
 

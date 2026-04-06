@@ -178,6 +178,16 @@ if !exists('g:realtime_dev_agent_realtime_on_change')
   let g:realtime_dev_agent_realtime_on_change = 1
 endif
 
+if !exists('g:realtime_dev_agent_realtime_on_cursor_hold')
+  " Quando o cursor para sobre um bloco, reanalisa o contexto atual sem exigir edicao manual.
+  let g:realtime_dev_agent_realtime_on_cursor_hold = 1
+endif
+
+if !exists('g:realtime_dev_agent_realtime_on_buf_enter')
+  " Ao entrar em um buffer suportado, agenda uma checagem leve no contexto atual do cursor.
+  let g:realtime_dev_agent_realtime_on_buf_enter = 1
+endif
+
 if !exists('g:realtime_dev_agent_realtime_insert_mode')
   " 1 analisa tambem durante Insert mode; 0 concentra a checagem ao sair da insercao.
   let g:realtime_dev_agent_realtime_insert_mode = 0
@@ -346,6 +356,16 @@ endif
 if !exists('g:realtime_dev_agent_auto_fix_doc_max_per_check_large_file')
   " Em arquivo grande, limita comentarios/docstrings por ciclo para reduzir custo visual.
   let g:realtime_dev_agent_auto_fix_doc_max_per_check_large_file = 4
+endif
+
+if !exists('g:realtime_dev_agent_auto_fix_doc_cursor_context_only')
+  " Restringe comentarios automaticos ao bloco textual atual do cursor.
+  let g:realtime_dev_agent_auto_fix_doc_cursor_context_only = 1
+endif
+
+if !exists('g:realtime_dev_agent_auto_fix_doc_cursor_context_max_lines')
+  " Numero maximo de linhas contiguousas consideradas como contexto documental do cursor.
+  let g:realtime_dev_agent_auto_fix_doc_cursor_context_max_lines = 80
 endif
 
 if !exists('g:realtime_dev_agent_auto_fix_visual_mode')

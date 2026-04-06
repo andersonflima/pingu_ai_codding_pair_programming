@@ -39,10 +39,13 @@ function writePackageJson(workspaceRoot, scripts = {}) {
   );
 }
 
-function buildNvimScript(targetFile, extraCommands = []) {
+function buildNvimScript(targetFile, extraCommands = [], options = {}) {
   const pluginFile = path.join(repoRoot, 'vim', 'plugin', 'realtime_dev_agent.vim');
   const internalFile = path.join(repoRoot, 'vim', 'autoload', 'realtime_dev_agent', 'internal.vim');
   const extra = Array.isArray(extraCommands) ? extraCommands : [];
+  const postEditCommands = Array.isArray(options.postEditCommands) && options.postEditCommands.length > 0
+    ? options.postEditCommands
+    : ['RealtimeDevAgentCheck', 'write', 'qa!'];
 
   return [
     'set nomore',
@@ -62,15 +65,13 @@ function buildNvimScript(targetFile, extraCommands = []) {
     `execute 'source ' . fnameescape(${vimString(pluginFile)})`,
     `execute 'source ' . fnameescape(${vimString(internalFile)})`,
     `execute 'edit ' . fnameescape(${vimString(targetFile)})`,
-    'RealtimeDevAgentCheck',
-    'write',
-    'qa!',
+    ...postEditCommands,
   ].join('\n');
 }
 
-function runNvimForFile(workspaceRoot, targetFile, extraCommands = []) {
+function runNvimForFile(workspaceRoot, targetFile, extraCommands = [], options = {}) {
   const runnerScript = path.join(workspaceRoot, 'run-smoke.vim');
-  writeFile(runnerScript, buildNvimScript(targetFile, extraCommands));
+  writeFile(runnerScript, buildNvimScript(targetFile, extraCommands, options));
 
   return spawnSync('nvim', [
     '--headless',
@@ -91,7 +92,7 @@ function runNvimForFile(workspaceRoot, targetFile, extraCommands = []) {
 function runCase(name, buildCase) {
   const workspaceRoot = createWorkspace(`realtime-dev-agent-nvim-${name}-`);
   const setup = buildCase(workspaceRoot);
-  const result = runNvimForFile(workspaceRoot, setup.targetFile, setup.vimCommands || []);
+  const result = runNvimForFile(workspaceRoot, setup.targetFile, setup.vimCommands || [], setup.scriptOptions || {});
   if (result.status !== 0) {
     const timeoutSuffix = result.error && result.error.code === 'ETIMEDOUT'
       ? `\nTempo limite excedido para ${name}.`
@@ -286,8 +287,41 @@ const buildPythonFunctionDocCase = buildTextAutofixCase({
   failureMessage: 'nvim python function_doc: a docstring esperada nao foi inserida dentro da funcao.',
 });
 
+const buildPythonCursorContextAutodocCase = buildTextAutofixCase({
+  relativePath: path.join('src', 'billing_cursor_context.py'),
+  vimCommands: [
+    'let g:realtime_dev_agent_realtime_on_change = 1',
+    'let g:realtime_dev_agent_realtime_on_cursor_hold = 1',
+    'let g:realtime_dev_agent_realtime_on_buf_enter = 0',
+    'let g:realtime_dev_agent_realtime_delay = 200',
+    'let g:realtime_dev_agent_auto_fix_doc_cursor_context_only = 1',
+  ],
+  content: [
+    'def total(',
+    '    valor: int,',
+    ') -> int:',
+    '    subtotal = valor + 1',
+    '    return subtotal',
+    '',
+    'def calcular_frete(',
+    '    distancia: int,',
+    ') -> int:',
+    '    valor = distancia * 2',
+    '    return valor',
+  ].join('\n'),
+  summarize: (contents) => {
+    const normalized = String(contents || '');
+    return {
+      documentedCursorContextMethod: /def total\([\s\S]+?\) -> int:\n\s+"""/.test(normalized),
+      preservedFarMethodWithoutAutofix: !/def calcular_frete\([\s\S]+?\) -> int:\n\s+"""/.test(normalized),
+    };
+  },
+  failureMessage: 'nvim python cursor context: o agente deveria documentar automaticamente o bloco atual do cursor sem tocar no metodo distante.',
+});
+
 const buildPythonVariableDocCase = buildTextAutofixCase({
   relativePath: path.join('src', 'billing_variable_doc.py'),
+  vimCommands: ['let g:realtime_dev_agent_auto_fix_doc_cursor_context_only = 0'],
   content: [
     'from dataclasses import dataclass',
     'from typing import Any',
@@ -309,6 +343,7 @@ const buildPythonVariableDocCase = buildTextAutofixCase({
 
 const buildPythonStructuredCommentsCase = buildTextAutofixCase({
   relativePath: path.join('src', 'pedido.py'),
+  vimCommands: ['let g:realtime_dev_agent_auto_fix_doc_cursor_context_only = 0'],
   content: [
     'from dataclasses import dataclass',
     '',
@@ -379,6 +414,7 @@ const buildPythonMultilineImportPreservedCase = buildTextAutofixCase({
 
 const buildJavaScriptFunctionDocVariantsCase = buildTextAutofixCase({
   relativePath: path.join('src', 'billing_variants.js'),
+  vimCommands: ['let g:realtime_dev_agent_auto_fix_doc_cursor_context_only = 0'],
   content: [
     'const soma = (a, b) => a + b;',
     '',
@@ -877,6 +913,18 @@ function main() {
   cases.push(runCase('cross-file-write-file-blocked-by-default', buildCrossFileWriteFileBlockedByDefaultCase));
   cases.push(runCase('lua-function-doc', buildLuaFunctionDocCase));
   cases.push(runCase('python-function-doc', buildPythonFunctionDocCase));
+  cases.push(runCase('python-cursor-context-autodoc', (workspaceRoot) => ({
+    ...buildPythonCursorContextAutodocCase(workspaceRoot),
+    scriptOptions: {
+      postEditCommands: [
+        'call cursor(1, 1)',
+        'doautocmd <nomodeline> CursorHold',
+        'sleep 350m',
+        'write',
+        'qa!',
+      ],
+    },
+  })));
   cases.push(runCase('python-structured-comments', buildPythonStructuredCommentsCase));
   cases.push(runCase('python-variable-doc', buildPythonVariableDocCase));
   cases.push(runCase('python-multiline-import-preserved', buildPythonMultilineImportPreservedCase));
