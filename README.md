@@ -29,6 +29,18 @@ O projeto funciona hoje em `Vim/Neovim`, `VS Code` e `Zed`, com runtime local e 
 - Torna o loop de review mais curto: o agente analisa, sugere, aplica, remove o gatilho e reanalisa.
 - Funciona bem em ambiente local: boa parte das capacidades ja esta no runtime offline.
 
+## Barra de excelencia
+
+O backlog oficial da barra de excelencia do agente esta em [docs/agent-excellence-backlog.md](./docs/agent-excellence-backlog.md).
+
+Esse contrato organiza o que o Pingu precisa fazer automaticamente para ser excelente:
+
+- nao quebrar codigo nem imports
+- operar no arquivo atual por padrao
+- comentar e corrigir com contexto real
+- validar e reverter sozinho quando piorar o estado do arquivo
+- manter baixo custo no loop de edicao
+
 ## O que o Pingu nao e
 
 - Nao e um chat generico de perguntas soltas.
