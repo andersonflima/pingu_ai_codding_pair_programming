@@ -25,6 +25,7 @@ function buildLanguageCoverageRow(languageId, registryIds) {
     offlineCheckupCases: Number(metadata.offlineCheckupCases || 0),
     aiOptionalMatrixCases: Number(metadata.aiOptionalMatrixCases || 0),
     representativeEditorSmoke: Boolean(metadata.representativeEditorSmoke),
+    stackQuality: metadata.stackQuality || {},
   };
 
   return {
@@ -64,6 +65,7 @@ function main() {
       'representativeEditorSmoke',
       'offlineSignalKinds',
       'maturity',
+      'stackQuality',
     ],
   }, null, 2)}\n`);
 

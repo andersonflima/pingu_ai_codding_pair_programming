@@ -39,6 +39,13 @@ function buildValidationMetadata({
     : offlineCheckupCases >= 2
       ? 'intermediate'
       : 'basic';
+  const stackQuality = {
+    maxFalsePositiveRate: representativeEditorSmoke ? 0.12 : 0.18,
+    maxRollbackRegressions: 0,
+    maxRealtimeLatencyMs: representativeEditorSmoke ? 180 : 220,
+    minCheckupCases: representativeEditorSmoke ? Math.max(2, Math.min(offlineCheckupCases, 3)) : Math.max(1, Math.min(offlineCheckupCases, 2)),
+    requiresRepresentativeEditorSmoke: representativeEditorSmoke,
+  };
 
   return {
     languageId,
@@ -49,6 +56,7 @@ function buildValidationMetadata({
     representativeEditorSmoke,
     offlineSignalKinds,
     maturity,
+    stackQuality,
   };
 }
 

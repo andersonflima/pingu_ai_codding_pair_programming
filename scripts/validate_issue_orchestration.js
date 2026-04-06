@@ -9,6 +9,7 @@ const { buildFollowUpInstruction } = require('../lib/follow-up');
 const {
   autoFixNoOpReason,
   buildIssueConfidenceReport,
+  semanticCommentPriorityForIssue,
   semanticPriorityForIssue,
 } = require('../lib/issue-confidence');
 const { classifyAutofixBatch, evaluateAutofixGuard } = require('../lib/autofix-guard');
@@ -94,6 +95,19 @@ function main() {
         functionDocPriority: functionDocIssue.autofixPriority,
         variableDocPriority: variableDocIssue.autofixPriority,
       },
+    );
+    assert(
+      semanticCommentPriorityForIssue(functionDocIssue) < semanticCommentPriorityForIssue(variableDocIssue),
+      'orchestration: ranking semantico de comentario deveria priorizar a funcao principal acima do atributo contextual',
+      {
+        functionDocPriority: semanticCommentPriorityForIssue(functionDocIssue),
+        variableDocPriority: semanticCommentPriorityForIssue(variableDocIssue),
+      },
+    );
+    assert(
+      String(functionDocIssue.snippet || '').includes('RoomSession'),
+      'orchestration: documentacao de funcao deveria carregar a entidade do projeto quando houver contexto suficiente',
+      { snippet: functionDocIssue.snippet },
     );
 
     const projectMemory = loadProjectMemory(sourceFile);

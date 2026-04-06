@@ -8,6 +8,18 @@ const {
 } = require('../lib/autofix-guard');
 const { resolvePreferredInsertBeforeLine } = require('../lib/snippet-placement');
 
+const DOCUMENTATION_KINDS = new Set([
+  'class_doc',
+  'flow_comment',
+  'function_comment',
+  'function_doc',
+  'moduledoc',
+  'variable_doc',
+]);
+const DEFAULT_LARGE_FILE_LINE_THRESHOLD = 260;
+const DEFAULT_DOCUMENTATION_MAX_PER_PASS = 0;
+const DEFAULT_DOCUMENTATION_MAX_PER_PASS_LARGE_FILE = 4;
+
 function createEditRuntime(deps) {
   const {
     fs,
@@ -23,6 +35,51 @@ function createEditRuntime(deps) {
     resolveIssueAction,
     semanticPriorityForIssue = (issue) => Number(issue && issue.autofixPriority || fixPriorityForKind(issue && issue.kind)),
   } = deps;
+
+  function readNumericEnv(name, fallback) {
+    const parsed = Number.parseInt(String(process.env[name] || fallback), 10);
+    if (!Number.isFinite(parsed)) {
+      return fallback;
+    }
+    return parsed;
+  }
+
+  function documentationLimitForDocument(document) {
+    const baseLimit = Math.max(0, readNumericEnv('PINGU_AUTOFIX_DOC_MAX_PER_PASS', DEFAULT_DOCUMENTATION_MAX_PER_PASS));
+    const largeFileThreshold = Math.max(0, readNumericEnv('PINGU_AUTOFIX_LARGE_FILE_LINE_THRESHOLD', DEFAULT_LARGE_FILE_LINE_THRESHOLD));
+    const largeFileLimit = Math.max(0, readNumericEnv('PINGU_AUTOFIX_DOC_MAX_PER_PASS_LARGE_FILE', DEFAULT_DOCUMENTATION_MAX_PER_PASS_LARGE_FILE));
+    const isLargeFile = largeFileThreshold > 0 && Number(document && document.lineCount || 0) > largeFileThreshold;
+
+    if (!isLargeFile) {
+      return baseLimit;
+    }
+    if (baseLimit <= 0) {
+      return largeFileLimit;
+    }
+    if (largeFileLimit <= 0) {
+      return baseLimit;
+    }
+    return Math.min(baseLimit, largeFileLimit);
+  }
+
+  function limitDocumentationCandidates(document, issues) {
+    const limit = documentationLimitForDocument(document);
+    if (limit <= 0) {
+      return issues;
+    }
+
+    let documentationCount = 0;
+    return issues.filter((issue) => {
+      if (!DOCUMENTATION_KINDS.has(String(issue && issue.kind || '').trim())) {
+        return true;
+      }
+      if (documentationCount >= limit) {
+        return false;
+      }
+      documentationCount += 1;
+      return true;
+    });
+  }
 
   function issueActionIdentity(issue) {
     const action = resolveIssueAction(issue);
@@ -415,6 +472,32 @@ function createEditRuntime(deps) {
     return 0;
   }
 
+  function issueShiftAdjustment(issue) {
+    const delta = lineDeltaForIssue(issue);
+    if (delta === 0) {
+      return null;
+    }
+    const action = resolveIssueAction(issue);
+    return {
+      line: Number(issue && issue.line || 1),
+      delta,
+      inclusive: action.op === 'insert_before' || action.op === 'replace_line',
+    };
+  }
+
+  function cumulativeLineShift(originLine, adjustments) {
+    return (Array.isArray(adjustments) ? adjustments : []).reduce((shift, adjustment) => {
+      if (!adjustment || typeof adjustment !== 'object') {
+        return shift;
+      }
+      const line = Number(adjustment.line || 1);
+      if (originLine > line || (adjustment.inclusive && originLine === line)) {
+        return shift + Number(adjustment.delta || 0);
+      }
+      return shift;
+    }, 0);
+  }
+
   function compareFixCandidates(left, right) {
     const leftPriority = Number(left && left.autofixPriority || semanticPriorityForIssue(left));
     const rightPriority = Number(right && right.autofixPriority || semanticPriorityForIssue(right));
@@ -493,27 +576,28 @@ function createEditRuntime(deps) {
     }
 
     candidates.sort(compareFixCandidates);
+    const boundedCandidates = limitDocumentationCandidates(document, candidates);
 
-    const inlineCandidates = candidates.filter((issue) => resolveIssueAction(issue).op !== 'write_file');
-    const deferredWriteCandidates = candidates.filter((issue) => resolveIssueAction(issue).op === 'write_file');
+    const inlineCandidates = boundedCandidates.filter((issue) => resolveIssueAction(issue).op !== 'write_file');
+    const deferredWriteCandidates = boundedCandidates.filter((issue) => resolveIssueAction(issue).op === 'write_file');
     const batch = inlineCandidates.length > 0 ? inlineCandidates : deferredWriteCandidates;
     const affectedFiles = collectAffectedFilePaths(document.uri.fsPath, batch, resolveIssueAction);
     const snapshot = captureFileSnapshot(affectedFiles);
 
     let applied = false;
     const appliedIssues = [];
-    const lineShiftByOrigin = new Map();
+    const lineAdjustments = [];
     for (const issue of batch) {
       const originLine = Number(issue && issue.line || 1);
-      const lineShift = lineShiftByOrigin.get(originLine) || 0;
+      const lineShift = cumulativeLineShift(originLine, lineAdjustments);
       const shiftedIssue = shiftIssueForBatch(issue, lineShift);
       const changed = await applySnippetIssue(document, shiftedIssue);
       if (changed) {
         applied = true;
         appliedIssues.push(shiftedIssue);
-        const delta = lineDeltaForIssue(shiftedIssue);
-        if (delta !== 0) {
-          lineShiftByOrigin.set(originLine, lineShift + delta);
+        const adjustment = issueShiftAdjustment(shiftedIssue);
+        if (adjustment) {
+          lineAdjustments.push(adjustment);
         }
       }
     }

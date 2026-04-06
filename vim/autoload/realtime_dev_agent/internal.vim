@@ -445,6 +445,25 @@ function! s:auto_fix_near_cursor_radius() abort
   if type(l:radius) != v:t_number
     let l:radius = str2nr(string(l:radius))
   endif
+  if s:is_large_auto_fix_buffer()
+    let l:radius = min([l:radius, s:auto_fix_large_file_radius()])
+  endif
+  return max([0, l:radius])
+endfunction
+
+function! s:auto_fix_large_file_line_threshold() abort
+  let l:threshold = get(g:, 'realtime_dev_agent_auto_fix_large_file_line_threshold', 260)
+  if type(l:threshold) != v:t_number
+    let l:threshold = str2nr(string(l:threshold))
+  endif
+  return max([0, l:threshold])
+endfunction
+
+function! s:auto_fix_large_file_radius() abort
+  let l:radius = get(g:, 'realtime_dev_agent_auto_fix_large_file_radius', 12)
+  if type(l:radius) != v:t_number
+    let l:radius = str2nr(string(l:radius))
+  endif
   return max([0, l:radius])
 endfunction
 
@@ -454,6 +473,62 @@ function! s:auto_fix_cluster_gap() abort
     let l:gap = str2nr(string(l:gap))
   endif
   return max([1, l:gap])
+endfunction
+
+function! s:auto_fix_doc_max_per_check() abort
+  let l:limit = get(g:, 'realtime_dev_agent_auto_fix_doc_max_per_check', 0)
+  if type(l:limit) != v:t_number
+    let l:limit = str2nr(string(l:limit))
+  endif
+  return max([0, l:limit])
+endfunction
+
+function! s:auto_fix_doc_max_per_check_large_file() abort
+  let l:limit = get(g:, 'realtime_dev_agent_auto_fix_doc_max_per_check_large_file', 4)
+  if type(l:limit) != v:t_number
+    let l:limit = str2nr(string(l:limit))
+  endif
+  return max([0, l:limit])
+endfunction
+
+function! s:is_large_auto_fix_buffer() abort
+  let l:threshold = s:auto_fix_large_file_line_threshold()
+  if l:threshold <= 0
+    return v:false
+  endif
+  return line('$') > l:threshold
+endfunction
+
+function! s:is_documentation_issue(item) abort
+  let l:kind = get(a:item, 'kind', '')
+  return index(['class_doc', 'flow_comment', 'function_comment', 'function_doc', 'moduledoc', 'variable_doc'], l:kind) != -1
+endfunction
+
+function! s:limit_documentation_candidates(items) abort
+  let l:limit = s:auto_fix_doc_max_per_check()
+  if s:is_large_auto_fix_buffer()
+    let l:large_limit = s:auto_fix_doc_max_per_check_large_file()
+    if l:limit <= 0 || (l:large_limit > 0 && l:large_limit < l:limit)
+      let l:limit = l:large_limit
+    endif
+  endif
+
+  if l:limit <= 0
+    return a:items
+  endif
+
+  let l:selected = []
+  let l:doc_count = 0
+  for l:item in a:items
+    if s:is_documentation_issue(l:item)
+      if l:doc_count >= l:limit
+        continue
+      endif
+      let l:doc_count += 1
+    endif
+    call add(l:selected, l:item)
+  endfor
+  return l:selected
 endfunction
 
 function! s:compare_issue_line_asc(entry_a, entry_b) abort
@@ -2484,6 +2559,11 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
   call sort(l:auto_candidates, {entry_a, entry_b ->
         \ s:compare_fix_order(entry_a, entry_b)
         \ })
+  let l:auto_candidates = s:limit_documentation_candidates(l:auto_candidates)
+
+  if empty(l:auto_candidates)
+    return 0
+  endif
 
   if mode() =~# '^i'
     let s:realtime_dev_agent_pending_auto_fixes = l:auto_candidates
@@ -2501,7 +2581,7 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
   let l:file_key = fnamemodify(a:file, ':p')
   let l:fix_guard = get(s:realtime_dev_agent_fix_guard, l:file_key, {})
   let l:line_kind_applied = {}
-  let l:line_shift_by_origin = {}
+  let l:line_adjustments = []
   let l:visual_batch = s:start_auto_fix_visual_batch(l:current_buf)
   let s:realtime_dev_agent_auto_fix_busy = v:true
   try
@@ -2546,13 +2626,13 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
       call add(l:line_kinds, l:item_apply_key)
       let l:line_kind_applied[l:item_line_key] = l:line_kinds
 
-      let l:shifted_item = s:shift_issue_for_batch(l:item, get(l:line_shift_by_origin, l:item_line_key, 0))
+      let l:shifted_item = s:shift_issue_for_batch(l:item, s:cumulative_line_shift(l:item_line, l:line_adjustments))
       if s:apply_issue_snippet(l:shifted_item, v:false)
         let l:applied += 1
         call add(l:applied_items, l:shifted_item)
-        let l:line_delta = s:issue_line_delta(l:shifted_item)
-        if l:line_delta != 0
-          let l:line_shift_by_origin[l:item_line_key] = get(l:line_shift_by_origin, l:item_line_key, 0) + l:line_delta
+        let l:adjustment = s:issue_shift_adjustment(l:shifted_item)
+        if !empty(l:adjustment)
+          call add(l:line_adjustments, l:adjustment)
         endif
       endif
     endfor
@@ -2643,6 +2723,36 @@ function! s:issue_line_delta(item) abort
   endif
 
   return 0
+endfunction
+
+function! s:issue_shift_adjustment(item) abort
+  let l:delta = s:issue_line_delta(a:item)
+  if l:delta == 0
+    return {}
+  endif
+
+  let l:action = s:issue_effective_action(a:item)
+  let l:op = get(l:action, 'op', '')
+  return {
+        \ 'line': get(a:item, 'lnum', 0),
+        \ 'delta': l:delta,
+        \ 'inclusive': index(['insert_before', 'replace_line'], l:op) != -1,
+        \ }
+endfunction
+
+function! s:cumulative_line_shift(origin_line, adjustments) abort
+  let l:origin_line = max([0, a:origin_line])
+  let l:shift = 0
+  for l:adjustment in a:adjustments
+    if type(l:adjustment) != v:t_dict
+      continue
+    endif
+    let l:line = get(l:adjustment, 'line', 0)
+    if l:origin_line > l:line || (get(l:adjustment, 'inclusive', v:false) && l:origin_line == l:line)
+      let l:shift += get(l:adjustment, 'delta', 0)
+    endif
+  endfor
+  return l:shift
 endfunction
 
 function! s:compare_fix_order(entry_a, entry_b) abort

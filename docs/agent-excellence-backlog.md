@@ -31,31 +31,31 @@ Itens bloqueadores. Sem isso o agente ainda atrapalha mais do que ajuda.
 - `done`: bloquear renomeacao generica de import quando a origem nao foi validada
 - `done`: manter rollback automatico quando um lote altera o codigo e piora o estado final
 - `done`: reaplicar lote com ancora estavel quando multiplas issues concorrem na mesma regiao
-- `in_progress`: garantir comentario contextual para funcao, metodo, classe e variavel relevante nas linguagens principais
-- `in_progress`: usar formato idiomatico de documentacao por linguagem em vez de comentario generico
+- `done`: garantir comentario contextual para funcao, metodo, classe e variavel relevante nas linguagens principais
+- `done`: usar formato idiomatico de documentacao por linguagem em vez de comentario generico
 - `done`: validar preservacao de import/use/include nas linguagens com autofix de simbolo ativo: JavaScript, Python, Elixir, Go, Rust e C
-- `in_progress`: reduzir falsos positivos em variaveis temporarias, campos triviais e comentarios redundantes
+- `done`: reduzir falsos positivos em variaveis temporarias, campos triviais e comentarios redundantes
 
 ## P1
 
 Itens de alto impacto para qualidade percebida e fluidez de pareamento.
 
 - `done`: hierarquia de prioridade por severidade real: sintaxe, import, contrato, comentario importante, teste, scaffold
-- `in_progress`: comentario contextual por semantica de dominio, nao so por heuristica textual de nome
-- `in_progress`: cobertura forte de assinatura multiline, decorators, dataclass, class fields, methods e overload-like declarations
+- `done`: comentario contextual por semantica de dominio, nao so por heuristica textual de nome
+- `done`: cobertura forte de assinatura multiline, decorators, dataclass, class fields, methods e overload-like declarations
 - `done`: politicas de no-op explicitas para quando o agente nao tiver prova suficiente para corrigir
-- `in_progress`: smoke representativo por linguagem nos tres editores com casos de comentario, import preservado e rollback
-- `pending`: reduzir custo em tempo real por tamanho de arquivo, distancia do cursor e tipo de issue
+- `done`: smoke representativo por linguagem nos tres editores com casos de comentario, import preservado e rollback
+- `done`: reduzir custo em tempo real por tamanho de arquivo, distancia do cursor e tipo de issue
 - `done`: follow-up contextual melhor para continuar o pareamento sem sair do arquivo
 
 ## P2
 
 Itens de maturidade. Nao bloqueiam utilidade basica, mas elevam consistencia e confianca.
 
-- `pending`: ranking semantico de comentarios para priorizar responsabilidade de dominio sobre ruido local
+- `done`: ranking semantico de comentarios para priorizar responsabilidade de dominio sobre ruido local
 - `done`: memoria local de padroes arquiteturais do repo para ajustar snippet, docs e testes
 - `done`: guardas especificas por linguagem para lotes puramente documentais versus lotes estruturais
-- `pending`: contratos de qualidade por stack com metas objetivas de falso positivo, rollback e latencia
+- `done`: contratos de qualidade por stack com metas objetivas de falso positivo, rollback e latencia
 - `done`: relatorio consolidado de confianca por kind e por linguagem
 
 ## Criterios de Aceite
@@ -105,13 +105,12 @@ Os gates minimos para sustentar esta barra sao:
 - `node scripts/validate_node_real_code_checkup.js`
 - `node scripts/validate_elixir_real_code_checkup.js`
 - `node scripts/validate_issue_orchestration.js`
+- `node scripts/validate_stack_quality_contracts.js`
 - `node scripts/nvim_functional_smoke.js`
 - `node scripts/validate_vscode_autofix_guard.js`
 - `node scripts/editor_parity_contract.js`
 
 ## Proxima Ordem de Execucao Recomendada
 
-1. Fechar preservacao de imports/use/include nas linguagens ativas ainda sem regressao dedicada.
-2. Melhorar comentario contextual com IA para reduzir texto mecanico em `function_doc`, `class_doc`, `variable_doc` e `flow_comment`.
-3. Diminuir falso positivo de `variable_doc` e refinar priorizacao de lote no editor.
-4. Levar os mesmos casos representativos para `VS Code` e `Zed`.
+1. Validar a trilha live com OpenAI real assim que a conta estiver liberada para o endpoint `/v1/responses`.
+2. Medir a qualidade semantica dos comentarios gerados ao vivo para ajustar prompts e limites de confianca.

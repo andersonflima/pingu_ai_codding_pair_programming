@@ -323,9 +323,29 @@ if !exists('g:realtime_dev_agent_auto_fix_near_cursor_radius')
   let g:realtime_dev_agent_auto_fix_near_cursor_radius = 24
 endif
 
+if !exists('g:realtime_dev_agent_auto_fix_large_file_line_threshold')
+  " Acima deste tamanho o agente encolhe o raio automatico e limita comentarios por lote.
+  let g:realtime_dev_agent_auto_fix_large_file_line_threshold = 260
+endif
+
+if !exists('g:realtime_dev_agent_auto_fix_large_file_radius')
+  " Raio reduzido usado em arquivos grandes para manter o lote perto do cursor.
+  let g:realtime_dev_agent_auto_fix_large_file_radius = 12
+endif
+
 if !exists('g:realtime_dev_agent_auto_fix_cluster_gap')
   " Distancia maxima entre issues consecutivos para pertencerem ao mesmo trecho.
   let g:realtime_dev_agent_auto_fix_cluster_gap = 8
+endif
+
+if !exists('g:realtime_dev_agent_auto_fix_doc_max_per_check')
+  " Limite global de issues documentais por ciclo; 0 remove o corte.
+  let g:realtime_dev_agent_auto_fix_doc_max_per_check = 0
+endif
+
+if !exists('g:realtime_dev_agent_auto_fix_doc_max_per_check_large_file')
+  " Em arquivo grande, limita comentarios/docstrings por ciclo para reduzir custo visual.
+  let g:realtime_dev_agent_auto_fix_doc_max_per_check_large_file = 4
 endif
 
 if !exists('g:realtime_dev_agent_auto_fix_visual_mode')

@@ -323,12 +323,21 @@ const buildPythonStructuredCommentsCase = buildTextAutofixCase({
     '    ) -> int:',
     '        subtotal = valor + 1',
     '        return subtotal',
+    '',
+    '    @classmethod',
+    '    def from_payload(',
+    '        cls,',
+    '        payload: dict[str, str],',
+    '    ) -> "Pedido":',
+    '        state = payload["chat_state"]',
+    '        return cls(chat_state=state)',
   ].join('\n'),
   summarize: (contents) => {
     const normalized = String(contents || '');
     return {
-      insertedClassDoc: normalized.includes('Representa a responsabilidade principal de Pedido.'),
-      insertedMethodDocstring: /def total\([\s\S]+?\) -> int:\n\s+"""/.test(normalized),
+      insertedClassDoc: /class Pedido:\n\s+"""/.test(normalized),
+      insertedMethodDocstring: /def total\([\s\S]+?\) -> int:\n\s+"""/.test(normalized)
+        || /@classmethod\n\s+def from_payload\([\s\S]+?\) -> "Pedido":\n\s+"""/.test(normalized),
       skippedTrivialRoomIdField: !/# .+\n    room_id: str/.test(normalized),
       insertedChatStateVariableDoc: /# .+\n    chat_state: dict\[str, str\]/.test(normalized),
       insertedFlowComment: normalized.includes('# Calcula subtotal para suportar o restante do fluxo.'),

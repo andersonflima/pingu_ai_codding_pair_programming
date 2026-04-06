@@ -138,6 +138,7 @@ function runNodeChecks() {
     'scripts/validate_active_language_quality_gates.js',
     'scripts/validate_external_editor_suite.js',
     'scripts/validate_issue_orchestration.js',
+    'scripts/validate_stack_quality_contracts.js',
     'scripts/vscode_extension_smoke.js',
     'vscode/agent-process.js',
     'vscode/code-actions.js',

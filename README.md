@@ -624,8 +624,13 @@ Importante:
 - se a chave mudar depois que o editor ja estiver aberto, reinicie o editor
 - nunca commite credenciais
 - `PINGU_AUTOMATIC_AI_COMMENT_MAX_ISSUES=8` limita quantas issues de comentario/documentacao podem subir para IA por ciclo automatico; use `0` para remover o limite
+- `PINGU_DOCUMENTATION_MAX_LINES=420` evita `function_doc`, `class_doc`, `variable_doc` e `flow_comment` automaticos em arquivos grandes; use `0` para remover o corte
 - `PINGU_FLOW_COMMENT_MAX_LINES=260` evita `flow_comment` automatico em arquivos grandes; use `0` para remover o corte
+- `PINGU_AUTOFIX_LARGE_FILE_LINE_THRESHOLD=260` define a partir de quantas linhas o VS Code passa a encolher o lote automatico
+- `PINGU_AUTOFIX_DOC_MAX_PER_PASS=0` limita quantas issues documentais o VS Code aplica por ciclo; `0` remove o corte
+- `PINGU_AUTOFIX_DOC_MAX_PER_PASS_LARGE_FILE=4` limita docstrings/comentarios por ciclo em arquivo grande no VS Code
 - `PINGU_VALIDATE_WITH_OPENAI=1` liga os cenarios live durante os validadores que ja suportam OpenAI Codex
+- no LazyVim, os equivalentes sao `g:realtime_dev_agent_auto_fix_large_file_line_threshold`, `g:realtime_dev_agent_auto_fix_large_file_radius` e `g:realtime_dev_agent_auto_fix_doc_max_per_check_large_file`
 
 ## Validacao
 
@@ -670,6 +675,12 @@ Para inspecionar a confianca agregada de um arquivo com prioridades e contexto l
 
 ```bash
 node scripts/issue_confidence_report.js caminho/do/arquivo.py
+```
+
+### Contratos objetivos por stack
+
+```bash
+npm run validate:stack-contracts
 ```
 
 ### Quality gates de todas as linguagens ativas

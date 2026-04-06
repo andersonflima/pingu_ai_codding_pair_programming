@@ -541,11 +541,20 @@ function representativeLanguageCases(workspaceRoot) {
         '    ) -> int:',
         '        subtotal = valor + 1',
         '        return subtotal',
+        '',
+        '    @classmethod',
+        '    def from_payload(',
+        '        cls,',
+        '        payload: dict[str, str],',
+        '    ) -> "Pedido":',
+        '        state = payload["chat_state"]',
+        '        return cls(chat_state=state)',
       ].join('\n'),
       isValid: (contents) => {
         const normalized = String(contents || '');
-        return normalized.includes('Representa a responsabilidade principal de Pedido.')
+        return /class Pedido:\n\s+"""/.test(normalized)
           && /def total\([\s\S]+?\) -> int:\n\s+"""/.test(normalized)
+          && /@classmethod\n\s+def from_payload\([\s\S]+?\) -> "Pedido":\n\s+"""/.test(normalized)
           && !/# .+\n    room_id: str/.test(normalized)
           && /# .+\n    chat_state: dict\[str, str\]/.test(normalized)
           && normalized.includes('# Calcula subtotal para suportar o restante do fluxo.');
