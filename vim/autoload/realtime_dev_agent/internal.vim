@@ -18,6 +18,8 @@ let s:realtime_dev_agent_started = v:false
 let s:realtime_dev_agent_visual_batch_context = {}
 let s:realtime_dev_agent_analysis_cache = {}
 let s:realtime_dev_agent_analysis_cache_order = []
+let s:realtime_dev_agent_async_analysis_job = -1
+let s:realtime_dev_agent_async_analysis_context = {}
 
 function! s:issue_kind_entry(kind) abort
   let l:registry = get(g:, 'realtime_dev_agent_issue_kind_registry', {})
@@ -136,6 +138,13 @@ function! s:run_shell_systemlist(command, cwd, ...) abort
     endif
     return systemlist(l:fallback)
   endtry
+endfunction
+
+function! s:realtime_async_enabled() abort
+  if !has('nvim') || !exists('*jobstart')
+    return v:false
+  endif
+  return get(g:, 'realtime_dev_agent_realtime_async', has('nvim') ? 1 : 0) ? v:true : v:false
 endfunction
 
 function! s:project_root(file) abort
@@ -306,6 +315,85 @@ function! s:track_buffer_tick(file, changedtick) abort
   call s:drop_analysis_cache_for_file(l:file_key)
 endfunction
 
+function! s:cleanup_async_analysis_temp_file(context) abort
+  let l:tmp_file = get(a:context, 'buffer_dirty_tmp', '')
+  if !empty(l:tmp_file)
+    silent! call delete(l:tmp_file)
+  endif
+endfunction
+
+function! s:stop_async_analysis_job() abort
+  let l:job = get(s:, 'realtime_dev_agent_async_analysis_job', -1)
+  let l:context = get(s:, 'realtime_dev_agent_async_analysis_context', {})
+  let s:realtime_dev_agent_async_analysis_job = -1
+  let s:realtime_dev_agent_async_analysis_context = {}
+
+  if l:job > 0
+    silent! call jobstop(l:job)
+  endif
+  call s:cleanup_async_analysis_temp_file(l:context)
+endfunction
+
+function! s:prepared_analysis_request(bufnr) abort
+  if a:bufnr <= 0 || !bufloaded(a:bufnr)
+    return {
+          \ 'ok': v:false,
+          \ 'file': '',
+          \ 'error': 'buffer indisponivel para analise',
+          \ }
+  endif
+
+  let l:file = fnamemodify(bufname(a:bufnr), ':p')
+  let l:changedtick = getbufvar(a:bufnr, 'changedtick', 0)
+  call s:track_buffer_tick(l:file, l:changedtick)
+
+  let l:cached = s:cached_analysis_for_buffer(l:file, l:changedtick)
+  if !empty(l:cached)
+    return {
+          \ 'ok': v:true,
+          \ 'file': l:file,
+          \ 'changedtick': l:changedtick,
+          \ 'cached': l:cached,
+          \ 'buffer_dirty_tmp': '',
+          \ }
+  endif
+
+  let l:runner = s:realtime_dev_agent_script_runner()
+  if empty(l:runner)
+    return {
+          \ 'ok': v:false,
+          \ 'file': l:file,
+          \ 'error': 'runtime nao encontrado',
+          \ }
+  endif
+
+  let l:target_file = l:file
+  let l:buffer_dirty_tmp = ''
+  if getbufvar(a:bufnr, '&modified')
+    let l:buffer_dirty_tmp = tempname()
+    call writefile(getbufline(a:bufnr, 1, '$'), l:buffer_dirty_tmp)
+    let l:target_file = l:buffer_dirty_tmp
+  endif
+
+  let l:root = s:project_root(l:file)
+  return {
+        \ 'ok': v:true,
+        \ 'file': l:file,
+        \ 'changedtick': l:changedtick,
+        \ 'buffer_dirty_tmp': l:buffer_dirty_tmp,
+        \ 'root': l:root,
+        \ 'argv': [
+        \   l:runner,
+        \   g:realtime_dev_agent_script,
+        \   '--analyze',
+        \   l:target_file,
+        \   '--source-path',
+        \   l:file,
+        \   '--vim'
+        \ ],
+        \ }
+endfunction
+
 function! s:should_run_auto_check(bufnr) abort
   let l:max_lines = s:auto_check_max_lines()
   if l:max_lines <= 0
@@ -340,7 +428,9 @@ function! s:realtime_dev_agent_open_review() abort
   endif
 
   call s:remember_code_window(win_getid())
-  call s:realtime_check_from_buffer(l:bufnr, g:realtime_dev_agent_realtime_open_qf, 0)
+  if !s:start_async_realtime_check(l:bufnr, g:realtime_dev_agent_realtime_open_qf, 0)
+    call s:realtime_check_from_buffer(l:bufnr, g:realtime_dev_agent_realtime_open_qf, 0)
+  endif
 endfunction
 
 function! s:realtime_dev_agent_start_current_buffer() abort
@@ -377,7 +467,9 @@ function! s:realtime_dev_agent_start_current_buffer() abort
     call s:window_open()
   endif
 
-  call s:realtime_check_from_buffer(l:bufnr, g:realtime_dev_agent_open_qf, 0)
+  if !s:start_async_realtime_check(l:bufnr, g:realtime_dev_agent_open_qf, 0)
+    call s:realtime_check_from_buffer(l:bufnr, g:realtime_dev_agent_open_qf, 0)
+  endif
   return v:true
 endfunction
 
@@ -2516,57 +2608,27 @@ function! s:parse_analysis_output(output, file, buffer_dirty_tmp) abort
 endfunction
 
 function! s:analysis_for_buffer(bufnr) abort
-  if a:bufnr <= 0 || !bufloaded(a:bufnr)
+  let l:request = s:prepared_analysis_request(a:bufnr)
+  if !get(l:request, 'ok', v:false)
     return {
           \ 'ok': v:false,
-          \ 'file': '',
+          \ 'file': get(l:request, 'file', ''),
           \ 'qf': [],
-          \ 'error': 'buffer indisponivel para analise',
+          \ 'error': get(l:request, 'error', 'falha ao preparar analise'),
           \ 'from_cache': v:false,
           \ }
   endif
 
-  let l:file = fnamemodify(bufname(a:bufnr), ':p')
-  let l:changedtick = getbufvar(a:bufnr, 'changedtick', 0)
-  call s:track_buffer_tick(l:file, l:changedtick)
-
-  let l:cached = s:cached_analysis_for_buffer(l:file, l:changedtick)
+  let l:cached = get(l:request, 'cached', {})
   if !empty(l:cached)
     return l:cached
   endif
 
-  let l:runner = s:realtime_dev_agent_script_runner()
-  if empty(l:runner)
-    return {
-          \ 'ok': v:false,
-          \ 'file': l:file,
-          \ 'qf': [],
-          \ 'error': 'runtime nao encontrado',
-          \ 'from_cache': v:false,
-          \ }
-  endif
-
-  let l:target_file = l:file
-  let l:buffer_dirty_tmp = ''
-  if getbufvar(a:bufnr, '&modified')
-    let l:buffer_dirty_tmp = tempname()
-    call writefile(getbufline(a:bufnr, 1, '$'), l:buffer_dirty_tmp)
-    let l:target_file = l:buffer_dirty_tmp
-  endif
-
-  let l:root = s:project_root(l:file)
-  let l:output = s:run_systemlist([
-        \ l:runner,
-        \ g:realtime_dev_agent_script,
-        \ '--analyze',
-        \ l:target_file,
-        \ '--source-path',
-        \ l:file,
-        \ '--vim'
-        \ ], l:root)
-  if !empty(l:buffer_dirty_tmp)
-    silent! call delete(l:buffer_dirty_tmp)
-  endif
+  let l:file = get(l:request, 'file', '')
+  let l:changedtick = get(l:request, 'changedtick', 0)
+  let l:buffer_dirty_tmp = get(l:request, 'buffer_dirty_tmp', '')
+  let l:output = s:run_systemlist(get(l:request, 'argv', []), get(l:request, 'root', ''))
+  call s:cleanup_async_analysis_temp_file(l:request)
 
   if v:shell_error != 0
     return {
@@ -2592,26 +2654,10 @@ function! s:collect_analysis_for_buffer(bufnr) abort
   return s:analysis_for_buffer(a:bufnr)
 endfunction
 
-function! s:realtime_check_from_buffer(bufnr, open_qf, show_echo) abort
-  if a:bufnr <= 0 || !bufloaded(a:bufnr)
-    return
-  endif
-
-  let l:file = fnamemodify(bufname(a:bufnr), ':p')
-  if !s:should_check_file(l:file)
-    return
-  endif
-
-  if bufnr('%') == a:bufnr && &buftype ==# ''
-    call s:remember_code_window(win_getid())
-  endif
-
-  if g:realtime_dev_agent_show_window && !s:realtime_dev_agent_is_realtime_check
-    call s:window_set_busy(l:file)
-  endif
-  let l:analysis = s:analysis_for_buffer(a:bufnr)
-  if !get(l:analysis, 'ok', v:false)
-    let l:is_missing_runtime = get(l:analysis, 'error', '') ==# 'runtime nao encontrado'
+function! s:realtime_check_handle_analysis(bufnr, analysis, open_qf, show_echo, realtime_mode) abort
+  let l:file = get(a:analysis, 'file', fnamemodify(bufname(a:bufnr), ':p'))
+  if !get(a:analysis, 'ok', v:false)
+    let l:is_missing_runtime = get(a:analysis, 'error', '') ==# 'runtime nao encontrado'
     if g:realtime_dev_agent_show_window
       if l:is_missing_runtime
         let l:error_lines = []
@@ -2645,19 +2691,31 @@ function! s:realtime_check_from_buffer(bufnr, open_qf, show_echo) abort
     return
   endif
 
-  let l:qf = deepcopy(get(l:analysis, 'qf', []))
-  if a:open_qf || g:realtime_dev_agent_show_window || !s:realtime_dev_agent_is_realtime_check
+  let l:qf = deepcopy(get(a:analysis, 'qf', []))
+  if a:open_qf || g:realtime_dev_agent_show_window || !a:realtime_mode
     call setqflist([], 'r', {'title': 'Realtime Dev Agent'})
     call setqflist(l:qf, 'a')
   endif
   let s:realtime_dev_agent_last_qf = l:qf
   let l:auto_fix_applied = 0
-  if g:realtime_dev_agent_auto_fix_enabled
-    let l:auto_fix_applied = s:realtime_dev_agent_apply_auto_fixes(l:qf, l:file)
-  endif
+  let l:previous_mode = s:realtime_dev_agent_is_realtime_check
+  let s:realtime_dev_agent_is_realtime_check = a:realtime_mode
+  try
+    if g:realtime_dev_agent_auto_fix_enabled
+      let l:auto_fix_applied = s:realtime_dev_agent_apply_auto_fixes(l:qf, l:file)
+    endif
+  finally
+    let s:realtime_dev_agent_is_realtime_check = l:previous_mode
+  endtry
 
   if l:auto_fix_applied > 0
-    call s:realtime_check_from_buffer(a:bufnr, a:open_qf, a:show_echo)
+    if a:realtime_mode && s:realtime_async_enabled()
+      if !s:start_async_realtime_check(a:bufnr, a:open_qf, a:show_echo)
+        call s:realtime_check_from_buffer(a:bufnr, a:open_qf, a:show_echo)
+      endif
+    else
+      call s:realtime_check_from_buffer(a:bufnr, a:open_qf, a:show_echo)
+    endif
     return
   endif
 
@@ -2678,6 +2736,157 @@ function! s:realtime_check_from_buffer(bufnr, open_qf, show_echo) abort
       echomsg '[RealtimeDevAgent] ' . len(l:qf) . ' sugestao(oes) encontrada(s)'
     endif
   endif
+endfunction
+
+function! s:async_analysis_on_stdout(job_id, data, event) abort
+  if a:job_id !=# get(s:, 'realtime_dev_agent_async_analysis_job', -1)
+    return
+  endif
+  if type(a:data) != v:t_list
+    return
+  endif
+  let s:realtime_dev_agent_async_analysis_context.stdout = copy(a:data)
+endfunction
+
+function! s:async_analysis_on_stderr(job_id, data, event) abort
+  if a:job_id !=# get(s:, 'realtime_dev_agent_async_analysis_job', -1)
+    return
+  endif
+  if type(a:data) != v:t_list
+    return
+  endif
+  let s:realtime_dev_agent_async_analysis_context.stderr = copy(a:data)
+endfunction
+
+function! s:async_analysis_on_exit(job_id, code, event) abort
+  if a:job_id !=# get(s:, 'realtime_dev_agent_async_analysis_job', -1)
+    return
+  endif
+
+  let l:context = get(s:, 'realtime_dev_agent_async_analysis_context', {})
+  let s:realtime_dev_agent_async_analysis_job = -1
+  let s:realtime_dev_agent_async_analysis_context = {}
+
+  let l:bufnr = get(l:context, 'bufnr', -1)
+  let l:file = get(l:context, 'file', '')
+  let l:changedtick = get(l:context, 'changedtick', -1)
+  let l:stdout = filter(copy(get(l:context, 'stdout', [])), {_, val -> type(val) == v:t_string && !empty(val)})
+  let l:stderr = filter(copy(get(l:context, 'stderr', [])), {_, val -> type(val) == v:t_string && !empty(val)})
+  let l:analysis = {}
+
+  if l:bufnr <= 0 || !bufloaded(l:bufnr)
+    call s:cleanup_async_analysis_temp_file(l:context)
+    return
+  endif
+
+  if getbufvar(l:bufnr, 'changedtick', -1) !=# l:changedtick
+    call s:cleanup_async_analysis_temp_file(l:context)
+    return
+  endif
+
+  if a:code != 0
+    let l:analysis = {
+          \ 'ok': v:false,
+          \ 'file': l:file,
+          \ 'qf': [],
+          \ 'error': join(l:stdout + l:stderr, "\n"),
+          \ 'from_cache': v:false,
+          \ }
+  else
+    let l:analysis = {
+          \ 'ok': v:true,
+          \ 'file': l:file,
+          \ 'qf': s:parse_analysis_output(l:stdout, l:file, get(l:context, 'buffer_dirty_tmp', '')),
+          \ 'error': '',
+          \ 'from_cache': v:false,
+          \ }
+    let l:analysis = s:store_analysis_for_buffer(l:file, l:changedtick, l:analysis)
+  endif
+
+  call s:cleanup_async_analysis_temp_file(l:context)
+  call s:realtime_check_handle_analysis(
+        \ l:bufnr,
+        \ l:analysis,
+        \ get(l:context, 'open_qf', 0),
+        \ get(l:context, 'show_echo', 0),
+        \ v:true
+        \ )
+endfunction
+
+function! s:start_async_realtime_check(bufnr, open_qf, show_echo) abort
+  if !s:realtime_async_enabled()
+    return v:false
+  endif
+
+  let l:request = s:prepared_analysis_request(a:bufnr)
+  if !get(l:request, 'ok', v:false)
+    call s:realtime_check_handle_analysis(a:bufnr, {
+          \ 'ok': v:false,
+          \ 'file': get(l:request, 'file', ''),
+          \ 'qf': [],
+          \ 'error': get(l:request, 'error', 'falha ao preparar analise'),
+          \ 'from_cache': v:false,
+          \ }, a:open_qf, a:show_echo, v:true)
+    return v:true
+  endif
+
+  let l:cached = get(l:request, 'cached', {})
+  if !empty(l:cached)
+    call s:realtime_check_handle_analysis(a:bufnr, l:cached, a:open_qf, a:show_echo, v:true)
+    return v:true
+  endif
+
+  call s:stop_async_analysis_job()
+  let l:command = s:project_command_argv(get(l:request, 'argv', []), get(l:request, 'root', ''))
+  let s:realtime_dev_agent_async_analysis_context = {
+        \ 'bufnr': a:bufnr,
+        \ 'file': get(l:request, 'file', ''),
+        \ 'changedtick': get(l:request, 'changedtick', 0),
+        \ 'buffer_dirty_tmp': get(l:request, 'buffer_dirty_tmp', ''),
+        \ 'open_qf': a:open_qf,
+        \ 'show_echo': a:show_echo,
+        \ 'stdout': [],
+        \ 'stderr': [],
+        \ }
+  let l:job = jobstart(l:command, {
+        \ 'stdout_buffered': v:true,
+        \ 'stderr_buffered': v:true,
+        \ 'on_stdout': function('s:async_analysis_on_stdout'),
+        \ 'on_stderr': function('s:async_analysis_on_stderr'),
+        \ 'on_exit': function('s:async_analysis_on_exit')
+        \ })
+
+  if l:job <= 0
+    let l:context = get(s:, 'realtime_dev_agent_async_analysis_context', {})
+    let s:realtime_dev_agent_async_analysis_context = {}
+    call s:cleanup_async_analysis_temp_file(l:context)
+    return v:false
+  endif
+
+  let s:realtime_dev_agent_async_analysis_job = l:job
+  return v:true
+endfunction
+
+function! s:realtime_check_from_buffer(bufnr, open_qf, show_echo) abort
+  if a:bufnr <= 0 || !bufloaded(a:bufnr)
+    return
+  endif
+
+  let l:file = fnamemodify(bufname(a:bufnr), ':p')
+  if !s:should_check_file(l:file)
+    return
+  endif
+
+  if bufnr('%') == a:bufnr && &buftype ==# ''
+    call s:remember_code_window(win_getid())
+  endif
+
+  if g:realtime_dev_agent_show_window && !s:realtime_dev_agent_is_realtime_check
+    call s:window_set_busy(l:file)
+  endif
+
+  let l:analysis = s:analysis_for_buffer(a:bufnr)
+  call s:realtime_check_handle_analysis(a:bufnr, l:analysis, a:open_qf, a:show_echo, s:realtime_dev_agent_is_realtime_check)
 endfunction
 
 function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
@@ -2784,6 +2993,15 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
   let l:max_to_apply = get(g:, 'realtime_dev_agent_auto_fix_max_per_check', 0)
   if type(l:max_to_apply) != v:t_number
     let l:max_to_apply = str2nr(string(l:max_to_apply))
+  endif
+  if s:realtime_dev_agent_is_realtime_check
+    let l:realtime_limit = get(g:, 'realtime_dev_agent_realtime_auto_fix_max_per_check', 2)
+    if type(l:realtime_limit) != v:t_number
+      let l:realtime_limit = str2nr(string(l:realtime_limit))
+    endif
+    if l:realtime_limit > 0 && (l:max_to_apply <= 0 || l:realtime_limit < l:max_to_apply)
+      let l:max_to_apply = l:realtime_limit
+    endif
   endif
   let l:file_key = fnamemodify(a:file, ':p')
   let l:fix_guard = get(s:realtime_dev_agent_fix_guard, l:file_key, {})
@@ -3051,23 +3269,27 @@ function! RealtimeDevAgentRunPendingCheck(timer_id) abort
 endfunction
 
 function! s:realtime_dev_agent_run_pending_check(timer_id) abort
+  let l:bufnr = s:realtime_dev_agent_realtime_pending_buf
+  let s:realtime_dev_agent_realtime_pending_buf = -1
+  let s:realtime_dev_agent_realtime_timer = -1
+
+  if l:bufnr <= 0 || !bufloaded(l:bufnr)
+    return
+  endif
+  if !s:should_run_auto_check(l:bufnr)
+    return
+  endif
+
+  if s:start_async_realtime_check(l:bufnr, g:realtime_dev_agent_realtime_open_qf, 0)
+    return
+  endif
+
   let l:previous_show_window = g:realtime_dev_agent_show_window
   let l:previous_mode = get(s:, 'realtime_dev_agent_is_realtime_check', v:false)
   let s:realtime_dev_agent_is_realtime_check = v:true
   let g:realtime_dev_agent_show_window = 0
 
-  let l:bufnr = s:realtime_dev_agent_realtime_pending_buf
-  let s:realtime_dev_agent_realtime_pending_buf = -1
-  let s:realtime_dev_agent_realtime_timer = -1
-
   try
-    if l:bufnr <= 0 || !bufloaded(l:bufnr)
-      return
-    endif
-    if !s:should_run_auto_check(l:bufnr)
-      return
-    endif
-
     call s:realtime_check_from_buffer(l:bufnr, g:realtime_dev_agent_realtime_open_qf, 0)
   finally
     let s:realtime_dev_agent_is_realtime_check = l:previous_mode
@@ -3188,6 +3410,7 @@ function! s:realtime_dev_agent_check() abort
   let l:prev_mode = get(s:, 'realtime_dev_agent_is_realtime_check', v:false)
   let g:realtime_dev_agent_show_window = 0
   let s:realtime_dev_agent_is_realtime_check = v:false
+  call s:stop_async_analysis_job()
   try
     call s:realtime_check_from_buffer(bufnr('%'), g:realtime_dev_agent_open_qf, 1)
   finally
@@ -3201,6 +3424,7 @@ function! s:realtime_dev_agent_window_check() abort
   let l:prev_mode = get(s:, 'realtime_dev_agent_is_realtime_check', v:false)
   let g:realtime_dev_agent_show_window = 1
   let s:realtime_dev_agent_is_realtime_check = v:false
+  call s:stop_async_analysis_job()
   try
     call s:realtime_check_from_buffer(bufnr('%'), 0, 1)
   finally

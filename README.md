@@ -493,8 +493,10 @@ O repositorio expoe `plugin/` e `autoload/` na raiz, entao pode ser instalado di
     vim.g.realtime_dev_agent_realtime_on_cursor_hold = 1
     vim.g.realtime_dev_agent_realtime_on_buf_enter = 0
     vim.g.realtime_dev_agent_realtime_insert_mode = 0
+    vim.g.realtime_dev_agent_realtime_async = 1
     vim.g.realtime_dev_agent_auto_check_max_lines = 600
     vim.g.realtime_dev_agent_analysis_cache_max_entries = 24
+    vim.g.realtime_dev_agent_realtime_auto_fix_max_per_check = 2
     vim.g.realtime_dev_agent_auto_fix_doc_cursor_context_only = 1
     vim.g.realtime_dev_agent_auto_fix_local_cursor_context_only = 1
   end,
@@ -527,8 +529,10 @@ Plug 'andersonflima/pingu_ai_codding_pair_programming'
 - `let g:realtime_dev_agent_realtime_on_buf_enter = 0` evita custo extra em navegacao intensa; ligue se quiser checagem imediata ao entrar no arquivo
 - `let g:realtime_dev_agent_auto_fix_visual_mode = 'preserve'` reduz ruido visual durante o batch
 - `let g:realtime_dev_agent_realtime_insert_mode = 1` volta a analisar tambem no meio da digitacao
+- `let g:realtime_dev_agent_realtime_async = 1` usa job assincrono no Neovim para evitar congelar a UI durante o loop automatico
 - `let g:realtime_dev_agent_auto_check_max_lines = 600` limita checks automaticos a arquivos menores
 - `let g:realtime_dev_agent_analysis_cache_max_entries = 24` reaproveita a ultima analise do mesmo texto e reduz relancamento do agente
+- `let g:realtime_dev_agent_realtime_auto_fix_max_per_check = 2` reduz o lote automatico por ciclo realtime para manter o editor fluido
 - `let g:realtime_dev_agent_auto_fix_doc_cursor_context_only = 1` restringe `function_doc`, `class_doc`, `variable_doc` e `flow_comment` ao bloco textual atual do cursor
 - `let g:realtime_dev_agent_auto_fix_local_cursor_context_only = 1` restringe `debug_output`, syntax local, `trailing_whitespace`, `function_spec`, `markdown_title`, `terraform_required_version` e `dockerfile_workdir` ao bloco textual atual
 - `let g:realtime_dev_agent_auto_fix_doc_cursor_context_max_lines = 80` controla o tamanho maximo desse bloco automatico

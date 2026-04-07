@@ -238,6 +238,11 @@ if !exists('g:realtime_dev_agent_realtime_delay')
   let g:realtime_dev_agent_realtime_delay = 1200
 endif
 
+if !exists('g:realtime_dev_agent_realtime_async')
+  " No Neovim, roda o loop automatico em job assincrono para evitar travar a UI.
+  let g:realtime_dev_agent_realtime_async = has('nvim') ? 1 : 0
+endif
+
 if !exists('g:realtime_dev_agent_analysis_cache_max_entries')
   " Mantem um cache pequeno por changedtick para evitar relancar o agente no mesmo texto.
   let g:realtime_dev_agent_analysis_cache_max_entries = 24
@@ -337,6 +342,11 @@ endif
 if !exists('g:realtime_dev_agent_auto_fix_max_per_check')
   " 0 ou negativo significa sem limite por ciclo.
   let g:realtime_dev_agent_auto_fix_max_per_check = 0
+endif
+
+if !exists('g:realtime_dev_agent_realtime_auto_fix_max_per_check')
+  " Limita o lote automatico por ciclo realtime para reduzir congelamentos perceptiveis.
+  let g:realtime_dev_agent_realtime_auto_fix_max_per_check = 2
 endif
 
 if !exists('g:realtime_dev_agent_auto_fix_cursor_only')
