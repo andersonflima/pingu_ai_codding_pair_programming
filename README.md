@@ -51,6 +51,8 @@ Esse fluxo define:
 - labels sugeridas para triagem
 - prioridades `P0`, `P1` e `P2`
 - regra de reproducao minima e criterio de aceite
+- manifesto versionado de labels em `.github/labels.json`
+- workflow manual `sync-issue-labels` para sincronizar labels no GitHub
 
 ## O que o Pingu nao e
 

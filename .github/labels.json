@@ -1,0 +1,77 @@
+[
+  {
+    "name": "bug",
+    "color": "d73a4a",
+    "description": "Comportamento incorreto, regressao ou falha do Pingu"
+  },
+  {
+    "name": "improvement",
+    "color": "0e8a16",
+    "description": "Melhoria de UX, automacao, cobertura ou DX"
+  },
+  {
+    "name": "autofix",
+    "color": "5319e7",
+    "description": "Problema ou melhoria de aplicacao automatica"
+  },
+  {
+    "name": "comments",
+    "color": "1d76db",
+    "description": "Comentarios, docstrings e documentacao automatica"
+  },
+  {
+    "name": "imports",
+    "color": "fbca04",
+    "description": "Imports, use, require, includes ou aliases"
+  },
+  {
+    "name": "performance",
+    "color": "b60205",
+    "description": "Latencia, travamento ou gargalo no editor"
+  },
+  {
+    "name": "ai",
+    "color": "6f42c1",
+    "description": "Geracao contextual, prompts ou comportamento ligado a IA"
+  },
+  {
+    "name": "packaging",
+    "color": "0052cc",
+    "description": "npm, VSIX, instalacao, release ou distribuicao"
+  },
+  {
+    "name": "lazyvim",
+    "color": "c2e0c6",
+    "description": "Fluxo do Vim, Neovim ou LazyVim"
+  },
+  {
+    "name": "vscode",
+    "color": "bfd4f2",
+    "description": "Fluxo do VS Code"
+  },
+  {
+    "name": "zed",
+    "color": "fef2c0",
+    "description": "Fluxo do Zed"
+  },
+  {
+    "name": "breaking-risk",
+    "color": "b60205",
+    "description": "Mudanca com alto risco de quebrar runtime, imports ou sintaxe"
+  },
+  {
+    "name": "P0",
+    "color": "d93f0b",
+    "description": "Prioridade critica: quebra codigo, editor ou publish/install"
+  },
+  {
+    "name": "P1",
+    "color": "fbca04",
+    "description": "Prioridade alta: muita interacao manual, comentario ruim ou fluxo lento"
+  },
+  {
+    "name": "P2",
+    "color": "0e8a16",
+    "description": "Prioridade de refinamento, polish, DX e observabilidade"
+  }
+]

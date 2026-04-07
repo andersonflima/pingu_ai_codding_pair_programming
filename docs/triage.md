@@ -26,6 +26,8 @@ Toda issue deve informar:
 ## Labels sugeridas
 
 Use pelo menos uma label funcional e, quando fizer sentido, uma label de superficie ou risco.
+O manifesto versionado destas labels fica em [../.github/labels.json](../.github/labels.json).
+Para sincronizar tudo no GitHub de uma vez, rode manualmente o workflow `sync-issue-labels`.
 
 ### Funcionais
 
@@ -48,11 +50,16 @@ Use pelo menos uma label funcional e, quando fizer sentido, uma label de superfi
 
 - `breaking-risk`: mudanca com alto risco de quebrar runtime, imports ou sintaxe
 
-## Prioridade operacional
+### Prioridade
 
 - `P0`: quebra codigo, imports, sintaxe, trava editor, corrompe arquivo ou bloqueia publish/install
 - `P1`: exige interacao manual demais, comenta mal, autofix fraco, fluxo lento ou inconsistente
 - `P2`: polish, refinamento de DX, observabilidade, documentacao e conveniencias
+
+## Prioridade operacional
+
+- use as labels `P0`, `P1` e `P2` para explicitar a prioridade da issue
+- priorize `P0` quando houver risco de quebrar codigo, editor ou distribuicao
 
 ## Fluxo de triagem
 
