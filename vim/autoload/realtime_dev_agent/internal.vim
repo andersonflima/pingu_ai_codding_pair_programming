@@ -84,9 +84,17 @@ function! s:realtime_dev_agent_guard_cli_path() abort
     return ''
   endif
 
-  let l:guard_script = fnamemodify(l:script, ':h') . '/scripts/autofix_guard_cli.js'
-  let l:guard_script = fnamemodify(l:guard_script, ':p')
-  return filereadable(l:guard_script) ? l:guard_script : ''
+  let l:root = fnamemodify(l:script, ':h')
+  let l:candidates = [
+        \ fnamemodify(l:root . '/lib/autofix-guard-cli.js', ':p'),
+        \ fnamemodify(l:root . '/scripts/autofix_guard_cli.js', ':p'),
+        \ ]
+  for l:candidate in l:candidates
+    if filereadable(l:candidate)
+      return l:candidate
+    endif
+  endfor
+  return ''
 endfunction
 
 function! s:sh_binary() abort
