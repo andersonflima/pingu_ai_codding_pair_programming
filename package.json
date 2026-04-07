@@ -18,6 +18,23 @@
     "type": "git",
     "url": "https://github.com/andersonflima/pingu_ai_codding_pair_programming.git"
   },
+  "homepage": "https://github.com/andersonflima/pingu_ai_codding_pair_programming#readme",
+  "bugs": {
+    "url": "https://github.com/andersonflima/pingu_ai_codding_pair_programming/issues"
+  },
+  "files": [
+    "assets/",
+    "autoload/",
+    "config/",
+    "lib/",
+    "plugin/",
+    "realtime_dev_agent.js",
+    "scripts/package_vscode.js",
+    "scripts/vscode_package_meta.js",
+    "vim/",
+    "vscode/",
+    "zed-extension/"
+  ],
   "engines": {
     "vscode": "^1.85.0"
   },
