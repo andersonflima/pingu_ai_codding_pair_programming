@@ -16,6 +16,8 @@ let s:realtime_dev_agent_last_cursor_context_key = ''
 let s:realtime_dev_agent_window_source_winid = -1
 let s:realtime_dev_agent_started = v:false
 let s:realtime_dev_agent_visual_batch_context = {}
+let s:realtime_dev_agent_analysis_cache = {}
+let s:realtime_dev_agent_analysis_cache_order = []
 
 function! s:issue_kind_entry(kind) abort
   let l:registry = get(g:, 'realtime_dev_agent_issue_kind_registry', {})
@@ -216,6 +218,92 @@ function! s:auto_check_max_lines() abort
     let l:max_lines = str2nr(string(l:max_lines))
   endif
   return l:max_lines > 0 ? l:max_lines : 0
+endfunction
+
+function! s:analysis_cache_max_entries() abort
+  let l:max_entries = get(g:, 'realtime_dev_agent_analysis_cache_max_entries', 24)
+  if type(l:max_entries) != v:t_number
+    let l:max_entries = str2nr(string(l:max_entries))
+  endif
+  return l:max_entries > 0 ? l:max_entries : 0
+endfunction
+
+function! s:analysis_cache_key(file, changedtick) abort
+  return printf('%s|%d', fnamemodify(a:file, ':p'), a:changedtick)
+endfunction
+
+function! s:touch_analysis_cache_key(key) abort
+  let l:index = index(s:realtime_dev_agent_analysis_cache_order, a:key)
+  if l:index >= 0
+    call remove(s:realtime_dev_agent_analysis_cache_order, l:index)
+  endif
+  call add(s:realtime_dev_agent_analysis_cache_order, a:key)
+endfunction
+
+function! s:prune_analysis_cache() abort
+  let l:max_entries = s:analysis_cache_max_entries()
+  if l:max_entries <= 0
+    let s:realtime_dev_agent_analysis_cache = {}
+    let s:realtime_dev_agent_analysis_cache_order = []
+    return
+  endif
+
+  while len(s:realtime_dev_agent_analysis_cache_order) > l:max_entries
+    let l:stale_key = remove(s:realtime_dev_agent_analysis_cache_order, 0)
+    call remove(s:realtime_dev_agent_analysis_cache, l:stale_key)
+  endwhile
+endfunction
+
+function! s:drop_analysis_cache_for_file(file) abort
+  let l:file = fnamemodify(a:file, ':p')
+  let l:survivors = []
+  for l:key in s:realtime_dev_agent_analysis_cache_order
+    if stridx(l:key, l:file . '|') == 0
+      call remove(s:realtime_dev_agent_analysis_cache, l:key)
+      continue
+    endif
+    call add(l:survivors, l:key)
+  endfor
+  let s:realtime_dev_agent_analysis_cache_order = l:survivors
+endfunction
+
+function! s:cached_analysis_for_buffer(file, changedtick) abort
+  let l:key = s:analysis_cache_key(a:file, a:changedtick)
+  if !has_key(s:realtime_dev_agent_analysis_cache, l:key)
+    return {}
+  endif
+
+  call s:touch_analysis_cache_key(l:key)
+  let l:cached = deepcopy(s:realtime_dev_agent_analysis_cache[l:key])
+  let l:cached.from_cache = v:true
+  return l:cached
+endfunction
+
+function! s:store_analysis_for_buffer(file, changedtick, analysis) abort
+  let l:max_entries = s:analysis_cache_max_entries()
+  if l:max_entries <= 0
+    return a:analysis
+  endif
+
+  let l:key = s:analysis_cache_key(a:file, a:changedtick)
+  let l:stored = deepcopy(a:analysis)
+  let l:stored.from_cache = v:false
+  let s:realtime_dev_agent_analysis_cache[l:key] = l:stored
+  call s:touch_analysis_cache_key(l:key)
+  call s:prune_analysis_cache()
+  return l:stored
+endfunction
+
+function! s:track_buffer_tick(file, changedtick) abort
+  let l:file_key = fnamemodify(a:file, ':p')
+  let l:last_file_tick = get(s:realtime_dev_agent_file_ticks, l:file_key, -1)
+  if l:last_file_tick ==# a:changedtick
+    return
+  endif
+
+  let s:realtime_dev_agent_file_ticks[l:file_key] = a:changedtick
+  let s:realtime_dev_agent_fix_guard[l:file_key] = {}
+  call s:drop_analysis_cache_for_file(l:file_key)
 endfunction
 
 function! s:should_run_auto_check(bufnr) abort
@@ -2385,17 +2473,68 @@ function! s:issue_parse_parts(text) abort
   return [l:severity, trim(l:message), trim(l:suggestion)]
 endfunction
 
-function! s:collect_analysis_for_buffer(bufnr) abort
+function! s:parse_analysis_output(output, file, buffer_dirty_tmp) abort
+  let l:qf = []
+  let l:target_norm = fnamemodify(a:file, ':p')
+
+  for l:line in a:output
+    let l:match = matchlist(l:line, '\v^(.*):(\d+):(\d+): (.*)$')
+    if empty(l:match)
+      continue
+    endif
+
+    let l:qf_file = l:match[1]
+    let l:qf_raw_text = l:match[4]
+    let l:qf_text = s:extract_issue_text(l:qf_raw_text)
+    let l:qf_action = s:extract_issue_action(l:qf_raw_text)
+    let l:qf_snippet = s:extract_issue_snippet(l:qf_raw_text)
+    let l:qf_kind = s:extract_issue_kind(l:qf_text)
+    if !empty(a:buffer_dirty_tmp) && l:qf_file ==# a:buffer_dirty_tmp
+      let l:qf_file = a:file
+    endif
+    let l:qf_file = fnamemodify(l:qf_file, ':p')
+    if l:qf_file !=# l:target_norm
+      continue
+    endif
+
+    let l:item = {
+          \ 'filename': l:qf_file,
+          \ 'lnum': str2nr(l:match[2]),
+          \ 'col': str2nr(l:match[3]),
+          \ 'text': l:qf_text,
+          \ 'kind': l:qf_kind,
+          \ 'snippet': l:qf_snippet,
+          \ 'action': l:qf_action
+          \ }
+    if !s:issue_targets_active_scope(l:item, a:file)
+      continue
+    endif
+    call add(l:qf, l:item)
+  endfor
+
+  return l:qf
+endfunction
+
+function! s:analysis_for_buffer(bufnr) abort
   if a:bufnr <= 0 || !bufloaded(a:bufnr)
     return {
           \ 'ok': v:false,
           \ 'file': '',
           \ 'qf': [],
           \ 'error': 'buffer indisponivel para analise',
+          \ 'from_cache': v:false,
           \ }
   endif
 
   let l:file = fnamemodify(bufname(a:bufnr), ':p')
+  let l:changedtick = getbufvar(a:bufnr, 'changedtick', 0)
+  call s:track_buffer_tick(l:file, l:changedtick)
+
+  let l:cached = s:cached_analysis_for_buffer(l:file, l:changedtick)
+  if !empty(l:cached)
+    return l:cached
+  endif
+
   let l:runner = s:realtime_dev_agent_script_runner()
   if empty(l:runner)
     return {
@@ -2403,6 +2542,7 @@ function! s:collect_analysis_for_buffer(bufnr) abort
           \ 'file': l:file,
           \ 'qf': [],
           \ 'error': 'runtime nao encontrado',
+          \ 'from_cache': v:false,
           \ }
   endif
 
@@ -2434,51 +2574,22 @@ function! s:collect_analysis_for_buffer(bufnr) abort
           \ 'file': l:file,
           \ 'qf': [],
           \ 'error': join(l:output, "\n"),
+          \ 'from_cache': v:false,
           \ }
   endif
 
-  let l:qf = []
-  let l:target_norm = fnamemodify(l:file, ':p')
-  for l:line in l:output
-    let l:match = matchlist(l:line, '\v^(.*):(\d+):(\d+): (.*)$')
-    if empty(l:match)
-      continue
-    endif
-    let l:qf_file = l:match[1]
-    let l:qf_raw_text = l:match[4]
-    let l:qf_text = s:extract_issue_text(l:qf_raw_text)
-    let l:qf_action = s:extract_issue_action(l:qf_raw_text)
-    let l:qf_snippet = s:extract_issue_snippet(l:qf_raw_text)
-    let l:qf_kind = s:extract_issue_kind(l:qf_text)
-    if !empty(l:buffer_dirty_tmp) && l:qf_file ==# l:buffer_dirty_tmp
-      let l:qf_file = l:file
-    endif
-    let l:qf_file = fnamemodify(l:qf_file, ':p')
-    if l:qf_file !=# l:target_norm
-      continue
-    endif
-
-    let l:item = {
-          \ 'filename': l:qf_file,
-          \ 'lnum': str2nr(l:match[2]),
-          \ 'col': str2nr(l:match[3]),
-          \ 'text': l:qf_text,
-          \ 'kind': l:qf_kind,
-          \ 'snippet': l:qf_snippet,
-          \ 'action': l:qf_action
-          \ }
-    if !s:issue_targets_active_scope(l:item, l:file)
-      continue
-    endif
-    call add(l:qf, l:item)
-  endfor
-
-  return {
+  let l:analysis = {
         \ 'ok': v:true,
         \ 'file': l:file,
-        \ 'qf': l:qf,
+        \ 'qf': s:parse_analysis_output(l:output, l:file, l:buffer_dirty_tmp),
         \ 'error': '',
+        \ 'from_cache': v:false,
         \ }
+  return s:store_analysis_for_buffer(l:file, l:changedtick, l:analysis)
+endfunction
+
+function! s:collect_analysis_for_buffer(bufnr) abort
+  return s:analysis_for_buffer(a:bufnr)
 endfunction
 
 function! s:realtime_check_from_buffer(bufnr, open_qf, show_echo) abort
@@ -2495,118 +2606,50 @@ function! s:realtime_check_from_buffer(bufnr, open_qf, show_echo) abort
     call s:remember_code_window(win_getid())
   endif
 
-  let l:file_tick = getbufvar(a:bufnr, 'changedtick')
-  let l:file_key = fnamemodify(l:file, ':p')
-  let l:last_file_tick = get(s:realtime_dev_agent_file_ticks, l:file_key, -1)
-  if l:last_file_tick !=# l:file_tick
-    let s:realtime_dev_agent_file_ticks[l:file_key] = l:file_tick
-    let s:realtime_dev_agent_fix_guard[l:file_key] = {}
-  endif
-
-  let l:runner = s:realtime_dev_agent_script_runner()
-  if empty(l:runner)
-    if a:show_echo
-      echohl ErrorMsg
-      echomsg '[RealtimeDevAgent] Runtime nao encontrado no PATH'
-      echohl None
-    endif
-    if g:realtime_dev_agent_show_window
-      let l:missing_runtime_lines = []
-      call add(l:missing_runtime_lines, 'Realtime Dev Agent')
-      call add(l:missing_runtime_lines, 'Arquivo: ' . l:file)
-      call add(l:missing_runtime_lines, '')
-      call add(l:missing_runtime_lines, 'Erro: runtime nao encontrado no PATH')
-      call add(l:missing_runtime_lines, 'Esperado: ' . s:realtime_dev_agent_script_label())
-      call add(l:missing_runtime_lines, 'Ajuste g:realtime_dev_agent_script para um arquivo .js valido')
-      call s:window_set_lines(l:missing_runtime_lines)
-    endif
-    return
-  endif
-
-  let l:target_file = l:file
-  let l:buffer_dirty_tmp = ''
-  let l:buffer_dirty = getbufvar(a:bufnr, '&modified')
-
-  if l:buffer_dirty
-    let l:buffer_dirty_tmp = tempname()
-    call writefile(getbufline(a:bufnr, 1, '$'), l:buffer_dirty_tmp)
-    let l:target_file = l:buffer_dirty_tmp
-  endif
-
-  let l:root = s:project_root(l:file)
   if g:realtime_dev_agent_show_window && !s:realtime_dev_agent_is_realtime_check
     call s:window_set_busy(l:file)
   endif
-  let l:output = s:run_systemlist([
-    \ l:runner,
-    \ g:realtime_dev_agent_script,
-    \ '--analyze',
-    \ l:target_file,
-    \ '--source-path',
-    \ l:file,
-    \ '--vim'
-    \ ], l:root)
-
-  let l:target_norm = fnamemodify(l:file, ':p')
-  if !empty(l:buffer_dirty_tmp)
-    silent! call delete(l:buffer_dirty_tmp)
-  endif
-
-  if v:shell_error != 0
+  let l:analysis = s:analysis_for_buffer(a:bufnr)
+  if !get(l:analysis, 'ok', v:false)
+    let l:is_missing_runtime = get(l:analysis, 'error', '') ==# 'runtime nao encontrado'
     if g:realtime_dev_agent_show_window
-      let l:error_lines = []
-      call add(l:error_lines, 'Realtime Dev Agent')
-      call add(l:error_lines, 'Arquivo: ' . l:file)
-      call add(l:error_lines, '')
-      call add(l:error_lines, 'Erro: falha ao executar o agente')
-      call add(l:error_lines, 'Verifique o caminho do script em g:realtime_dev_agent_script e se o runtime esta no PATH.')
-      call s:window_set_lines(l:error_lines)
+      if l:is_missing_runtime
+        let l:error_lines = []
+        call add(l:error_lines, 'Realtime Dev Agent')
+        call add(l:error_lines, 'Arquivo: ' . l:file)
+        call add(l:error_lines, '')
+        call add(l:error_lines, 'Erro: runtime nao encontrado no PATH')
+        call add(l:error_lines, 'Esperado: ' . s:realtime_dev_agent_script_label())
+        call add(l:error_lines, 'Ajuste g:realtime_dev_agent_script para um arquivo .js valido')
+        call s:window_set_lines(l:error_lines)
+      else
+        let l:error_lines = []
+        call add(l:error_lines, 'Realtime Dev Agent')
+        call add(l:error_lines, 'Arquivo: ' . l:file)
+        call add(l:error_lines, '')
+        call add(l:error_lines, 'Erro: falha ao executar o agente')
+        call add(l:error_lines, 'Verifique o caminho do script em g:realtime_dev_agent_script e se o runtime esta no PATH.')
+        call s:window_set_lines(l:error_lines)
+      endif
     endif
 
     if a:show_echo
       echohl ErrorMsg
-      echomsg '[RealtimeDevAgent] Falha ao executar o agente'
+      if l:is_missing_runtime
+        echomsg '[RealtimeDevAgent] Runtime nao encontrado no PATH'
+      else
+        echomsg '[RealtimeDevAgent] Falha ao executar o agente'
+      endif
       echohl None
     endif
     return
   endif
 
-  let l:qf = []
-  for l:line in l:output
-    let l:match = matchlist(l:line, '\v^(.*):(\d+):(\d+): (.*)$')
-    if !empty(l:match)
-    let l:qf_file = l:match[1]
-    let l:qf_raw_text = l:match[4]
-    let l:qf_text = s:extract_issue_text(l:qf_raw_text)
-    let l:qf_action = s:extract_issue_action(l:qf_raw_text)
-    let l:qf_snippet = s:extract_issue_snippet(l:qf_raw_text)
-    let l:qf_kind = s:extract_issue_kind(l:qf_text)
-    if !empty(l:buffer_dirty_tmp) && l:qf_file ==# l:buffer_dirty_tmp
-      let l:qf_file = l:file
-    endif
-      let l:qf_file = fnamemodify(l:qf_file, ':p')
-      if l:qf_file !=# l:target_norm
-        continue
-      endif
-
-      let l:item = {
-        \ 'filename': l:qf_file,
-        \ 'lnum': str2nr(l:match[2]),
-        \ 'col': str2nr(l:match[3]),
-        \ 'text': l:qf_text,
-        \ 'kind': l:qf_kind,
-        \ 'snippet': l:qf_snippet,
-        \ 'action': l:qf_action
-        \ }
-      if !s:issue_targets_active_scope(l:item, l:file)
-        continue
-      endif
-      call add(l:qf, l:item)
-    endif
-  endfor
-
-  call setqflist([], 'r', {'title': 'Realtime Dev Agent'})
-  call setqflist(l:qf, 'a')
+  let l:qf = deepcopy(get(l:analysis, 'qf', []))
+  if a:open_qf || g:realtime_dev_agent_show_window || !s:realtime_dev_agent_is_realtime_check
+    call setqflist([], 'r', {'title': 'Realtime Dev Agent'})
+    call setqflist(l:qf, 'a')
+  endif
   let s:realtime_dev_agent_last_qf = l:qf
   let l:auto_fix_applied = 0
   if g:realtime_dev_agent_auto_fix_enabled

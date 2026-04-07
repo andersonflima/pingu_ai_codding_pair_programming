@@ -202,8 +202,9 @@ if !exists('g:realtime_dev_agent_realtime_on_cursor_hold')
 endif
 
 if !exists('g:realtime_dev_agent_realtime_on_buf_enter')
-  " Ao entrar em um buffer suportado, agenda uma checagem leve no contexto atual do cursor.
-  let g:realtime_dev_agent_realtime_on_buf_enter = 1
+  " Desligado por padrao para evitar rechecagens custosas em navegacao intensa.
+  " O cursor hold continua cobrindo o contexto atual assim que o usuario para no bloco.
+  let g:realtime_dev_agent_realtime_on_buf_enter = 0
 endif
 
 if !exists('g:realtime_dev_agent_realtime_insert_mode')
@@ -235,6 +236,11 @@ endif
 if !exists('g:realtime_dev_agent_realtime_delay')
   " Milisegundos de espera apos a ultima mudanca para disparar a checagem.
   let g:realtime_dev_agent_realtime_delay = 1200
+endif
+
+if !exists('g:realtime_dev_agent_analysis_cache_max_entries')
+  " Mantem um cache pequeno por changedtick para evitar relancar o agente no mesmo texto.
+  let g:realtime_dev_agent_analysis_cache_max_entries = 24
 endif
 
 if !exists('g:realtime_dev_agent_realtime_open_qf')
