@@ -1063,14 +1063,14 @@ function main() {
   if (realAiAvailable) {
     cases.push(runCase('comment-task', buildCommentTaskCase));
     cases.push(runCase('context-file', buildContextFileCase));
-    cases.push(runCase('elixir-cursor-context-function-spec', buildElixirCursorContextFunctionSpecCase));
-    cases.push(runCase('javascript-cursor-context-debug-output', buildJavaScriptCursorContextDebugOutputCase));
   }
   cases.push(runCase('terminal-task', buildTerminalTaskCase));
   cases.push(runCase('c-missing-delimiter', buildCMissingDelimiterCase));
   cases.push(runCase('dockerfile-workdir', buildDockerfileWorkdirCase));
   cases.push(runCase('go-function-doc', buildGoFunctionDocCase));
   cases.push(runCase('elixir-import-use-preserved', buildElixirImportUsePreservedCase));
+  cases.push(runCase('elixir-cursor-context-function-spec', buildElixirCursorContextFunctionSpecCase));
+  cases.push(runCase('javascript-cursor-context-debug-output', buildJavaScriptCursorContextDebugOutputCase));
   cases.push(runCase('javascript-function-doc-variants', buildJavaScriptFunctionDocVariantsCase));
   cases.push(runCase('javascript-multiline-require-binding-preserved', buildJavaScriptMultilineRequireBindingPreservedCase));
   cases.push(runCase('javascript-require-binding-preserved', buildJavaScriptRequireBindingPreservedCase));

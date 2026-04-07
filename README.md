@@ -634,6 +634,7 @@ Importante:
 - se a chave mudar depois que o editor ja estiver aberto, reinicie o editor
 - nunca commite credenciais
 - `PINGU_AUTOMATIC_AI_COMMENT_MAX_ISSUES=8` limita quantas issues de comentario/documentacao podem subir para IA por ciclo automatico; use `0` para remover o limite
+- `PINGU_DOCUMENTATION_AUTO_FIX_MIN_CONFIDENCE=0.60` controla o limiar minimo de confianca para comentario automatico documental; valores menores deixam o lote mais agressivo
 - `PINGU_DOCUMENTATION_MAX_LINES=420` evita `function_doc`, `class_doc`, `variable_doc` e `flow_comment` automaticos em arquivos grandes; use `0` para remover o corte
 - `PINGU_FLOW_COMMENT_MAX_LINES=260` evita `flow_comment` automatico em arquivos grandes; use `0` para remover o corte
 - `PINGU_AUTOFIX_LARGE_FILE_LINE_THRESHOLD=260` define a partir de quantas linhas o VS Code passa a encolher o lote automatico
@@ -641,6 +642,7 @@ Importante:
 - `PINGU_AUTOFIX_DOC_MAX_PER_PASS_LARGE_FILE=4` limita docstrings/comentarios por ciclo em arquivo grande no VS Code
 - `PINGU_VALIDATE_WITH_OPENAI=1` liga os cenarios live durante os validadores que ja suportam OpenAI Codex
 - no LazyVim, os equivalentes sao `g:realtime_dev_agent_auto_fix_large_file_line_threshold`, `g:realtime_dev_agent_auto_fix_large_file_radius` e `g:realtime_dev_agent_auto_fix_doc_max_per_check_large_file`
+- no LazyVim, `debug_output` e `function_spec` cursor-local entram no lote automatico seguro sem depender da trilha live
 
 ## Validacao
 
@@ -662,6 +664,7 @@ Importante para a trilha live:
 
 - a chave precisa ter acesso real ao endpoint `/v1/responses`
 - conta sem billing ativo ou sem permissao de uso live falha no preflight antes da suite completa
+- a suite live completa agora inclui uma validacao semantica dedicada para comentarios gerados por IA
 
 ### Matriz do agente
 
@@ -721,6 +724,12 @@ npm run validate:all
 
 ```bash
 OPENAI_API_KEY="sua_chave_aqui" npm run validate:live:openai
+```
+
+### Rodar so a validacao live da qualidade semantica dos comentarios
+
+```bash
+OPENAI_API_KEY="sua_chave_aqui" npm run validate:live:semantic-comments
 ```
 
 No CI remoto, o repositorio roda tres trilhas:

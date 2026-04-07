@@ -112,5 +112,5 @@ Os gates minimos para sustentar esta barra sao:
 
 ## Proxima Ordem de Execucao Recomendada
 
-1. Validar a trilha live com OpenAI real assim que a conta estiver liberada para o endpoint `/v1/responses`.
-2. Medir a qualidade semantica dos comentarios gerados ao vivo para ajustar prompts e limites de confianca.
+1. Executar `npm run validate:live:openai` assim que a conta estiver liberada para o endpoint `/v1/responses`.
+2. Usar `npm run validate:live:semantic-comments` para recalibrar prompts e limites de confianca a partir dos snippets reais gerados ao vivo.
