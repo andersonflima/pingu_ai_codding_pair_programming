@@ -518,8 +518,8 @@ Plug 'andersonflima/pingu_ai_codding_pair_programming'
 - `let g:realtime_dev_agent_open_window_on_start = 1` reabre o painel no startup automatico
 - `let g:realtime_dev_agent_start_on_editor_enter = 0` desliga o startup automatico
 - `let g:realtime_dev_agent_review_on_open = 1` reativa revisao automatica ao abrir arquivos
-- `let g:realtime_dev_agent_target_scope = 'current_file'` mantem analise e correcoes no arquivo aberto
-- `let g:realtime_dev_agent_target_scope = 'workspace'` reativa acoes multi-arquivo como `context_file` e `unit_test`
+- `let g:realtime_dev_agent_target_scope = 'current_file'` mantem analise e correcoes no arquivo aberto, mas ainda permite `unit_test` automatico quando o alvo for um arquivo de teste adjacente e seguro
+- `let g:realtime_dev_agent_target_scope = 'workspace'` reativa acoes multi-arquivo amplas como `context_file`
 - `let g:realtime_dev_agent_auto_fix_scope = 'near_cursor'` aplica apenas o trecho mais proximo do cursor
 - `let g:realtime_dev_agent_auto_fix_scope = 'file'` volta para o comportamento de arquivo inteiro por ciclo
 - `let g:realtime_dev_agent_auto_fix_scope = 'cursor_only'` restringe ao cursor imediato
@@ -536,7 +536,7 @@ Plug 'andersonflima/pingu_ai_codding_pair_programming'
 - `let g:realtime_dev_agent_auto_fix_doc_cursor_context_only = 1` restringe `function_doc`, `class_doc`, `variable_doc` e `flow_comment` ao bloco textual atual do cursor
 - `let g:realtime_dev_agent_auto_fix_local_cursor_context_only = 1` restringe `debug_output`, syntax local, `trailing_whitespace`, `function_spec`, `markdown_title`, `terraform_required_version` e `dockerfile_workdir` ao bloco textual atual
 - `let g:realtime_dev_agent_auto_fix_doc_cursor_context_max_lines = 80` controla o tamanho maximo desse bloco automatico
-- por padrao no Vim o auto-fix automatico fica no conjunto local e seguro do arquivo atual; `context_file`, `unit_test` e `terminal_task` continuam disponiveis por quick fix ou por opt-in em `g:realtime_dev_agent_auto_fix_kinds`
+- por padrao no Vim o auto-fix automatico fica no conjunto local e seguro do arquivo atual; `unit_test` volta a entrar automaticamente quando gerar um arquivo de teste adjacente seguro, enquanto `context_file` e `terminal_task` continuam por quick fix ou por opt-in em `g:realtime_dev_agent_auto_fix_kinds`
 
 ### Terminal no Vim / Neovim
 

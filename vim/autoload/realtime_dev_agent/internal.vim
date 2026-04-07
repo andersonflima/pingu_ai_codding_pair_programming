@@ -574,6 +574,50 @@ function! s:target_scope() abort
   return l:scope
 endfunction
 
+function! s:is_safe_unit_test_target(source_file, target_file) abort
+  let l:source_file = fnamemodify(a:source_file, ':p')
+  let l:target_file = fnamemodify(a:target_file, ':p')
+  if empty(l:source_file) || empty(l:target_file) || l:source_file ==# l:target_file
+    return v:false
+  endif
+
+  let l:source_dir = fnamemodify(l:source_file, ':h')
+  let l:target_dir = fnamemodify(l:target_file, ':h')
+  let l:target_name = tolower(fnamemodify(l:target_file, ':t'))
+  let l:normalized_target = substitute(l:target_file, '\\', '/', 'g')
+  let l:normalized_source_dir = substitute(l:source_dir, '\\', '/', 'g')
+  let l:normalized_target_dir = substitute(l:target_dir, '\\', '/', 'g')
+
+  if l:normalized_target =~# '/tests\?/'
+    return v:true
+  endif
+  if l:normalized_target_dir ==# l:normalized_source_dir
+    if l:target_name =~# '\v(^test_.*\.py$|_test\.(go|py|exs|rs|rb|c|vim|sh)$|_spec\.lua$|\.test\.(js|jsx|ts|tsx|mjs|cjs)$|\.spec\.(js|jsx|ts|tsx|mjs|cjs)$)'
+      return v:true
+    endif
+  endif
+  return v:false
+endfunction
+
+function! s:is_scope_safe_write_file_issue(item, current_file) abort
+  let l:action = s:issue_effective_action(a:item)
+  if get(l:action, 'op', '') !=# 'write_file'
+    return v:false
+  endif
+
+  let l:target_file = trim(get(l:action, 'target_file', ''))
+  if empty(l:target_file)
+    return v:false
+  endif
+
+  let l:kind = get(a:item, 'kind', '')
+  if l:kind ==# 'unit_test'
+    return s:is_safe_unit_test_target(a:current_file, l:target_file)
+  endif
+
+  return v:false
+endfunction
+
 function! s:issue_targets_active_scope(item, current_file) abort
   let l:current_file = fnamemodify(a:current_file, ':p')
   if empty(l:current_file)
@@ -590,12 +634,12 @@ function! s:issue_targets_active_scope(item, current_file) abort
     return v:true
   endif
 
-  let l:target_file = trim(get(l:action, 'target_file', ''))
-  if empty(l:target_file)
-    return v:false
+  if s:is_scope_safe_write_file_issue(a:item, l:current_file)
+    return v:true
   endif
 
-  return fnamemodify(l:target_file, ':p') ==# l:current_file
+  let l:target_file = trim(get(l:action, 'target_file', ''))
+  return !empty(l:target_file) && fnamemodify(l:target_file, ':p') ==# l:current_file
 endfunction
 
 function! s:auto_fix_scope() abort
@@ -1362,10 +1406,6 @@ function! s:collect_affected_files(file, items) abort
     let l:affected[l:current_file] = 1
   endif
 
-  if s:target_scope() !=# 'workspace'
-    return keys(l:affected)
-  endif
-
   for l:item in a:items
     let l:action = s:issue_effective_action(l:item)
     if get(l:action, 'op', '') !=# 'write_file'
@@ -1373,6 +1413,9 @@ function! s:collect_affected_files(file, items) abort
     endif
     let l:target_file = trim(get(l:action, 'target_file', ''))
     if empty(l:target_file)
+      continue
+    endif
+    if s:target_scope() !=# 'workspace' && !s:is_scope_safe_write_file_issue(l:item, a:file)
       continue
     endif
     let l:affected[fnamemodify(l:target_file, ':p')] = 1

@@ -99,6 +99,9 @@ function! s:is_safe_default_auto_fix_kind(kind, entry) abort
   endif
 
   let l:op = get(l:action, 'op', '')
+  if a:kind ==# 'unit_test' && l:op ==# 'write_file'
+    return v:true
+  endif
   if l:op ==# 'write_file' || l:op ==# 'run_command'
     return v:false
   endif
@@ -329,6 +332,7 @@ if !exists('g:realtime_dev_agent_auto_fix_kinds')
           \ 'functional_reassignment',
           \ 'debug_output',
           \ 'missing_dependency',
+          \ 'unit_test',
           \ 'trailing_whitespace',
           \ 'tabs',
           \ 'markdown_title',
