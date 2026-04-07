@@ -78,25 +78,6 @@ function! s:realtime_dev_agent_script_label() abort
   return 'Node.js'
 endfunction
 
-function! s:realtime_dev_agent_guard_cli_path() abort
-  let l:script = fnamemodify(expand(g:realtime_dev_agent_script), ':p')
-  if empty(l:script) || !filereadable(l:script)
-    return ''
-  endif
-
-  let l:root = fnamemodify(l:script, ':h')
-  let l:candidates = [
-        \ fnamemodify(l:root . '/lib/autofix-guard-cli.js', ':p'),
-        \ fnamemodify(l:root . '/scripts/autofix_guard_cli.js', ':p'),
-        \ ]
-  for l:candidate in l:candidates
-    if filereadable(l:candidate)
-      return l:candidate
-    endif
-  endfor
-  return ''
-endfunction
-
 function! s:sh_binary() abort
   return executable('sh') ? exepath('sh') : 'sh'
 endfunction
@@ -1492,13 +1473,13 @@ endfunction
 
 function! s:run_autofix_guard(payload, file) abort
   let l:runner = s:realtime_dev_agent_script_runner()
-  let l:guard_script = s:realtime_dev_agent_guard_cli_path()
-  if empty(l:runner) || empty(l:guard_script)
+  let l:script = fnamemodify(expand(g:realtime_dev_agent_script), ':p')
+  if empty(l:runner) || empty(l:script) || !filereadable(l:script)
     return {'ok': v:false, 'error': 'guard cli nao encontrada'}
   endif
 
   let l:root = s:project_root(a:file)
-  let l:output = s:run_systemlist([l:runner, l:guard_script], l:root, json_encode(a:payload))
+  let l:output = s:run_systemlist([l:runner, l:script, '--autofix-guard'], l:root, json_encode(a:payload))
   if v:shell_error != 0
     return {
           \ 'ok': v:false,
