@@ -1,0 +1,111 @@
+name: Bug report
+description: Registrar bug, regressao ou comportamento inseguro do Pingu
+title: "[bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use este template para bugs do agente, integracoes de editor e regressao de autofix.
+        O fluxo de triagem oficial esta em `docs/triage.md`.
+
+  - type: textarea
+    id: current_behavior
+    attributes:
+      label: Comportamento atual
+      description: Explique o que o Pingu fez de fato.
+      placeholder: O agente alterou imports validos ao aplicar autofix no bloco atual.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected_behavior
+    attributes:
+      label: Comportamento esperado
+      description: Explique qual deveria ser o resultado correto.
+      placeholder: O agente deveria preservar imports validos e agir apenas no bloco do cursor.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: editor
+    attributes:
+      label: Editor e superficie afetada
+      description: Onde o problema acontece com mais clareza.
+      options:
+        - LazyVim / Neovim
+        - VS Code
+        - Zed
+        - Runtime local / CLI
+        - Empacotamento / npm
+        - Outra
+    validations:
+      required: true
+
+  - type: input
+    id: language
+    attributes:
+      label: Linguagem ou stack afetada
+      description: Linguagem principal, framework ou stack do arquivo.
+      placeholder: JavaScript, TypeScript, Python, Elixir, Go, Rust...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Como reproduzir
+      description: Liste os passos minimos para reproduzir.
+      placeholder: |
+        1. Abrir arquivo X no LazyVim
+        2. Posicionar o cursor no metodo Y
+        3. Esperar o realtime rodar
+        4. Observar que o import foi trocado
+    validations:
+      required: true
+
+  - type: textarea
+    id: minimal_snippet
+    attributes:
+      label: Trecho minimo
+      description: Cole o menor trecho de codigo que reproduz o problema.
+      render: text
+      placeholder: |
+        from room_state import (
+            create_empty_state,
+            create_invite,
+        )
+    validations:
+      required: true
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impacto
+      description: Explique o impacto tecnico e operacional.
+      placeholder: Quebra codigo, exige rollback manual, trava editor, gera ruido no review...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: regression_risk
+    attributes:
+      label: Risco de regressao
+      description: Qual o risco tecnico se tocarmos nisso.
+      options:
+        - baixo
+        - medio
+        - alto
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Criterio de aceite
+      description: Defina quando esta issue pode ser considerada resolvida.
+      placeholder: |
+        - O Pingu nao altera imports validos
+        - O caso reproduzido deixa de acontecer no LazyVim
+        - O comportamento continua correto nos outros editores
+    validations:
+      required: true

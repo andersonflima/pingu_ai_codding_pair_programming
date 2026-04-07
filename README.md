@@ -41,6 +41,17 @@ Esse contrato organiza o que o Pingu precisa fazer automaticamente para ser exce
 - validar e reverter sozinho quando piorar o estado do arquivo
 - manter baixo custo no loop de edicao
 
+## Operacao de issues
+
+O fluxo de melhoria continua do Pingu via GitHub Issues esta em [docs/triage.md](./docs/triage.md).
+
+Esse fluxo define:
+
+- template minimo para bug e improvement
+- labels sugeridas para triagem
+- prioridades `P0`, `P1` e `P2`
+- regra de reproducao minima e criterio de aceite
+
 ## O que o Pingu nao e
 
 - Nao e um chat generico de perguntas soltas.

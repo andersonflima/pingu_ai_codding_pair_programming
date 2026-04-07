@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Guia de triagem do Pingu
+    url: https://github.com/andersonflima/pingu_ai_codding_pair_programming/blob/main/docs/triage.md
+    about: Consulte o fluxo de triagem, labels sugeridas e prioridades antes de abrir a issue.

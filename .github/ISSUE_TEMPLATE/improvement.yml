@@ -1,0 +1,108 @@
+name: Improvement
+description: Registrar melhoria de DX, automacao, performance ou cobertura funcional do Pingu
+title: "[improvement] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use este template para melhorias de fluxo, automacao e qualidade do agente.
+        O fluxo de triagem oficial esta em `docs/triage.md`.
+
+  - type: textarea
+    id: current_behavior
+    attributes:
+      label: Comportamento atual
+      description: Explique o limite atual do agente.
+      placeholder: O agente exige interacao manual demais para comentar os metodos no bloco atual.
+    validations:
+      required: true
+
+  - type: textarea
+    id: desired_behavior
+    attributes:
+      label: Comportamento desejado
+      description: Explique a melhoria esperada.
+      placeholder: O agente deveria agir sozinho no contexto do cursor sem pesar o editor.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area principal
+      description: Frente principal da melhoria.
+      options:
+        - autofix
+        - comments
+        - imports
+        - performance
+        - lazyvim
+        - vscode
+        - zed
+        - packaging
+        - ai
+        - outra
+    validations:
+      required: true
+
+  - type: input
+    id: language
+    attributes:
+      label: Linguagem ou stack alvo
+      description: Linguagem principal, stack ou contexto dominante.
+      placeholder: JavaScript, Python, Elixir, repo inteiro...
+    validations:
+      required: true
+
+  - type: textarea
+    id: use_case
+    attributes:
+      label: Caso de uso
+      description: Contexto real em que esta melhoria ajuda.
+      placeholder: Durante pair programming no LazyVim, ao parar o cursor em metodos nao documentados...
+    validations:
+      required: true
+
+  - type: textarea
+    id: minimal_context
+    attributes:
+      label: Trecho minimo ou contexto
+      description: Cole um trecho representativo ou contexto minimo.
+      render: text
+      placeholder: |
+        async def handle_client_message(...):
+            ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impacto
+      description: Explique o ganho tecnico e operacional.
+      placeholder: Menos interacao manual, menos latencia percebida, maior seguranca...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: implementation_risk
+    attributes:
+      label: Risco de implementacao
+      options:
+        - baixo
+        - medio
+        - alto
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Criterio de aceite
+      description: Liste sinais objetivos de que a melhoria foi entregue.
+      placeholder: |
+        - A acao passa a acontecer automaticamente
+        - O editor continua fluido
+        - O comportamento nao quebra imports nem sintaxe
+    validations:
+      required: true

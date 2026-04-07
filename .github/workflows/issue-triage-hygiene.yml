@@ -1,0 +1,106 @@
+name: issue-triage-hygiene
+
+on:
+  issues:
+    types:
+      - opened
+      - edited
+      - reopened
+      - unlabeled
+
+permissions:
+  issues: write
+
+jobs:
+  hygiene:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check issue hygiene
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            if (!issue || issue.pull_request) {
+              return;
+            }
+
+            const labels = (issue.labels || []).map((label) =>
+              typeof label === 'string' ? label : label.name
+            );
+            const body = issue.body || '';
+            const marker = '<!-- pingu-triage-hygiene -->';
+
+            const missing = [];
+            if (labels.length === 0) {
+              missing.push(
+                'adicione pelo menos uma label funcional ou de superficie (`bug`, `improvement`, `autofix`, `comments`, `imports`, `lazyvim`, `vscode`, `zed`, `performance`, `packaging`, `ai`, `breaking-risk`)'
+              );
+            }
+
+            const requiredMarkers = [
+              '### Comportamento atual',
+              '### Comportamento esperado',
+              '### Editor e superficie afetada',
+              '### Linguagem ou stack afetada',
+              '### Como reproduzir',
+              '### Trecho minimo',
+              '### Impacto',
+              '### Risco de regressao',
+              '### Criterio de aceite',
+            ];
+
+            const alternativeMarkers = {
+              '### Comportamento esperado': ['### Comportamento desejado'],
+              '### Editor e superficie afetada': ['### Area principal'],
+              '### Linguagem ou stack afetada': ['### Linguagem ou stack alvo'],
+              '### Como reproduzir': ['### Caso de uso'],
+              '### Trecho minimo': ['### Trecho minimo ou contexto'],
+              '### Risco de regressao': ['### Risco de implementacao'],
+            };
+
+            for (const markerName of requiredMarkers) {
+              const matchesPrimary = body.includes(markerName);
+              const matchesAlternative = (alternativeMarkers[markerName] || []).some((candidate) =>
+                body.includes(candidate)
+              );
+              if (!matchesPrimary && !matchesAlternative) {
+                missing.push(`preencha o campo \`${markerName}\``);
+              }
+            }
+
+            if (missing.length === 0) {
+              return;
+            }
+
+            const commentBody =
+              `${marker}\n` +
+              'Esta issue precisa de higiene minima de triagem antes de entrar no backlog ativo:\n\n' +
+              missing.map((item) => `- ${item}`).join('\n') +
+              '\n\nGuia de triagem: https://github.com/andersonflima/pingu_ai_codding_pair_programming/blob/main/docs/triage.md';
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+            });
+
+            const existing = comments.find((comment) =>
+              comment.user?.type === 'Bot' && comment.body?.includes(marker)
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: commentBody,
+              });
+              return;
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              body: commentBody,
+            });
