@@ -62,7 +62,7 @@ Itens de maturidade. Nao bloqueiam utilidade basica, mas elevam consistencia e c
 
 Toda melhoria relevante no agente deve obedecer a estes criterios:
 
-- incluir regressao real em script de validacao ou smoke de editor
+- incluir um caso reprodutivel claro no proprio fluxo do runtime ou na documentacao de comportamento
 - preservar comportamento existente que o usuario ja aprovou
 - nao ampliar escopo para `workspace` sem opt-in explicito
 - nao introduzir rename especulativo de simbolo importado
@@ -96,21 +96,3 @@ Toda melhoria relevante no agente deve obedecer a estes criterios:
 
 - deve explicar a intencao do passo
 - nao deve duplicar comentario equivalente que ja exista
-
-## Gates de Validacao
-
-Os gates minimos para sustentar esta barra sao:
-
-- `node scripts/validate_python_real_code_checkup.js`
-- `node scripts/validate_node_real_code_checkup.js`
-- `node scripts/validate_elixir_real_code_checkup.js`
-- `node scripts/validate_issue_orchestration.js`
-- `node scripts/validate_stack_quality_contracts.js`
-- `node scripts/nvim_functional_smoke.js`
-- `node scripts/validate_vscode_autofix_guard.js`
-- `node scripts/editor_parity_contract.js`
-
-## Proxima Ordem de Execucao Recomendada
-
-1. Executar `npm run validate:live:openai` assim que a conta estiver liberada para o endpoint `/v1/responses`.
-2. Usar `npm run validate:live:semantic-comments` para recalibrar prompts e limites de confianca a partir dos snippets reais gerados ao vivo.
