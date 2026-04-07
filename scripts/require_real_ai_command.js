@@ -7,10 +7,6 @@ const DEFAULT_OPENAI_MODEL = 'gpt-5-codex';
 const DEFAULT_OPENAI_TIMEOUT_MS = 30000;
 let cachedLiveValidationState = null;
 
-function isLiveOpenAiValidationEnabled() {
-  return /^(?:1|true|yes)$/i.test(String(process.env.PINGU_VALIDATE_WITH_OPENAI || '').trim());
-}
-
 function readTimeoutMs(env = process.env) {
   const timeout = Number.parseInt(String(env.PINGU_OPENAI_TIMEOUT_MS || ''), 10);
   return Number.isFinite(timeout) && timeout > 0
@@ -20,7 +16,6 @@ function readTimeoutMs(env = process.env) {
 
 function readProbeCacheKey(env = process.env) {
   return [
-    String(env.PINGU_VALIDATE_WITH_OPENAI || '').trim(),
     String(env.OPENAI_API_KEY || '').trim(),
     String(env.PINGU_OPENAI_MODEL || DEFAULT_OPENAI_MODEL).trim(),
     String(env.OPENAI_BASE_URL || env.PINGU_OPENAI_BASE_URL || DEFAULT_OPENAI_BASE_URL).trim(),
@@ -70,15 +65,6 @@ function cacheLiveValidationState(state, env = process.env) {
 }
 
 function probeLiveOpenAiValidation(env = process.env) {
-  if (!isLiveOpenAiValidationEnabled()) {
-    return cacheLiveValidationState({
-      enabled: false,
-      available: false,
-      reason: 'disabled',
-      message: 'PINGU_VALIDATE_WITH_OPENAI nao esta habilitado.',
-    }, env);
-  }
-
   const apiKey = String(env.OPENAI_API_KEY || '').trim();
   if (!apiKey) {
     return cacheLiveValidationState({

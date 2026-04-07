@@ -619,7 +619,6 @@ Variaveis comuns:
 - `PINGU_OPENAI_TIMEOUT_MS`
 - `PINGU_AUTOMATIC_AI_COMMENT_MAX_ISSUES`
 - `PINGU_FLOW_COMMENT_MAX_LINES`
-- `PINGU_VALIDATE_WITH_OPENAI`
 
 Exemplo:
 
@@ -640,7 +639,7 @@ Importante:
 - `PINGU_AUTOFIX_LARGE_FILE_LINE_THRESHOLD=260` define a partir de quantas linhas o VS Code passa a encolher o lote automatico
 - `PINGU_AUTOFIX_DOC_MAX_PER_PASS=0` limita quantas issues documentais o VS Code aplica por ciclo; `0` remove o corte
 - `PINGU_AUTOFIX_DOC_MAX_PER_PASS_LARGE_FILE=4` limita docstrings/comentarios por ciclo em arquivo grande no VS Code
-- `PINGU_VALIDATE_WITH_OPENAI=1` liga os cenarios live durante os validadores que ja suportam OpenAI Codex
+- com `OPENAI_API_KEY` configurada, os validadores que suportam OpenAI Codex tentam a trilha live automaticamente
 - no LazyVim, os equivalentes sao `g:realtime_dev_agent_auto_fix_large_file_line_threshold`, `g:realtime_dev_agent_auto_fix_large_file_radius` e `g:realtime_dev_agent_auto_fix_doc_max_per_check_large_file`
 - no LazyVim, `debug_output` e `function_spec` cursor-local entram no lote automatico seguro sem depender da trilha live
 
@@ -654,16 +653,11 @@ Antes de rodar os validadores de matriz/checkup/intent contract, configure:
 export OPENAI_API_KEY="sua_chave_aqui"
 ```
 
-Para executar tambem os cenarios live contra OpenAI Codex durante a validacao:
-
-```bash
-export PINGU_VALIDATE_WITH_OPENAI="1"
-```
-
 Importante para a trilha live:
 
 - a chave precisa ter acesso real ao endpoint `/v1/responses`
 - conta sem billing ativo ou sem permissao de uso live falha no preflight antes da suite completa
+- com `OPENAI_API_KEY` presente, os validadores que suportam live tentam a trilha OpenAI automaticamente
 - a suite live completa agora inclui uma validacao semantica dedicada para comentarios gerados por IA
 
 ### Matriz do agente

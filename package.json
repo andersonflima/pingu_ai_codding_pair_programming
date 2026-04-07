@@ -179,7 +179,7 @@
     "validate:editors": "node scripts/validate_editor_integrations.js",
     "validate:external-editors": "node scripts/validate_external_editor_suite.js",
     "validate:all": "npm run validate:matrix && npm run validate:intent-contract && npm run validate:quality-gate:active-contract && npm run validate:language:100-contract && npm run validate:stack-contracts && npm run validate:editors",
-    "validate:live:semantic-comments": "PINGU_VALIDATE_WITH_OPENAI=1 node scripts/validate_live_semantic_comment_quality.js",
-    "validate:live:openai": "PINGU_VALIDATE_WITH_OPENAI=1 node scripts/validate_live_openai_readiness.js && PINGU_VALIDATE_WITH_OPENAI=1 npm run validate:live:semantic-comments && PINGU_VALIDATE_WITH_OPENAI=1 npm run validate:all && PINGU_VALIDATE_WITH_OPENAI=1 npm run validate:quality-gate:active"
+    "validate:live:semantic-comments": "node scripts/validate_live_semantic_comment_quality.js",
+    "validate:live:openai": "node scripts/validate_live_openai_readiness.js && npm run validate:live:semantic-comments && npm run validate:all && npm run validate:quality-gate:active"
   }
 }
