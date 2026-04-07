@@ -563,6 +563,22 @@ npm run package:vscode
 code --install-extension ./pingu-dev-agent.vsix --force
 ```
 
+### Publicar no Visual Studio Marketplace
+
+O manifesto da extensao ja esta configurado com:
+
+- `publisher: andersonflima`
+- `name: pingu-dev-agent`
+
+Para publicar pela CLI:
+
+```bash
+export VSCE_PAT='SEU_TOKEN_DO_MARKETPLACE'
+npm run publish:vscode
+```
+
+O script publica a partir de um stage limpo da extensao, sem carregar arquivos de Vim, Zed ou outros artefatos do repositorio.
+
 ### Migracao do nome antigo
 
 Se voce ja instalou a extensao antiga `andersonflima.realtime-dev-agent`, o VS Code pode manter as duas instaladas ao mesmo tempo. Para ficar apenas com o nome novo:

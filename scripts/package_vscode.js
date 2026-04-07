@@ -4,12 +4,12 @@
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 const {
-  repoRoot,
   canonicalVsixFileName,
   canonicalVsixPath,
   legacyVsixFileName,
   legacyVsixPath,
 } = require('./vscode_package_meta');
+const { createVscodeStageDir, removeStageDir } = require('./vscode_stage');
 
 function removeIfExists(filePath) {
   if (fs.existsSync(filePath)) {
@@ -20,14 +20,11 @@ function removeIfExists(filePath) {
 removeIfExists(canonicalVsixPath);
 removeIfExists(legacyVsixPath);
 
-const result = spawnSync(
-  'npx',
-  ['@vscode/vsce', 'package', '--out', canonicalVsixFileName],
-  {
-    cwd: repoRoot,
-    encoding: 'utf8',
-  },
-);
+const stageRoot = createVscodeStageDir();
+const result = spawnSync('npx', ['@vscode/vsce', 'package', '--out', canonicalVsixPath], {
+  cwd: stageRoot,
+  encoding: 'utf8',
+});
 
 if (result.stdout) {
   process.stdout.write(result.stdout);
@@ -36,6 +33,8 @@ if (result.stdout) {
 if (result.stderr) {
   process.stderr.write(result.stderr);
 }
+
+removeStageDir(stageRoot);
 
 if (result.status !== 0) {
   process.exit(result.status || 1);

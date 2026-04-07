@@ -159,6 +159,7 @@
     }
   },
   "scripts": {
-    "package:vscode": "node scripts/package_vscode.js"
+    "package:vscode": "node scripts/package_vscode.js",
+    "publish:vscode": "node scripts/publish_vscode.js"
   }
 }
