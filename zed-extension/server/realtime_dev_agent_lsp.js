@@ -26,10 +26,16 @@ const documents = new Map();
 const issuesByUri = new Map();
 const pendingClientRequests = new Map();
 const activeTerminalTasks = new Map();
+const pendingAnalysisTimers = new Map();
+const analysisCache = new Map();
 
 let messageBuffer = Buffer.alloc(0);
 let shutdownRequested = false;
 let nextClientRequestId = 1;
+
+const DEFAULT_ZED_OPEN_DEBOUNCE_MS = 150;
+const DEFAULT_ZED_CHANGE_DEBOUNCE_MS = 700;
+const DEFAULT_ZED_SAVE_DEBOUNCE_MS = 0;
 
 process.stdin.on('data', (chunk) => {
   messageBuffer = Buffer.concat([messageBuffer, chunk]);
@@ -122,7 +128,7 @@ function handleMessage(message) {
       return;
     }
     upsertDocument(document.uri, document.text, document.version);
-    analyzeAndPublish(document.uri);
+    scheduleAnalyzeAndPublish(document.uri, 'open');
     return;
   }
 
@@ -135,7 +141,7 @@ function handleMessage(message) {
       return;
     }
     upsertDocument(document.uri, lastChange.text, document.version);
-    analyzeAndPublish(document.uri);
+    scheduleAnalyzeAndPublish(document.uri, 'change');
     return;
   }
 
@@ -144,7 +150,7 @@ function handleMessage(message) {
     if (!document || !document.uri) {
       return;
     }
-    analyzeAndPublish(document.uri);
+    scheduleAnalyzeAndPublish(document.uri, 'save');
     return;
   }
 
@@ -153,6 +159,8 @@ function handleMessage(message) {
     if (!document || !document.uri) {
       return;
     }
+    clearPendingAnalysis(document.uri);
+    invalidateAnalysis(document.uri);
     documents.delete(document.uri);
     issuesByUri.delete(document.uri);
     publishDiagnostics(document.uri, []);
@@ -193,6 +201,7 @@ function handleClientResponse(message) {
 }
 
 function upsertDocument(uri, text, version) {
+  invalidateAnalysis(uri);
   documents.set(uri, {
     uri,
     text: String(text || ''),
@@ -200,14 +209,95 @@ function upsertDocument(uri, text, version) {
   });
 }
 
-function analyzeAndPublish(uri) {
+function readDelayEnv(name, fallback) {
+  const parsed = Number.parseInt(String(process.env[name] || fallback), 10);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.max(0, parsed);
+}
+
+function analysisDelayForTrigger(trigger) {
+  const normalizedTrigger = String(trigger || '').trim();
+  if (normalizedTrigger === 'open') {
+    return readDelayEnv('PINGU_ZED_OPEN_DEBOUNCE_MS', DEFAULT_ZED_OPEN_DEBOUNCE_MS);
+  }
+  if (normalizedTrigger === 'save' || normalizedTrigger === 'autofix') {
+    return readDelayEnv('PINGU_ZED_SAVE_DEBOUNCE_MS', DEFAULT_ZED_SAVE_DEBOUNCE_MS);
+  }
+  return readDelayEnv('PINGU_ZED_CHANGE_DEBOUNCE_MS', DEFAULT_ZED_CHANGE_DEBOUNCE_MS);
+}
+
+function documentVersion(document) {
+  return Number.isFinite(document && document.version) ? Number(document.version) : null;
+}
+
+function clearPendingAnalysis(uri) {
+  const timer = pendingAnalysisTimers.get(uri);
+  if (!timer) {
+    return;
+  }
+  clearTimeout(timer);
+  pendingAnalysisTimers.delete(uri);
+}
+
+function invalidateAnalysis(uri) {
+  analysisCache.delete(String(uri || ''));
+}
+
+function analyzeIssuesForDocument(document, options = {}) {
+  if (!document) {
+    return [];
+  }
+
+  const uri = String(document.uri || '');
+  const version = documentVersion(document);
+  const cached = analysisCache.get(uri);
+  if (!options.force && cached && cached.version === version) {
+    return cached.issues;
+  }
+
+  const filePath = uriToFilePath(uri);
+  const issues = analyzeText(filePath, document.text, { maxLineLength: 120 });
+  analysisCache.set(uri, {
+    version,
+    issues,
+  });
+  return issues;
+}
+
+function scheduleAnalyzeAndPublish(uri, trigger = 'change') {
   const document = documents.get(uri);
   if (!document) {
     return;
   }
 
-  const filePath = uriToFilePath(uri);
-  const issues = analyzeText(filePath, document.text, { maxLineLength: 120 });
+  clearPendingAnalysis(uri);
+  const expectedVersion = documentVersion(document);
+  const delay = analysisDelayForTrigger(trigger);
+  if (delay <= 0) {
+    analyzeAndPublish(uri, { expectedVersion, force: trigger === 'save' || trigger === 'autofix' });
+    return;
+  }
+
+  const timer = setTimeout(() => {
+    pendingAnalysisTimers.delete(uri);
+    analyzeAndPublish(uri, { expectedVersion, force: false });
+  }, delay);
+  pendingAnalysisTimers.set(uri, timer);
+}
+
+function analyzeAndPublish(uri, options = {}) {
+  const document = documents.get(uri);
+  if (!document) {
+    return;
+  }
+
+  if (options.expectedVersion !== undefined && documentVersion(document) !== options.expectedVersion) {
+    return;
+  }
+
+  const issues = analyzeIssuesForDocument(document, options);
   issuesByUri.set(uri, issues);
   publishDiagnostics(uri, issues.map((issue) => issueToDiagnostic(document, issue)));
 }
@@ -719,6 +809,7 @@ function applyTextEditsToDocumentText(text, edits) {
 
 function upsertLocalDocument(uri, text, version = null) {
   const existing = documents.get(uri);
+  invalidateAnalysis(uri);
   documents.set(uri, {
     uri,
     text: String(text || ''),
@@ -908,10 +999,10 @@ async function executeIssueFix(payload) {
     return;
   }
 
+  clearPendingAnalysis(uri);
   applyWorkspaceEditLocally(edit);
   const updatedDocument = documents.get(uri) || document;
-  const filePath = uriToFilePath(uri);
-  const afterIssues = analyzeText(filePath, updatedDocument.text, { maxLineLength: 120 });
+  const afterIssues = analyzeIssuesForDocument(updatedDocument, { force: true });
   const guardResult = evaluateAutofixGuard({
     appliedIssues: [issue],
     beforeIssues,
@@ -925,7 +1016,7 @@ async function executeIssueFix(payload) {
     const restored = await requestApplyEdit('Realtime Dev Agent rollback', restoreEdit);
     if (restored) {
       restoreSnapshotLocally(snapshot);
-      analyzeAndPublish(uri);
+      analyzeAndPublish(uri, { force: true });
     }
     sendNotification('window/logMessage', {
       type: 2,
@@ -934,7 +1025,8 @@ async function executeIssueFix(payload) {
     return;
   }
 
-  analyzeAndPublish(uri);
+  issuesByUri.set(uri, afterIssues);
+  publishDiagnostics(uri, afterIssues.map((afterIssue) => issueToDiagnostic(updatedDocument, afterIssue)));
 }
 
 function executeTerminalTask(payload) {
@@ -1047,8 +1139,9 @@ function requestTriggerRemoval(uri, line, triggerText) {
     if (!applied) {
       return;
     }
+    clearPendingAnalysis(uri);
     applyTriggerRemovalToDocument(uri, line, triggerText);
-    analyzeAndPublish(uri);
+    analyzeAndPublish(uri, { force: true });
   });
 }
 

@@ -28,6 +28,8 @@ function activate(context) {
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   const issuesByUri = new Map();
   const pendingTimers = new Map();
+  const analysisCache = new Map();
+  const analysisRequestIds = new Map();
 
   function configuration(uri) {
     return vscode.workspace.getConfiguration('realtimeDevAgent', uri);
@@ -72,13 +74,52 @@ function activate(context) {
     return Boolean(document) && document.uri.scheme === 'file' && !document.isClosed;
   }
 
+  function uriKey(uri) {
+    return uri ? uri.toString() : '';
+  }
+
+  function documentVersion(document) {
+    return Number.isFinite(document && document.version) ? Number(document.version) : null;
+  }
+
+  function resolveLiveDocument(uri) {
+    if (!uri) {
+      return null;
+    }
+
+    return vscode.workspace.textDocuments.find((document) => supportsDocument(document) && uriKey(document.uri) === uriKey(uri)) || null;
+  }
+
   function clearPending(uri) {
-    const key = uri.toString();
+    const key = uriKey(uri);
     const timer = pendingTimers.get(key);
     if (timer) {
       clearTimeout(timer);
       pendingTimers.delete(key);
     }
+  }
+
+  function invalidateAnalysis(uri) {
+    analysisCache.delete(uriKey(uri));
+  }
+
+  function nextAnalysisRequestId(uri) {
+    const key = uriKey(uri);
+    const nextId = Number(analysisRequestIds.get(key) || 0) + 1;
+    analysisRequestIds.set(key, nextId);
+    return nextId;
+  }
+
+  function isLatestAnalysisRequest(uri, requestId) {
+    return Number(analysisRequestIds.get(uriKey(uri)) || 0) === Number(requestId || 0);
+  }
+
+  function configuredRealtimeAutoFixMaxPerPass(uri) {
+    const configured = Number(configuration(uri).get('realtimeAutoFixMaxPerPass', 2));
+    if (!Number.isFinite(configured)) {
+      return 2;
+    }
+    return Math.max(0, Math.trunc(configured));
   }
 
   function resolveScriptPath(uri) {
@@ -111,6 +152,18 @@ function activate(context) {
       return [];
     }
 
+    const key = uriKey(document.uri);
+    const version = documentVersion(document);
+    const cached = analysisCache.get(key);
+    if (cached && cached.version === version) {
+      if (Array.isArray(cached.issues)) {
+        return cached.issues;
+      }
+      if (cached.promise) {
+        return cached.promise;
+      }
+    }
+
     const config = configuration(document.uri);
     const nodePath = config.get('nodePath', 'node');
     const scriptPath = resolveScriptPath(document.uri);
@@ -118,7 +171,7 @@ function activate(context) {
     const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
     const cwd = workspaceFolder ? workspaceFolder.uri.fsPath : path.dirname(document.fileName);
 
-    return runAgent({
+    const promise = runAgent({
       spawn,
       nodePath,
       scriptPath,
@@ -127,28 +180,72 @@ function activate(context) {
       maxLineLength,
       cwd,
       env: resolveAgentEnvironment(document.uri),
+    }).then((issues) => {
+      const current = analysisCache.get(key);
+      if (current && current.promise === promise) {
+        analysisCache.set(key, {
+          version,
+          issues,
+          promise: null,
+        });
+      }
+      return issues;
+    }).catch((error) => {
+      const current = analysisCache.get(key);
+      if (current && current.promise === promise) {
+        analysisCache.delete(key);
+      }
+      throw error;
     });
+    analysisCache.set(key, {
+      version,
+      issues: null,
+      promise,
+    });
+    return promise;
   }
 
-  async function analyzeDocument(document, trigger) {
+  async function analyzeDocument(document, trigger, options = {}) {
     if (!supportsDocument(document)) {
       return;
     }
 
+    const requestId = nextAnalysisRequestId(document.uri);
+    const requestedVersion = documentVersion(document);
+
     try {
-      const issues = await collectIssues(document);
-      const autoFixApplied = await editRuntime.applyAutoFixes(document, issues);
+      const issues = Array.isArray(options.issues)
+        ? options.issues
+        : await collectIssues(document);
+      const liveDocument = resolveLiveDocument(document.uri) || document;
+      if (!supportsDocument(liveDocument)) {
+        return;
+      }
+      if (!isLatestAnalysisRequest(liveDocument.uri, requestId)) {
+        return;
+      }
+      if (documentVersion(liveDocument) !== requestedVersion) {
+        return;
+      }
+
+      const autoFixApplied = options.skipAutoFix
+        ? false
+        : await editRuntime.applyAutoFixes(liveDocument, issues, {
+          trigger,
+        });
       if (autoFixApplied) {
         return;
       }
 
-      publishDiagnostics(vscode, diagnostics, issuesByUri, document, issues);
-      const terminalTaskApplied = await terminalRuntime.applyTerminalTasks(document, issues);
+      publishDiagnostics(vscode, diagnostics, issuesByUri, liveDocument, issues);
+      const terminalTaskApplied = options.skipTerminalTasks
+        ? false
+        : await terminalRuntime.applyTerminalTasks(liveDocument, issues);
       if (terminalTaskApplied) {
         return;
       }
       if (trigger === 'manual') {
-        output.appendLine(`[RealtimeDevAgent] ${issues.length} item(ns) em ${document.fileName}`);
+        output.appendLine(`[RealtimeDevAgent] ${issues.length} item(ns) em ${liveDocument.fileName}`);
         if (issues.length > 0) {
           output.show(true);
         }
@@ -162,7 +259,7 @@ function activate(context) {
     }
   }
 
-  function scheduleAnalysis(document) {
+  function scheduleAnalysis(document, trigger = 'change') {
     if (!supportsDocument(document) || !isEnabled(document.uri)) {
       return;
     }
@@ -175,10 +272,14 @@ function activate(context) {
     clearPending(document.uri);
     const delay = Math.max(150, Number(config.get('changeDebounceMs', 1200)));
     const timer = setTimeout(() => {
-      pendingTimers.delete(document.uri.toString());
-      analyzeDocument(document, 'change');
+      pendingTimers.delete(uriKey(document.uri));
+      const liveDocument = resolveLiveDocument(document.uri);
+      if (!supportsDocument(liveDocument) || !isEnabled(liveDocument.uri)) {
+        return;
+      }
+      analyzeDocument(liveDocument, trigger);
     }, delay);
-    pendingTimers.set(document.uri.toString(), timer);
+    pendingTimers.set(uriKey(document.uri), timer);
   }
 
   editRuntime = createEditRuntime({
@@ -190,6 +291,7 @@ function activate(context) {
     configuredAutoFixKinds,
     fixPriorityForKind,
     autoFixNoOpReason,
+    configuredRealtimeAutoFixMaxPerPass,
     isAutoFixEnabled,
     mustClearKindsForIssue,
     resolveIssueAction,
@@ -240,6 +342,7 @@ function activate(context) {
       if (!editor) {
         return;
       }
+      clearPending(editor.document.uri);
       await analyzeDocument(editor.document, 'manual');
     }),
     vscode.commands.registerCommand('realtimeDevAgent.toggleRealtime', async () => {
@@ -251,7 +354,7 @@ function activate(context) {
       );
       refreshStatusBar();
       if (!enabled && vscode.window.activeTextEditor) {
-        scheduleAnalysis(vscode.window.activeTextEditor.document);
+        scheduleAnalysis(vscode.window.activeTextEditor.document, 'focus');
       }
     }),
     vscode.workspace.onDidChangeConfiguration((event) => {
@@ -260,7 +363,7 @@ function activate(context) {
       }
       refreshStatusBar();
       if (vscode.window.activeTextEditor && isEnabled(vscode.window.activeTextEditor.document.uri)) {
-        scheduleAnalysis(vscode.window.activeTextEditor.document);
+        scheduleAnalysis(vscode.window.activeTextEditor.document, 'focus');
       }
     }),
     vscode.workspace.onDidSaveTextDocument((document) => {
@@ -270,6 +373,7 @@ function activate(context) {
       if (!configuration(document.uri).get('realtimeOnSave', true)) {
         return;
       }
+      clearPending(document.uri);
       analyzeDocument(document, 'save');
     }),
     vscode.workspace.onDidChangeTextDocument((event) => {
@@ -277,22 +381,23 @@ function activate(context) {
         return;
       }
       terminalRuntime.clearTerminalAttempts(event.document.uri);
-      scheduleAnalysis(event.document);
+      scheduleAnalysis(event.document, 'change');
     }),
     vscode.workspace.onDidOpenTextDocument((document) => {
       if (!supportsDocument(document) || !isEnabled(document.uri)) {
         return;
       }
-      scheduleAnalysis(document);
+      scheduleAnalysis(document, 'open');
     }),
     vscode.window.onDidChangeActiveTextEditor((editor) => {
       if (!editor || !supportsDocument(editor.document) || !isEnabled(editor.document.uri)) {
         return;
       }
-      scheduleAnalysis(editor.document);
+      scheduleAnalysis(editor.document, 'focus');
     }),
     vscode.workspace.onDidCloseTextDocument((document) => {
       clearPending(document.uri);
+      invalidateAnalysis(document.uri);
       terminalRuntime.clearTerminalAttempts(document.uri);
       issuesByUri.delete(document.uri.toString());
       diagnostics.delete(document.uri);
@@ -311,7 +416,7 @@ function activate(context) {
     startupDocuments.set(editor.document.uri.toString(), editor.document);
   });
   startupDocuments.forEach((document) => {
-    scheduleAnalysis(document);
+    scheduleAnalysis(document, 'startup');
   });
 }
 

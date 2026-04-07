@@ -612,6 +612,7 @@ code --install-extension /caminho/absoluto/para/pingu-dev-agent.vsix --force
 - `realtimeDevAgent.realtimeOnSave`
 - `realtimeDevAgent.realtimeOnChange`
 - `realtimeDevAgent.changeDebounceMs`
+- `realtimeDevAgent.realtimeAutoFixMaxPerPass`
 - `realtimeDevAgent.terminalActionsEnabled`
 - `realtimeDevAgent.terminalRiskMode`
 - `realtimeDevAgent.autoFixEnabled`
@@ -637,6 +638,18 @@ Pre-requisitos:
 
 - `node` no PATH
 - toolchain Rust instalada para o Zed compilar a extensao
+
+Comportamento realtime do Zed:
+
+- debounce por mudanca para evitar reanalise a cada tecla
+- cache por versao do documento para reutilizar resultado quando o texto nao mudou
+- quick fix reaproveita a analise pos-edicao sem rodar o analisador duas vezes
+
+Knobs opcionais por ambiente:
+
+- `PINGU_ZED_OPEN_DEBOUNCE_MS`
+- `PINGU_ZED_CHANGE_DEBOUNCE_MS`
+- `PINGU_ZED_SAVE_DEBOUNCE_MS`
 
 ## Credenciais e variaveis de ambiente
 

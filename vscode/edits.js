@@ -27,6 +27,7 @@ function createEditRuntime(deps) {
     vscode,
     analyzeDocument,
     collectIssues,
+    configuredRealtimeAutoFixMaxPerPass = () => 0,
     configuredAutoFixKinds,
     fixPriorityForKind,
     autoFixNoOpReason = () => '',
@@ -79,6 +80,27 @@ function createEditRuntime(deps) {
       documentationCount += 1;
       return true;
     });
+  }
+
+  function realtimeAutoFixLimit(document, trigger) {
+    const normalizedTrigger = String(trigger || '').trim();
+    if (!normalizedTrigger || normalizedTrigger === 'manual') {
+      return 0;
+    }
+
+    const configured = Number(configuredRealtimeAutoFixMaxPerPass(document.uri, normalizedTrigger));
+    if (!Number.isFinite(configured)) {
+      return 0;
+    }
+    return Math.max(0, Math.trunc(configured));
+  }
+
+  function limitAutomaticPassCandidates(document, issues, trigger) {
+    const limit = realtimeAutoFixLimit(document, trigger);
+    if (limit <= 0 || !Array.isArray(issues) || issues.length <= limit) {
+      return issues;
+    }
+    return issues.slice(0, limit);
   }
 
   function issueActionIdentity(issue) {
@@ -539,7 +561,7 @@ function createEditRuntime(deps) {
     });
   }
 
-  async function applyAutoFixes(document, issues) {
+  async function applyAutoFixes(document, issues, options = {}) {
     if (!isAutoFixEnabled(document.uri)) {
       return false;
     }
@@ -576,7 +598,11 @@ function createEditRuntime(deps) {
     }
 
     candidates.sort(compareFixCandidates);
-    const boundedCandidates = limitDocumentationCandidates(document, candidates);
+    const boundedCandidates = limitAutomaticPassCandidates(
+      document,
+      limitDocumentationCandidates(document, candidates),
+      options.trigger,
+    );
 
     const inlineCandidates = boundedCandidates.filter((issue) => resolveIssueAction(issue).op !== 'write_file');
     const deferredWriteCandidates = boundedCandidates.filter((issue) => resolveIssueAction(issue).op === 'write_file');
@@ -622,7 +648,11 @@ function createEditRuntime(deps) {
       return false;
     }
 
-    await analyzeDocument(refreshedDocument, 'autofix');
+    await analyzeDocument(refreshedDocument, 'autofix', {
+      issues: refreshedIssues,
+      skipAutoFix: true,
+      skipTerminalTasks: true,
+    });
     return true;
   }
 

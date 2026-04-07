@@ -30,6 +30,18 @@ Escopo atual desta extensao:
 - code action de `terminal_task` com execucao local em background e logs em tempo real
 - instalacao local como dev extension
 
+Ajustes de fluidez do language server:
+
+- debounce por mudanca de texto antes de reanalisar
+- cache por versao do documento
+- reaproveitamento da analise apos quick fix para evitar rodada duplicada
+
+Knobs opcionais por ambiente:
+
+- `PINGU_ZED_OPEN_DEBOUNCE_MS`
+- `PINGU_ZED_CHANGE_DEBOUNCE_MS`
+- `PINGU_ZED_SAVE_DEBOUNCE_MS`
+
 Observacao:
 
 - `context_file` e `unit_test` continuam sendo aplicados por quick fix no proprio arquivo
