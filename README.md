@@ -656,8 +656,8 @@ export OPENAI_API_KEY="sua_chave_aqui"
 Importante para a trilha live:
 
 - a chave precisa ter acesso real ao endpoint `/v1/responses`
-- conta sem billing ativo ou sem permissao de uso live falha no preflight antes da suite completa
 - com `OPENAI_API_KEY` presente, os validadores que suportam live tentam a trilha OpenAI automaticamente
+- se a API da OpenAI estiver indisponivel neste ambiente, a trilha live cai para indisponibilidade generica sem acoplar logica de billing ao agente
 - a suite live completa agora inclui uma validacao semantica dedicada para comentarios gerados por IA
 
 ### Matriz do agente

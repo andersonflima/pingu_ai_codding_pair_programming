@@ -5,6 +5,7 @@ const { spawnSync } = require('child_process');
 const DEFAULT_OPENAI_BASE_URL = 'https://api.openai.com';
 const DEFAULT_OPENAI_MODEL = 'gpt-5-codex';
 const DEFAULT_OPENAI_TIMEOUT_MS = 30000;
+const GENERIC_LIVE_UNAVAILABLE_MESSAGE = 'OpenAI Codex indisponivel para validacao live neste ambiente.';
 let cachedLiveValidationState = null;
 
 function readTimeoutMs(env = process.env) {
@@ -108,12 +109,11 @@ function probeLiveOpenAiValidation(env = process.env) {
     });
 
     if (result.error || result.status !== 0) {
-      const errorText = String((result.error && result.error.message) || result.stderr || result.stdout || '').trim();
       return cacheLiveValidationState({
         enabled: true,
         available: false,
-        reason: 'transport_error',
-        message: errorText || 'Falha ao acessar a API da OpenAI durante o preflight live.',
+        reason: 'openai_unavailable',
+        message: GENERIC_LIVE_UNAVAILABLE_MESSAGE,
       }, env);
     }
 
@@ -122,20 +122,18 @@ function probeLiveOpenAiValidation(env = process.env) {
       return cacheLiveValidationState({
         enabled: true,
         available: false,
-        reason: 'empty_response',
-        message: 'A API da OpenAI respondeu sem payload no preflight live.',
+        reason: 'openai_unavailable',
+        message: GENERIC_LIVE_UNAVAILABLE_MESSAGE,
       }, env);
     }
 
     const parsed = JSON.parse(stdout);
     if (parsed && parsed.error) {
-      const code = String(parsed.error.code || '').trim();
-      const message = String(parsed.error.message || '').trim();
       return cacheLiveValidationState({
         enabled: true,
         available: false,
-        reason: code || 'api_error',
-        message: message || 'A API da OpenAI rejeitou o preflight live.',
+        reason: 'openai_unavailable',
+        message: GENERIC_LIVE_UNAVAILABLE_MESSAGE,
       }, env);
     }
 
@@ -147,8 +145,8 @@ function probeLiveOpenAiValidation(env = process.env) {
       return cacheLiveValidationState({
         enabled: true,
         available: false,
-        reason: 'invalid_response',
-        message: 'A API da OpenAI respondeu sem output utilizavel no preflight live.',
+        reason: 'openai_unavailable',
+        message: GENERIC_LIVE_UNAVAILABLE_MESSAGE,
       }, env);
     }
 
@@ -162,8 +160,8 @@ function probeLiveOpenAiValidation(env = process.env) {
     return cacheLiveValidationState({
       enabled: true,
       available: false,
-      reason: 'unexpected_error',
-      message: String(error && error.message || error).trim() || 'Falha inesperada no preflight live da OpenAI.',
+      reason: 'openai_unavailable',
+      message: GENERIC_LIVE_UNAVAILABLE_MESSAGE,
     }, env);
   }
 }
