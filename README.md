@@ -495,6 +495,8 @@ O repositorio expoe `plugin/` e `autoload/` na raiz, entao pode ser instalado di
     vim.g.realtime_dev_agent_realtime_on_buf_enter = 0
     vim.g.realtime_dev_agent_realtime_insert_mode = 0
     vim.g.realtime_dev_agent_realtime_async = 1
+    vim.g.realtime_dev_agent_realtime_use_daemon = 1
+    vim.g.realtime_dev_agent_realtime_focus_scope_enabled = 1
     vim.g.realtime_dev_agent_auto_check_max_lines = 600
     vim.g.realtime_dev_agent_analysis_cache_max_entries = 24
     vim.g.realtime_dev_agent_realtime_auto_fix_max_per_check = 2
@@ -531,6 +533,8 @@ Plug 'andersonflima/pingu_ai_codding_pair_programming'
 - `let g:realtime_dev_agent_auto_fix_visual_mode = 'preserve'` reduz ruido visual durante o batch
 - `let g:realtime_dev_agent_realtime_insert_mode = 1` volta a analisar tambem no meio da digitacao
 - `let g:realtime_dev_agent_realtime_async = 1` usa job assincrono no Neovim para evitar congelar a UI durante o loop automatico
+- `let g:realtime_dev_agent_realtime_use_daemon = 1` reaproveita um runtime residente no Neovim para reduzir spawn por analise realtime
+- `let g:realtime_dev_agent_realtime_focus_scope_enabled = 1` limita a analise leve realtime ao bloco atual do cursor
 - `let g:realtime_dev_agent_auto_check_max_lines = 600` limita checks automaticos a arquivos menores
 - `let g:realtime_dev_agent_analysis_cache_max_entries = 24` reaproveita a ultima analise do mesmo texto e reduz relancamento do agente
 - `let g:realtime_dev_agent_realtime_auto_fix_max_per_check = 2` reduz o lote automatico por ciclo realtime para manter o editor fluido
@@ -671,6 +675,7 @@ Variaveis comuns:
 - `PINGU_OPENAI_TIMEOUT_MS`
 - `PINGU_AUTOMATIC_AI_COMMENT_MAX_ISSUES`
 - `PINGU_FLOW_COMMENT_MAX_LINES`
+- `PINGU_LIGHT_ANALYSIS_DEEP_PASS_MAX_LINES`
 
 Exemplo:
 
@@ -688,6 +693,7 @@ Importante:
 - `PINGU_DOCUMENTATION_AUTO_FIX_MIN_CONFIDENCE=0.60` controla o limiar minimo de confianca para comentario automatico documental; valores menores deixam o lote mais agressivo
 - `PINGU_DOCUMENTATION_MAX_LINES=420` evita `function_doc`, `class_doc`, `variable_doc` e `flow_comment` automaticos em arquivos grandes; use `0` para remover o corte
 - `PINGU_FLOW_COMMENT_MAX_LINES=260` evita `flow_comment` automatico em arquivos grandes; use `0` para remover o corte
+- `PINGU_LIGHT_ANALYSIS_DEEP_PASS_MAX_LINES=260` limita checks mais profundos do modo `light` a arquivos menores; use `0` para manter o deep pass mesmo em arquivo grande
 - `PINGU_AUTOFIX_LARGE_FILE_LINE_THRESHOLD=260` define a partir de quantas linhas o VS Code passa a encolher o lote automatico
 - `PINGU_AUTOFIX_DOC_MAX_PER_PASS=0` limita quantas issues documentais o VS Code aplica por ciclo; `0` remove o corte
 - `PINGU_AUTOFIX_DOC_MAX_PER_PASS_LARGE_FILE=4` limita docstrings/comentarios por ciclo em arquivo grande no VS Code

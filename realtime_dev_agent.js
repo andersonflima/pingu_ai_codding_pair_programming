@@ -28,6 +28,8 @@ if (args.serveMode) {
   const issues = analyzeText(sourcePath, content, {
     maxLineLength: Number.isFinite(args.maxLineLength) ? args.maxLineLength : DEFAULT_MAX_LINE_LENGTH,
     analysisMode: args.analysisMode,
+    focusStartLine: args.focusStartLine,
+    focusEndLine: args.focusEndLine,
   });
 
   if (args.output === 'vim') {
@@ -71,6 +73,12 @@ function parseArgs(rawArgs) {
       i += 1;
     } else if (current === '--analysis-mode' && rawArgs[i + 1]) {
       options.analysisMode = rawArgs[i + 1];
+      i += 1;
+    } else if (current === '--focus-start-line' && rawArgs[i + 1]) {
+      options.focusStartLine = Number.parseInt(rawArgs[i + 1], 10);
+      i += 1;
+    } else if (current === '--focus-end-line' && rawArgs[i + 1]) {
+      options.focusEndLine = Number.parseInt(rawArgs[i + 1], 10);
       i += 1;
     } else if (current === '--autofix-guard') {
       options.guardMode = true;
@@ -133,6 +141,8 @@ function handleServerRequest(request) {
         ? request.maxLineLength
         : DEFAULT_MAX_LINE_LENGTH,
       analysisMode: request && request.analysisMode,
+      focusStartLine: request && request.focusStartLine,
+      focusEndLine: request && request.focusEndLine,
     });
 
     writeServerResponse({

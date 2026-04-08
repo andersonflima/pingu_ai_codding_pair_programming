@@ -251,6 +251,16 @@ if !exists('g:realtime_dev_agent_realtime_async')
   let g:realtime_dev_agent_realtime_async = has('nvim') ? 1 : 0
 endif
 
+if !exists('g:realtime_dev_agent_realtime_use_daemon')
+  " Reaproveita um runtime residente no Neovim para reduzir spawn por analise realtime.
+  let g:realtime_dev_agent_realtime_use_daemon = has('nvim') ? 1 : 0
+endif
+
+if !exists('g:realtime_dev_agent_realtime_focus_scope_enabled')
+  " Limita a analise leve realtime ao bloco atual do cursor para reduzir custo fora do contexto imediato.
+  let g:realtime_dev_agent_realtime_focus_scope_enabled = 1
+endif
+
 if !exists('g:realtime_dev_agent_analysis_cache_max_entries')
   " Mantem um cache pequeno por changedtick para evitar relancar o agente no mesmo texto.
   let g:realtime_dev_agent_analysis_cache_max_entries = 24

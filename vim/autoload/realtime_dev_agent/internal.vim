@@ -20,6 +20,10 @@ let s:realtime_dev_agent_analysis_cache = {}
 let s:realtime_dev_agent_analysis_cache_order = []
 let s:realtime_dev_agent_async_analysis_job = -1
 let s:realtime_dev_agent_async_analysis_context = {}
+let s:realtime_dev_agent_daemon_job = -1
+let s:realtime_dev_agent_daemon_request_seq = 0
+let s:realtime_dev_agent_daemon_pending = {}
+let s:realtime_dev_agent_daemon_stdout_remainder = ''
 
 function! s:issue_kind_entry(kind) abort
   let l:registry = get(g:, 'realtime_dev_agent_issue_kind_registry', {})
@@ -134,6 +138,13 @@ function! s:realtime_async_enabled() abort
     return v:false
   endif
   return get(g:, 'realtime_dev_agent_realtime_async', has('nvim') ? 1 : 0) ? v:true : v:false
+endfunction
+
+function! s:realtime_daemon_enabled() abort
+  if !s:realtime_async_enabled()
+    return v:false
+  endif
+  return get(g:, 'realtime_dev_agent_realtime_use_daemon', has('nvim') ? 1 : 0) ? v:true : v:false
 endfunction
 
 function! s:project_root(file) abort
@@ -347,6 +358,7 @@ function! s:prepared_analysis_request(bufnr, ...) abort
   let l:file = fnamemodify(bufname(a:bufnr), ':p')
   let l:changedtick = getbufvar(a:bufnr, 'changedtick', 0)
   let l:analysis_mode = a:0 > 0 ? s:normalize_analysis_mode(a:1) : 'full'
+  let [l:focus_start_line, l:focus_end_line] = s:analysis_focus_scope_for_buffer(a:bufnr, l:analysis_mode)
   call s:track_buffer_tick(l:file, l:changedtick)
 
   let l:cached = s:cached_analysis_for_buffer(l:file, l:changedtick, l:analysis_mode)
@@ -393,11 +405,21 @@ function! s:prepared_analysis_request(bufnr, ...) abort
         \ l:analysis_mode,
         \ '--vim'
         \ ])
+  if l:focus_start_line > 0 && l:focus_end_line >= l:focus_start_line
+    call extend(l:argv, [
+          \ '--focus-start-line',
+          \ string(l:focus_start_line),
+          \ '--focus-end-line',
+          \ string(l:focus_end_line)
+          \ ])
+  endif
   return {
         \ 'ok': v:true,
         \ 'file': l:file,
         \ 'changedtick': l:changedtick,
         \ 'analysis_mode': l:analysis_mode,
+        \ 'focus_start_line': l:focus_start_line,
+        \ 'focus_end_line': l:focus_end_line,
         \ 'buffer_dirty_tmp': l:buffer_dirty_tmp,
         \ 'stdin_payload': l:stdin_payload,
         \ 'uses_stdin': l:uses_stdin,
@@ -865,6 +887,20 @@ function! s:current_cursor_context_key(bufnr) abort
   let [l:start, l:end] = s:cursor_context_bounds_for_buffer(a:bufnr, line('.'))
   let l:changedtick = getbufvar(a:bufnr, 'changedtick', 0)
   return printf('%s|%d|%d|%d', l:file, l:changedtick, l:start, l:end)
+endfunction
+
+function! s:analysis_focus_scope_for_buffer(bufnr, analysis_mode) abort
+  if !get(g:, 'realtime_dev_agent_realtime_focus_scope_enabled', 1)
+    return [0, 0]
+  endif
+  if s:normalize_analysis_mode(a:analysis_mode) !=# 'light'
+    return [0, 0]
+  endif
+  if a:bufnr <= 0 || !bufloaded(a:bufnr)
+    return [0, 0]
+  endif
+
+  return s:cursor_context_bounds_for_buffer(a:bufnr, line('.'))
 endfunction
 
 function! s:limit_cursor_context_auto_fix_candidates(items) abort
@@ -2664,6 +2700,47 @@ function! s:parse_analysis_output(output, file, buffer_dirty_tmp) abort
   return l:qf
 endfunction
 
+function! s:issue_display_text(issue) abort
+  let l:severity = toupper(string(get(a:issue, 'severity', 'info')))
+  let l:kind = string(get(a:issue, 'kind', 'issue'))
+  let l:message = string(get(a:issue, 'message', ''))
+  let l:base = printf('[%s] %s: %s', l:severity, l:kind, l:message)
+  let l:suggestion = string(get(a:issue, 'suggestion', ''))
+  return empty(l:suggestion) ? l:base : l:base . ' | ' . l:suggestion
+endfunction
+
+function! s:qf_items_from_issues(issues, file) abort
+  let l:qf = []
+  let l:target_norm = fnamemodify(a:file, ':p')
+
+  for l:issue in a:issues
+    if type(l:issue) != v:t_dict
+      continue
+    endif
+
+    let l:item_file = fnamemodify(get(l:issue, 'file', l:target_norm), ':p')
+    if l:item_file !=# l:target_norm
+      continue
+    endif
+
+    let l:item = {
+          \ 'filename': l:item_file,
+          \ 'lnum': max([1, str2nr(string(get(l:issue, 'line', 1)))]),
+          \ 'col': max([1, str2nr(string(get(l:issue, 'col', 1)))]),
+          \ 'text': s:issue_display_text(l:issue),
+          \ 'kind': string(get(l:issue, 'kind', '')),
+          \ 'snippet': string(get(l:issue, 'snippet', '')),
+          \ 'action': type(get(l:issue, 'action', {})) == v:t_dict ? get(l:issue, 'action', {}) : {},
+          \ }
+    if !s:issue_targets_active_scope(l:item, a:file)
+      continue
+    endif
+    call add(l:qf, l:item)
+  endfor
+
+  return l:qf
+endfunction
+
 function! s:analysis_for_buffer(bufnr, ...) abort
   let l:analysis_mode = a:0 > 0 ? s:normalize_analysis_mode(a:1) : 'full'
   let l:request = s:prepared_analysis_request(a:bufnr, l:analysis_mode)
@@ -2803,6 +2880,212 @@ function! s:realtime_check_handle_analysis(bufnr, analysis, open_qf, show_echo, 
   endif
 endfunction
 
+function! s:stop_analysis_daemon() abort
+  let l:job = get(s:, 'realtime_dev_agent_daemon_job', -1)
+  let s:realtime_dev_agent_daemon_job = -1
+  let s:realtime_dev_agent_daemon_pending = {}
+  let s:realtime_dev_agent_daemon_stdout_remainder = ''
+  if l:job > 0
+    silent! call jobstop(l:job)
+  endif
+endfunction
+
+function! s:analysis_daemon_handle_failure(message) abort
+  let l:pending = values(get(s:, 'realtime_dev_agent_daemon_pending', {}))
+  let s:realtime_dev_agent_daemon_pending = {}
+  let s:realtime_dev_agent_daemon_stdout_remainder = ''
+
+  for l:context in l:pending
+    call s:realtime_check_handle_analysis(get(l:context, 'bufnr', -1), {
+          \ 'ok': v:false,
+          \ 'file': get(l:context, 'file', ''),
+          \ 'qf': [],
+          \ 'error': a:message,
+          \ 'from_cache': v:false,
+          \ }, get(l:context, 'open_qf', 0), get(l:context, 'show_echo', 0), v:true)
+  endfor
+endfunction
+
+function! s:analysis_daemon_on_stdout(job_id, data, event) abort
+  if a:job_id !=# get(s:, 'realtime_dev_agent_daemon_job', -1)
+    return
+  endif
+  if type(a:data) != v:t_list || empty(a:data)
+    return
+  endif
+
+  let l:payload = s:realtime_dev_agent_daemon_stdout_remainder . join(a:data, "\n")
+  let l:lines = split(l:payload, "\n", 1)
+  let s:realtime_dev_agent_daemon_stdout_remainder = remove(l:lines, -1)
+
+  for l:line in l:lines
+    let l:line = trim(l:line)
+    if empty(l:line)
+      continue
+    endif
+
+    try
+      let l:response = json_decode(l:line)
+    catch
+      continue
+    endtry
+
+    let l:request_id = str2nr(string(get(l:response, 'id', 0)))
+    if l:request_id <= 0 || !has_key(s:realtime_dev_agent_daemon_pending, l:request_id)
+      continue
+    endif
+
+    let l:context = remove(s:realtime_dev_agent_daemon_pending, l:request_id)
+    let l:bufnr = get(l:context, 'bufnr', -1)
+    if l:bufnr <= 0 || !bufloaded(l:bufnr)
+      continue
+    endif
+    if getbufvar(l:bufnr, 'changedtick', -1) !=# get(l:context, 'changedtick', -1)
+      continue
+    endif
+
+    if !get(l:response, 'ok', v:false)
+      call s:realtime_check_handle_analysis(l:bufnr, {
+            \ 'ok': v:false,
+            \ 'file': get(l:context, 'file', ''),
+            \ 'qf': [],
+            \ 'error': string(get(l:response, 'error', 'falha ao analisar via daemon')),
+            \ 'from_cache': v:false,
+            \ }, get(l:context, 'open_qf', 0), get(l:context, 'show_echo', 0), v:true)
+      continue
+    endif
+
+    let l:file = get(l:context, 'file', '')
+    let l:analysis = {
+          \ 'ok': v:true,
+          \ 'file': l:file,
+          \ 'qf': s:qf_items_from_issues(get(l:response, 'issues', []), l:file),
+          \ 'error': '',
+          \ 'from_cache': v:false,
+          \ }
+    let l:analysis = s:store_analysis_for_buffer(
+          \ l:file,
+          \ get(l:context, 'changedtick', 0),
+          \ get(l:context, 'analysis_mode', 'full'),
+          \ l:analysis
+          \ )
+    call s:realtime_check_handle_analysis(
+          \ l:bufnr,
+          \ l:analysis,
+          \ get(l:context, 'open_qf', 0),
+          \ get(l:context, 'show_echo', 0),
+          \ v:true
+          \ )
+  endfor
+endfunction
+
+function! s:analysis_daemon_on_stderr(job_id, data, event) abort
+  if a:job_id !=# get(s:, 'realtime_dev_agent_daemon_job', -1)
+    return
+  endif
+endfunction
+
+function! s:analysis_daemon_on_exit(job_id, code, event) abort
+  if a:job_id !=# get(s:, 'realtime_dev_agent_daemon_job', -1)
+    return
+  endif
+  let s:realtime_dev_agent_daemon_job = -1
+  if a:code == 0
+    call s:analysis_daemon_handle_failure('daemon de analise finalizado')
+  else
+    call s:analysis_daemon_handle_failure('falha no daemon de analise realtime')
+  endif
+endfunction
+
+function! s:ensure_analysis_daemon() abort
+  if !s:realtime_daemon_enabled()
+    return -1
+  endif
+
+  let l:job = get(s:, 'realtime_dev_agent_daemon_job', -1)
+  if l:job > 0
+    return l:job
+  endif
+
+  let l:runner = s:realtime_dev_agent_script_runner()
+  let l:script = fnamemodify(expand(g:realtime_dev_agent_script), ':p')
+  if empty(l:runner) || empty(l:script) || !filereadable(l:script)
+    return -1
+  endif
+
+  let l:job = jobstart([l:runner, l:script, '--serve'], {
+        \ 'on_stdout': function('s:analysis_daemon_on_stdout'),
+        \ 'on_stderr': function('s:analysis_daemon_on_stderr'),
+        \ 'on_exit': function('s:analysis_daemon_on_exit')
+        \ })
+  if l:job <= 0
+    return -1
+  endif
+
+  let s:realtime_dev_agent_daemon_job = l:job
+  let s:realtime_dev_agent_daemon_stdout_remainder = ''
+  let s:realtime_dev_agent_daemon_pending = {}
+  return l:job
+endfunction
+
+function! s:start_daemon_realtime_check(bufnr, open_qf, show_echo, analysis_mode) abort
+  let l:job = s:ensure_analysis_daemon()
+  if l:job <= 0
+    return v:false
+  endif
+
+  let l:request = s:prepared_analysis_request(a:bufnr, a:analysis_mode)
+  if !get(l:request, 'ok', v:false)
+    call s:realtime_check_handle_analysis(a:bufnr, {
+          \ 'ok': v:false,
+          \ 'file': get(l:request, 'file', ''),
+          \ 'qf': [],
+          \ 'error': get(l:request, 'error', 'falha ao preparar analise'),
+          \ 'from_cache': v:false,
+          \ }, a:open_qf, a:show_echo, v:true)
+    return v:true
+  endif
+
+  let l:cached = get(l:request, 'cached', {})
+  if !empty(l:cached)
+    call s:realtime_check_handle_analysis(a:bufnr, l:cached, a:open_qf, a:show_echo, v:true)
+    return v:true
+  endif
+
+  let s:realtime_dev_agent_daemon_request_seq += 1
+  let l:request_id = s:realtime_dev_agent_daemon_request_seq
+  let l:payload = {
+        \ 'id': l:request_id,
+        \ 'command': 'analyze',
+        \ 'sourcePath': get(l:request, 'file', ''),
+        \ 'text': join(getbufline(a:bufnr, 1, '$'), "\n"),
+        \ 'analysisMode': get(l:request, 'analysis_mode', a:analysis_mode),
+        \ }
+  if get(l:request, 'focus_start_line', 0) > 0 && get(l:request, 'focus_end_line', 0) >= get(l:request, 'focus_start_line', 0)
+    let l:payload.focusStartLine = get(l:request, 'focus_start_line', 0)
+    let l:payload.focusEndLine = get(l:request, 'focus_end_line', 0)
+  endif
+
+  let s:realtime_dev_agent_daemon_pending[l:request_id] = {
+        \ 'bufnr': a:bufnr,
+        \ 'file': get(l:request, 'file', ''),
+        \ 'changedtick': get(l:request, 'changedtick', 0),
+        \ 'open_qf': a:open_qf,
+        \ 'show_echo': a:show_echo,
+        \ 'analysis_mode': get(l:request, 'analysis_mode', a:analysis_mode),
+        \ }
+
+  try
+    call chansend(l:job, json_encode(l:payload) . "\n")
+  catch
+    call remove(s:realtime_dev_agent_daemon_pending, l:request_id)
+    call s:stop_analysis_daemon()
+    return v:false
+  endtry
+
+  return v:true
+endfunction
+
 function! s:async_analysis_on_stdout(job_id, data, event) abort
   if a:job_id !=# get(s:, 'realtime_dev_agent_async_analysis_job', -1)
     return
@@ -2884,6 +3167,11 @@ function! s:start_async_realtime_check(bufnr, open_qf, show_echo, ...) abort
   endif
 
   let l:analysis_mode = a:0 > 0 ? s:normalize_analysis_mode(a:1) : 'full'
+  if s:realtime_daemon_enabled()
+    if s:start_daemon_realtime_check(a:bufnr, a:open_qf, a:show_echo, l:analysis_mode)
+      return v:true
+    endif
+  endif
   let l:request = s:prepared_analysis_request(a:bufnr, l:analysis_mode)
   if !get(l:request, 'ok', v:false)
     call s:realtime_check_handle_analysis(a:bufnr, {
@@ -3540,6 +3828,11 @@ endif
 augroup realtime_dev_agent_code_buffer_maps
   autocmd!
   autocmd BufEnter * call s:set_code_buffer_tab_accept()
+augroup END
+
+augroup realtime_dev_agent_runtime_cleanup
+  autocmd!
+  autocmd VimLeavePre * call s:stop_async_analysis_job() | call s:stop_analysis_daemon()
 augroup END
 
 augroup realtime_dev_agent_open_review
