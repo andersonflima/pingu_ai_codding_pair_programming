@@ -33,12 +33,29 @@ function! s:issue_kind_entry(kind) abort
   return get(l:registry, a:kind, {})
 endfunction
 
-function! s:realtime_dev_agent_script_runner() abort
-  if !executable('node')
-    return ''
+function! s:realtime_dev_agent_node_path() abort
+  let l:configured = trim('' . get(g:, 'realtime_dev_agent_node_path', ''))
+  if !empty(l:configured)
+    if filereadable(l:configured) && executable(l:configured)
+      return fnamemodify(l:configured, ':p')
+    endif
+    let l:resolved = exepath(l:configured)
+    if !empty(l:resolved)
+      return l:resolved
+    endif
   endif
 
-  return empty(s:realtime_dev_agent_script_path()) ? '' : 'node'
+  let l:resolved = exepath('node')
+  if !empty(l:resolved)
+    return l:resolved
+  endif
+
+  return executable('node') ? 'node' : ''
+endfunction
+
+function! s:realtime_dev_agent_script_runner() abort
+  let l:node = s:realtime_dev_agent_node_path()
+  return empty(l:node) || empty(s:realtime_dev_agent_script_path()) ? '' : l:node
 endfunction
 
 function! s:realtime_dev_agent_script_candidates() abort
@@ -75,6 +92,11 @@ function! s:realtime_dev_agent_script_path() abort
   endfor
 
   return ''
+endfunction
+
+function! s:realtime_dev_agent_guard_runtime_path() abort
+  let l:guard_runtime = fnamemodify(resolve(expand('<sfile>:p')), ':h') . '/guard_runtime.js'
+  return filereadable(l:guard_runtime) ? fnamemodify(l:guard_runtime, ':p') : ''
 endfunction
 
 function! s:realtime_dev_agent_script_label() abort
@@ -1577,13 +1599,17 @@ endfunction
 
 function! s:run_autofix_guard(payload, file) abort
   let l:runner = s:realtime_dev_agent_script_runner()
+  let l:guard_runtime = s:realtime_dev_agent_guard_runtime_path()
   let l:script = s:realtime_dev_agent_script_path()
-  if empty(l:runner) || empty(l:script) || !filereadable(l:script)
+  if empty(l:runner) || (empty(l:guard_runtime) && (empty(l:script) || !filereadable(l:script)))
     return {'ok': v:false, 'error': 'guard cli nao encontrada'}
   endif
 
   let l:root = s:project_root(a:file)
-  let l:output = s:run_systemlist([l:runner, l:script, '--autofix-guard'], l:root, json_encode(a:payload))
+  let l:argv = !empty(l:guard_runtime)
+        \ ? [l:runner, l:guard_runtime]
+        \ : [l:runner, l:script, '--autofix-guard']
+  let l:output = s:run_systemlist(l:argv, l:root, json_encode(a:payload))
   if v:shell_error != 0
     return {
           \ 'ok': v:false,

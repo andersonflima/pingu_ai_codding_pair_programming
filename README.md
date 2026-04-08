@@ -535,6 +535,7 @@ Plug 'andersonflima/pingu_ai_codding_pair_programming'
 - `let g:realtime_dev_agent_realtime_async = 1` usa job assincrono no Neovim para evitar congelar a UI durante o loop automatico
 - `let g:realtime_dev_agent_realtime_use_daemon = 1` reaproveita um runtime residente no Neovim para reduzir spawn por analise realtime
 - `let g:realtime_dev_agent_realtime_focus_scope_enabled = 1` limita a analise leve realtime ao bloco atual do cursor
+- `let g:realtime_dev_agent_node_path = '/caminho/absoluto/para/node'` fixa o runtime quando o PATH do Neovim difere do shell
 - `let g:realtime_dev_agent_auto_check_max_lines = 600` limita checks automaticos a arquivos menores
 - `let g:realtime_dev_agent_analysis_cache_max_entries = 24` reaproveita a ultima analise do mesmo texto e reduz relancamento do agente
 - `let g:realtime_dev_agent_realtime_auto_fix_max_per_check = 2` reduz o lote automatico por ciclo realtime para manter o editor fluido

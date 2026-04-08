@@ -165,6 +165,10 @@ if !exists('g:realtime_dev_agent_code_extensions')
   \ ]
 endif
 
+if !exists('g:realtime_dev_agent_node_path')
+  let g:realtime_dev_agent_node_path = ''
+endif
+
 if !exists('g:realtime_dev_agent_ignore_patterns')
   " Lista de trechos de caminho para ignorar no fluxo do agente.
   " Ex.: ['.git/', 'node_modules/', 'dist/', 'build/', '.next/', 'coverage/']
