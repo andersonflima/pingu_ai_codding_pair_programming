@@ -475,7 +475,7 @@ function activate(context) {
       publishDiagnostics(vscode, diagnostics, issuesByUri, liveDocument, issues);
       const terminalTaskApplied = options.skipTerminalTasks
         ? false
-        : await terminalRuntime.applyTerminalTasks(liveDocument, issues);
+        : await terminalRuntime.applyTerminalTasks(liveDocument, issues, { trigger });
       if (terminalTaskApplied) {
         return;
       }

@@ -102,6 +102,9 @@ function! s:is_safe_default_auto_fix_kind(kind, entry) abort
   if index(['context_file', 'unit_test'], a:kind) != -1 && l:op ==# 'write_file'
     return v:true
   endif
+  if a:kind ==# 'terminal_task' && l:op ==# 'run_command'
+    return v:true
+  endif
   if l:op ==# 'write_file' || l:op ==# 'run_command'
     return v:false
   endif
@@ -350,6 +353,7 @@ if !exists('g:realtime_dev_agent_auto_fix_kinds')
           \ 'functional_reassignment',
           \ 'debug_output',
           \ 'missing_dependency',
+          \ 'terminal_task',
           \ 'unit_test',
           \ 'trailing_whitespace',
           \ 'tabs',

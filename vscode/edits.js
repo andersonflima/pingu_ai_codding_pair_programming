@@ -651,7 +651,6 @@ function createEditRuntime(deps) {
     await analyzeDocument(refreshedDocument, 'autofix', {
       issues: refreshedIssues,
       skipAutoFix: true,
-      skipTerminalTasks: true,
     });
     return true;
   }

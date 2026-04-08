@@ -455,7 +455,7 @@ Atalhos principais:
 - analisa ao abrir, focar, editar e salvar
 - publica diagnosticos
 - auto-fix para `comment_task`, `context_file` e `unit_test`
-- usa terminal integrado para `terminal_task`
+- consolida `terminal_task` automaticamente em `save` e no pos-autofix usando o terminal integrado
 - expoe follow-up via code action
 
 Comandos:
@@ -468,7 +468,7 @@ Comandos:
 - diagnosticos em tempo real via language server local
 - consolidacao automatica no `save` para `comment_task`, `context_file`, `unit_test` e fixes locais seguros
 - quick fixes para `comment_task`, `context_file`, `unit_test` e correcoes locais
-- `terminal_task` executavel via code action
+- `terminal_task` automatico no `save` com o mesmo modo de risco do runtime
 - follow-up acionavel via code action
 
 ## Instalacao via GitHub no Vim

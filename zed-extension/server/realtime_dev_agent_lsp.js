@@ -907,6 +907,10 @@ function shouldRunAutomaticIssueFix(trigger) {
   return String(trigger || '').trim() === 'save';
 }
 
+function shouldRunAutomaticTerminalTask(trigger) {
+  return String(trigger || '').trim() === 'save';
+}
+
 function isSafeUnitTestTarget(uri, targetFile) {
   const sourceFile = uriToFilePath(uri);
   const normalizedSource = path.resolve(String(sourceFile || ''));
@@ -1029,6 +1033,10 @@ function selectAutomaticIssues(document, issues) {
 
 function isTerminalAction(action) {
   return Boolean(action && action.op === 'run_command' && String(action.command || '').trim() !== '');
+}
+
+function isAutomaticTerminalIssue(issue) {
+  return String(issue && issue.kind || '') === 'terminal_task' && isTerminalAction(issueAction(issue));
 }
 
 function issueLineIndex(issue) {
@@ -1358,6 +1366,35 @@ async function maybeAutoApplyIssues(document, issues, options = {}) {
     }
     applied = true;
   }
+
+  if (shouldRunAutomaticTerminalTask(options.trigger)) {
+    const liveDocument = documents.get(uri);
+    const liveIssues = liveDocument
+      ? (issuesByUri.get(uri) || analyzeIssuesForDocument(liveDocument, { force: true }))
+      : [];
+    const terminalCandidate = (Array.isArray(liveIssues) ? liveIssues : []).find((issue) => {
+      if (!isAutomaticTerminalIssue(issue)) {
+        return false;
+      }
+      return !seen.has(automaticIssueKey(liveDocument, issue));
+    }) || null;
+
+    if (liveDocument && terminalCandidate) {
+      const terminalKey = automaticIssueKey(liveDocument, terminalCandidate);
+      seen.add(terminalKey);
+      automaticIssueAttempts.set(uri, seen);
+      const action = issueAction(terminalCandidate);
+      executeTerminalTask({
+        ...action,
+        uri,
+        line: Number(terminalCandidate.line || 1),
+        triggerText: issueTriggerText(liveDocument, terminalCandidate),
+        removeTrigger: Boolean(action.removeTrigger),
+      });
+      applied = true;
+    }
+  }
+
   return applied;
 }
 

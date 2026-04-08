@@ -1462,6 +1462,9 @@ function! s:issue_auto_fix_noop_reason(item) abort
   if l:kind ==# 'large_file'
     return 'diagnostico consultivo sem auto-fix'
   endif
+  if l:kind ==# 'terminal_task' && get(s:, 'realtime_dev_agent_is_realtime_check', v:false)
+    return 'execucao automatica de terminal fica para save e checagens de consolidacao'
+  endif
   if get(l:action, 'op', '') ==# 'run_command' && l:kind !=# 'terminal_task'
     return 'execucao de terminal exige confirmacao explicita'
   endif
@@ -1967,7 +1970,7 @@ endfunction
 
 function! s:issue_terminal_context(issue, keep_focus_code) abort
   let l:context = copy(a:issue)
-  let l:context.keep_focus_code = v:false
+  let l:context.keep_focus_code = a:keep_focus_code ? v:true : v:false
   let l:context._trigger_line = s:issue_trigger_line_text(a:issue)
   return l:context
 endfunction
@@ -2199,7 +2202,7 @@ function! s:apply_issue_run_command(issue, keep_focus_code) abort
 
   let l:context = s:issue_terminal_context(a:issue, a:keep_focus_code)
   let l:strategy = s:issue_terminal_strategy()
-  let l:is_background = l:strategy ==# 'background'
+  let l:is_background = l:strategy ==# 'background' || s:realtime_dev_agent_auto_fix_busy || a:keep_focus_code
 
   if l:is_background
     if exists('g:vscode') && get(g:, 'vscode', 0) && exists('*VSCodeNotify')

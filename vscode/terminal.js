@@ -29,6 +29,11 @@ function createTerminalRuntime(deps) {
   const attemptedTerminalTasks = new Map();
   const pendingTerminalTaskStaleMs = 30 * 1000;
 
+  function shouldAutoApplyTerminalTasks(trigger) {
+    const normalizedTrigger = String(trigger || '').trim();
+    return ['save', 'autofix', 'manual', 'terminal'].includes(normalizedTrigger);
+  }
+
   function clearTerminalAttempts(uri) {
     const prefix = `${uri.toString()}|`;
     Array.from(attemptedTerminalTasks.keys()).forEach((key) => {
@@ -242,8 +247,11 @@ function createTerminalRuntime(deps) {
     }
   }
 
-  async function applyTerminalTasks(document, issues) {
+  async function applyTerminalTasks(document, issues, options = {}) {
     if (!isTerminalActionsEnabled(document.uri)) {
+      return false;
+    }
+    if (!shouldAutoApplyTerminalTasks(options.trigger)) {
       return false;
     }
 
