@@ -122,6 +122,15 @@ function activate(context) {
     return Math.max(0, Math.trunc(configured));
   }
 
+  function analysisModeForTrigger(uri, trigger) {
+    const normalizedTrigger = String(trigger || '').trim();
+    if (['change', 'focus', 'open', 'startup'].includes(normalizedTrigger)) {
+      const configured = String(configuration(uri).get('realtimeAnalysisMode', 'light') || '').trim().toLowerCase();
+      return configured === 'full' ? 'full' : 'light';
+    }
+    return 'full';
+  }
+
   function resolveScriptPath(uri) {
     const configured = configuration(uri).get('scriptPath', '').trim();
     if (!configured) {
@@ -147,19 +156,21 @@ function activate(context) {
   let terminalRuntime;
   let codeActionRuntime;
 
-  async function collectIssues(document) {
+  async function collectIssues(document, options = {}) {
     if (!supportsDocument(document)) {
       return [];
     }
 
     const key = uriKey(document.uri);
     const version = documentVersion(document);
+    const analysisMode = String(options.analysisMode || 'full').trim().toLowerCase() === 'light' ? 'light' : 'full';
     const cached = analysisCache.get(key);
     if (cached && cached.version === version) {
-      if (Array.isArray(cached.issues)) {
+      const canReuseCached = cached.mode === 'full' || cached.mode === analysisMode;
+      if (canReuseCached && Array.isArray(cached.issues)) {
         return cached.issues;
       }
-      if (cached.promise) {
+      if (canReuseCached && cached.promise) {
         return cached.promise;
       }
     }
@@ -178,6 +189,7 @@ function activate(context) {
       sourcePath: document.fileName,
       text: document.getText(),
       maxLineLength,
+      analysisMode,
       cwd,
       env: resolveAgentEnvironment(document.uri),
     }).then((issues) => {
@@ -185,6 +197,7 @@ function activate(context) {
       if (current && current.promise === promise) {
         analysisCache.set(key, {
           version,
+          mode: analysisMode,
           issues,
           promise: null,
         });
@@ -199,6 +212,7 @@ function activate(context) {
     });
     analysisCache.set(key, {
       version,
+      mode: analysisMode,
       issues: null,
       promise,
     });
@@ -214,9 +228,10 @@ function activate(context) {
     const requestedVersion = documentVersion(document);
 
     try {
+      const analysisMode = analysisModeForTrigger(document.uri, trigger);
       const issues = Array.isArray(options.issues)
         ? options.issues
-        : await collectIssues(document);
+        : await collectIssues(document, { analysisMode });
       const liveDocument = resolveLiveDocument(document.uri) || document;
       if (!supportsDocument(liveDocument)) {
         return;

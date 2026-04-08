@@ -24,6 +24,7 @@ if (args.guardMode) {
     : fs.readFileSync(args.analyze, 'utf8');
   const issues = analyzeText(sourcePath, content, {
     maxLineLength: Number.isFinite(args.maxLineLength) ? args.maxLineLength : DEFAULT_MAX_LINE_LENGTH,
+    analysisMode: args.analysisMode,
   });
 
   if (args.output === 'vim') {
@@ -63,6 +64,9 @@ function parseArgs(rawArgs) {
       i += 1;
     } else if (current === '--format' && rawArgs[i + 1]) {
       options.output = rawArgs[i + 1];
+      i += 1;
+    } else if (current === '--analysis-mode' && rawArgs[i + 1]) {
+      options.analysisMode = rawArgs[i + 1];
       i += 1;
     } else if (current === '--autofix-guard') {
       options.guardMode = true;

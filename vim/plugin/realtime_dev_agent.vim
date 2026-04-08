@@ -199,6 +199,11 @@ if !exists('g:realtime_dev_agent_realtime_on_change')
   let g:realtime_dev_agent_realtime_on_change = 1
 endif
 
+if !exists('g:realtime_dev_agent_realtime_analysis_mode')
+  " light reduz custo no loop automatico; full mantem a mesma profundidade da analise manual.
+  let g:realtime_dev_agent_realtime_analysis_mode = 'light'
+endif
+
 if !exists('g:realtime_dev_agent_realtime_on_cursor_hold')
   " Quando o cursor para sobre um bloco, reanalisa o contexto atual sem exigir edicao manual.
   let g:realtime_dev_agent_realtime_on_cursor_hold = 1

@@ -35,12 +35,14 @@ Ajustes de fluidez do language server:
 - debounce por mudanca de texto antes de reanalisar
 - cache por versao do documento
 - reaproveitamento da analise apos quick fix para evitar rodada duplicada
+- open/change usam analise leve por padrao; save continua completo
 
 Knobs opcionais por ambiente:
 
 - `PINGU_ZED_OPEN_DEBOUNCE_MS`
 - `PINGU_ZED_CHANGE_DEBOUNCE_MS`
 - `PINGU_ZED_SAVE_DEBOUNCE_MS`
+- `PINGU_ZED_REALTIME_ANALYSIS_MODE`
 
 Observacao:
 

@@ -226,8 +226,20 @@ function! s:analysis_cache_max_entries() abort
   return l:max_entries > 0 ? l:max_entries : 0
 endfunction
 
-function! s:analysis_cache_key(file, changedtick) abort
-  return printf('%s|%d', fnamemodify(a:file, ':p'), a:changedtick)
+function! s:normalize_analysis_mode(mode) abort
+  let l:mode = tolower(trim(string(a:mode)))
+  return l:mode ==# 'full' ? 'full' : 'light'
+endfunction
+
+function! s:analysis_mode_for_request(realtime_mode) abort
+  if a:realtime_mode
+    return s:normalize_analysis_mode(get(g:, 'realtime_dev_agent_realtime_analysis_mode', 'light'))
+  endif
+  return 'full'
+endfunction
+
+function! s:analysis_cache_key(file, changedtick, analysis_mode) abort
+  return printf('%s|%d|%s', fnamemodify(a:file, ':p'), a:changedtick, s:normalize_analysis_mode(a:analysis_mode))
 endfunction
 
 function! s:touch_analysis_cache_key(key) abort
@@ -265,8 +277,8 @@ function! s:drop_analysis_cache_for_file(file) abort
   let s:realtime_dev_agent_analysis_cache_order = l:survivors
 endfunction
 
-function! s:cached_analysis_for_buffer(file, changedtick) abort
-  let l:key = s:analysis_cache_key(a:file, a:changedtick)
+function! s:cached_analysis_for_buffer(file, changedtick, analysis_mode) abort
+  let l:key = s:analysis_cache_key(a:file, a:changedtick, a:analysis_mode)
   if !has_key(s:realtime_dev_agent_analysis_cache, l:key)
     return {}
   endif
@@ -277,13 +289,13 @@ function! s:cached_analysis_for_buffer(file, changedtick) abort
   return l:cached
 endfunction
 
-function! s:store_analysis_for_buffer(file, changedtick, analysis) abort
+function! s:store_analysis_for_buffer(file, changedtick, analysis_mode, analysis) abort
   let l:max_entries = s:analysis_cache_max_entries()
   if l:max_entries <= 0
     return a:analysis
   endif
 
-  let l:key = s:analysis_cache_key(a:file, a:changedtick)
+  let l:key = s:analysis_cache_key(a:file, a:changedtick, a:analysis_mode)
   let l:stored = deepcopy(a:analysis)
   let l:stored.from_cache = v:false
   let s:realtime_dev_agent_analysis_cache[l:key] = l:stored
@@ -323,7 +335,7 @@ function! s:stop_async_analysis_job() abort
   call s:cleanup_async_analysis_temp_file(l:context)
 endfunction
 
-function! s:prepared_analysis_request(bufnr) abort
+function! s:prepared_analysis_request(bufnr, ...) abort
   if a:bufnr <= 0 || !bufloaded(a:bufnr)
     return {
           \ 'ok': v:false,
@@ -334,14 +346,16 @@ function! s:prepared_analysis_request(bufnr) abort
 
   let l:file = fnamemodify(bufname(a:bufnr), ':p')
   let l:changedtick = getbufvar(a:bufnr, 'changedtick', 0)
+  let l:analysis_mode = a:0 > 0 ? s:normalize_analysis_mode(a:1) : 'full'
   call s:track_buffer_tick(l:file, l:changedtick)
 
-  let l:cached = s:cached_analysis_for_buffer(l:file, l:changedtick)
+  let l:cached = s:cached_analysis_for_buffer(l:file, l:changedtick, l:analysis_mode)
   if !empty(l:cached)
     return {
           \ 'ok': v:true,
           \ 'file': l:file,
           \ 'changedtick': l:changedtick,
+          \ 'analysis_mode': l:analysis_mode,
           \ 'cached': l:cached,
           \ 'buffer_dirty_tmp': '',
           \ }
@@ -369,6 +383,7 @@ function! s:prepared_analysis_request(bufnr) abort
         \ 'ok': v:true,
         \ 'file': l:file,
         \ 'changedtick': l:changedtick,
+        \ 'analysis_mode': l:analysis_mode,
         \ 'buffer_dirty_tmp': l:buffer_dirty_tmp,
         \ 'root': l:root,
         \ 'argv': [
@@ -378,6 +393,8 @@ function! s:prepared_analysis_request(bufnr) abort
         \   l:target_file,
         \   '--source-path',
         \   l:file,
+        \   '--analysis-mode',
+        \   l:analysis_mode,
         \   '--vim'
         \ ],
         \ }
@@ -417,8 +434,9 @@ function! s:realtime_dev_agent_open_review() abort
   endif
 
   call s:remember_code_window(win_getid())
-  if !s:start_async_realtime_check(l:bufnr, g:realtime_dev_agent_realtime_open_qf, 0)
-    call s:realtime_check_from_buffer(l:bufnr, g:realtime_dev_agent_realtime_open_qf, 0)
+  let l:analysis_mode = s:analysis_mode_for_request(v:true)
+  if !s:start_async_realtime_check(l:bufnr, g:realtime_dev_agent_realtime_open_qf, 0, l:analysis_mode)
+    call s:realtime_check_from_buffer(l:bufnr, g:realtime_dev_agent_realtime_open_qf, 0, l:analysis_mode)
   endif
 endfunction
 
@@ -456,8 +474,9 @@ function! s:realtime_dev_agent_start_current_buffer() abort
     call s:window_open()
   endif
 
-  if !s:start_async_realtime_check(l:bufnr, g:realtime_dev_agent_open_qf, 0)
-    call s:realtime_check_from_buffer(l:bufnr, g:realtime_dev_agent_open_qf, 0)
+  let l:analysis_mode = s:analysis_mode_for_request(v:true)
+  if !s:start_async_realtime_check(l:bufnr, g:realtime_dev_agent_open_qf, 0, l:analysis_mode)
+    call s:realtime_check_from_buffer(l:bufnr, g:realtime_dev_agent_open_qf, 0, l:analysis_mode)
   endif
   return v:true
 endfunction
@@ -2639,8 +2658,9 @@ function! s:parse_analysis_output(output, file, buffer_dirty_tmp) abort
   return l:qf
 endfunction
 
-function! s:analysis_for_buffer(bufnr) abort
-  let l:request = s:prepared_analysis_request(a:bufnr)
+function! s:analysis_for_buffer(bufnr, ...) abort
+  let l:analysis_mode = a:0 > 0 ? s:normalize_analysis_mode(a:1) : 'full'
+  let l:request = s:prepared_analysis_request(a:bufnr, l:analysis_mode)
   if !get(l:request, 'ok', v:false)
     return {
           \ 'ok': v:false,
@@ -2659,6 +2679,7 @@ function! s:analysis_for_buffer(bufnr) abort
   let l:file = get(l:request, 'file', '')
   let l:changedtick = get(l:request, 'changedtick', 0)
   let l:buffer_dirty_tmp = get(l:request, 'buffer_dirty_tmp', '')
+  let l:analysis_mode = get(l:request, 'analysis_mode', l:analysis_mode)
   let l:output = s:run_systemlist(get(l:request, 'argv', []), get(l:request, 'root', ''))
   call s:cleanup_async_analysis_temp_file(l:request)
 
@@ -2679,10 +2700,13 @@ function! s:analysis_for_buffer(bufnr) abort
         \ 'error': '',
         \ 'from_cache': v:false,
         \ }
-  return s:store_analysis_for_buffer(l:file, l:changedtick, l:analysis)
+  return s:store_analysis_for_buffer(l:file, l:changedtick, l:analysis_mode, l:analysis)
 endfunction
 
-function! s:collect_analysis_for_buffer(bufnr) abort
+function! s:collect_analysis_for_buffer(bufnr, ...) abort
+  if a:0 > 0
+    return s:analysis_for_buffer(a:bufnr, a:1)
+  endif
   return s:analysis_for_buffer(a:bufnr)
 endfunction
 
@@ -2742,8 +2766,9 @@ function! s:realtime_check_handle_analysis(bufnr, analysis, open_qf, show_echo, 
 
   if l:auto_fix_applied > 0
     if a:realtime_mode && s:realtime_async_enabled()
-      if !s:start_async_realtime_check(a:bufnr, a:open_qf, a:show_echo)
-        call s:realtime_check_from_buffer(a:bufnr, a:open_qf, a:show_echo)
+      let l:analysis_mode = s:analysis_mode_for_request(v:true)
+      if !s:start_async_realtime_check(a:bufnr, a:open_qf, a:show_echo, l:analysis_mode)
+        call s:realtime_check_from_buffer(a:bufnr, a:open_qf, a:show_echo, l:analysis_mode)
       endif
     else
       call s:realtime_check_from_buffer(a:bufnr, a:open_qf, a:show_echo)
@@ -2832,7 +2857,7 @@ function! s:async_analysis_on_exit(job_id, code, event) abort
           \ 'error': '',
           \ 'from_cache': v:false,
           \ }
-    let l:analysis = s:store_analysis_for_buffer(l:file, l:changedtick, l:analysis)
+    let l:analysis = s:store_analysis_for_buffer(l:file, l:changedtick, get(l:context, 'analysis_mode', 'full'), l:analysis)
   endif
 
   call s:cleanup_async_analysis_temp_file(l:context)
@@ -2845,12 +2870,13 @@ function! s:async_analysis_on_exit(job_id, code, event) abort
         \ )
 endfunction
 
-function! s:start_async_realtime_check(bufnr, open_qf, show_echo) abort
+function! s:start_async_realtime_check(bufnr, open_qf, show_echo, ...) abort
   if !s:realtime_async_enabled()
     return v:false
   endif
 
-  let l:request = s:prepared_analysis_request(a:bufnr)
+  let l:analysis_mode = a:0 > 0 ? s:normalize_analysis_mode(a:1) : 'full'
+  let l:request = s:prepared_analysis_request(a:bufnr, l:analysis_mode)
   if !get(l:request, 'ok', v:false)
     call s:realtime_check_handle_analysis(a:bufnr, {
           \ 'ok': v:false,
@@ -2877,6 +2903,7 @@ function! s:start_async_realtime_check(bufnr, open_qf, show_echo) abort
         \ 'buffer_dirty_tmp': get(l:request, 'buffer_dirty_tmp', ''),
         \ 'open_qf': a:open_qf,
         \ 'show_echo': a:show_echo,
+        \ 'analysis_mode': l:analysis_mode,
         \ 'stdout': [],
         \ 'stderr': [],
         \ }
@@ -2899,7 +2926,7 @@ function! s:start_async_realtime_check(bufnr, open_qf, show_echo) abort
   return v:true
 endfunction
 
-function! s:realtime_check_from_buffer(bufnr, open_qf, show_echo) abort
+function! s:realtime_check_from_buffer(bufnr, open_qf, show_echo, ...) abort
   if a:bufnr <= 0 || !bufloaded(a:bufnr)
     return
   endif
@@ -2917,7 +2944,8 @@ function! s:realtime_check_from_buffer(bufnr, open_qf, show_echo) abort
     call s:window_set_busy(l:file)
   endif
 
-  let l:analysis = s:analysis_for_buffer(a:bufnr)
+  let l:analysis_mode = a:0 > 0 ? s:normalize_analysis_mode(a:1) : 'full'
+  let l:analysis = s:analysis_for_buffer(a:bufnr, l:analysis_mode)
   call s:realtime_check_handle_analysis(a:bufnr, l:analysis, a:open_qf, a:show_echo, s:realtime_dev_agent_is_realtime_check)
 endfunction
 
@@ -3312,7 +3340,8 @@ function! s:realtime_dev_agent_run_pending_check(timer_id) abort
     return
   endif
 
-  if s:start_async_realtime_check(l:bufnr, g:realtime_dev_agent_realtime_open_qf, 0)
+  let l:analysis_mode = s:analysis_mode_for_request(v:true)
+  if s:start_async_realtime_check(l:bufnr, g:realtime_dev_agent_realtime_open_qf, 0, l:analysis_mode)
     return
   endif
 
@@ -3322,7 +3351,7 @@ function! s:realtime_dev_agent_run_pending_check(timer_id) abort
   let g:realtime_dev_agent_show_window = 0
 
   try
-    call s:realtime_check_from_buffer(l:bufnr, g:realtime_dev_agent_realtime_open_qf, 0)
+    call s:realtime_check_from_buffer(l:bufnr, g:realtime_dev_agent_realtime_open_qf, 0, l:analysis_mode)
   finally
     let s:realtime_dev_agent_is_realtime_check = l:previous_mode
     call s:realtime_dev_agent_restore_show_window(l:previous_show_window)

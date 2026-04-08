@@ -37,6 +37,7 @@ let nextClientRequestId = 1;
 const DEFAULT_ZED_OPEN_DEBOUNCE_MS = 150;
 const DEFAULT_ZED_CHANGE_DEBOUNCE_MS = 700;
 const DEFAULT_ZED_SAVE_DEBOUNCE_MS = 0;
+const DEFAULT_ZED_REALTIME_ANALYSIS_MODE = 'light';
 
 process.stdin.on('data', (chunk) => {
   messageBuffer = Buffer.concat([messageBuffer, chunk]);
@@ -231,6 +232,18 @@ function analysisDelayForTrigger(trigger) {
   return readDelayEnv('PINGU_ZED_CHANGE_DEBOUNCE_MS', DEFAULT_ZED_CHANGE_DEBOUNCE_MS);
 }
 
+function normalizeAnalysisMode(rawMode) {
+  return String(rawMode || '').trim().toLowerCase() === 'full' ? 'full' : 'light';
+}
+
+function analysisModeForTrigger(trigger) {
+  const normalizedTrigger = String(trigger || '').trim();
+  if (normalizedTrigger === 'save' || normalizedTrigger === 'autofix' || normalizedTrigger === 'manual') {
+    return 'full';
+  }
+  return normalizeAnalysisMode(process.env.PINGU_ZED_REALTIME_ANALYSIS_MODE || DEFAULT_ZED_REALTIME_ANALYSIS_MODE);
+}
+
 function documentVersion(document) {
   return Number.isFinite(document && document.version) ? Number(document.version) : null;
 }
@@ -255,15 +268,20 @@ function analyzeIssuesForDocument(document, options = {}) {
 
   const uri = String(document.uri || '');
   const version = documentVersion(document);
+  const analysisMode = normalizeAnalysisMode(options.analysisMode || analysisModeForTrigger(options.trigger));
   const cached = analysisCache.get(uri);
-  if (!options.force && cached && cached.version === version) {
+  if (!options.force && cached && cached.version === version && (cached.mode === 'full' || cached.mode === analysisMode)) {
     return cached.issues;
   }
 
   const filePath = uriToFilePath(uri);
-  const issues = analyzeText(filePath, document.text, { maxLineLength: 120 });
+  const issues = analyzeText(filePath, document.text, {
+    maxLineLength: 120,
+    analysisMode,
+  });
   analysisCache.set(uri, {
     version,
+    mode: analysisMode,
     issues,
   });
   return issues;
