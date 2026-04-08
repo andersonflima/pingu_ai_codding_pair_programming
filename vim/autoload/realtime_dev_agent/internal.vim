@@ -270,8 +270,17 @@ function! s:analysis_mode_for_request(realtime_mode) abort
   return 'full'
 endfunction
 
-function! s:analysis_cache_key(file, changedtick, analysis_mode) abort
-  return printf('%s|%d|%s', fnamemodify(a:file, ':p'), a:changedtick, s:normalize_analysis_mode(a:analysis_mode))
+function! s:analysis_cache_key(file, changedtick, analysis_mode, ...) abort
+  let l:focus_start_line = a:0 > 0 ? max([0, str2nr(string(a:1))]) : 0
+  let l:focus_end_line = a:0 > 1 ? max([0, str2nr(string(a:2))]) : 0
+  return printf(
+        \ '%s|%d|%s|%d|%d',
+        \ fnamemodify(a:file, ':p'),
+        \ a:changedtick,
+        \ s:normalize_analysis_mode(a:analysis_mode),
+        \ l:focus_start_line,
+        \ l:focus_end_line
+        \ )
 endfunction
 
 function! s:touch_analysis_cache_key(key) abort
@@ -309,8 +318,10 @@ function! s:drop_analysis_cache_for_file(file) abort
   let s:realtime_dev_agent_analysis_cache_order = l:survivors
 endfunction
 
-function! s:cached_analysis_for_buffer(file, changedtick, analysis_mode) abort
-  let l:key = s:analysis_cache_key(a:file, a:changedtick, a:analysis_mode)
+function! s:cached_analysis_for_buffer(file, changedtick, analysis_mode, ...) abort
+  let l:focus_start_line = a:0 > 0 ? a:1 : 0
+  let l:focus_end_line = a:0 > 1 ? a:2 : 0
+  let l:key = s:analysis_cache_key(a:file, a:changedtick, a:analysis_mode, l:focus_start_line, l:focus_end_line)
   if !has_key(s:realtime_dev_agent_analysis_cache, l:key)
     return {}
   endif
@@ -321,13 +332,15 @@ function! s:cached_analysis_for_buffer(file, changedtick, analysis_mode) abort
   return l:cached
 endfunction
 
-function! s:store_analysis_for_buffer(file, changedtick, analysis_mode, analysis) abort
+function! s:store_analysis_for_buffer(file, changedtick, analysis_mode, analysis, ...) abort
   let l:max_entries = s:analysis_cache_max_entries()
   if l:max_entries <= 0
     return a:analysis
   endif
 
-  let l:key = s:analysis_cache_key(a:file, a:changedtick, a:analysis_mode)
+  let l:focus_start_line = a:0 > 0 ? a:1 : 0
+  let l:focus_end_line = a:0 > 1 ? a:2 : 0
+  let l:key = s:analysis_cache_key(a:file, a:changedtick, a:analysis_mode, l:focus_start_line, l:focus_end_line)
   let l:stored = deepcopy(a:analysis)
   let l:stored.from_cache = v:false
   let s:realtime_dev_agent_analysis_cache[l:key] = l:stored
@@ -382,13 +395,21 @@ function! s:prepared_analysis_request(bufnr, ...) abort
   let [l:focus_start_line, l:focus_end_line] = s:analysis_focus_scope_for_buffer(a:bufnr, l:analysis_mode)
   call s:track_buffer_tick(l:file, l:changedtick)
 
-  let l:cached = s:cached_analysis_for_buffer(l:file, l:changedtick, l:analysis_mode)
+  let l:cached = s:cached_analysis_for_buffer(
+        \ l:file,
+        \ l:changedtick,
+        \ l:analysis_mode,
+        \ l:focus_start_line,
+        \ l:focus_end_line
+        \ )
   if !empty(l:cached)
     return {
           \ 'ok': v:true,
           \ 'file': l:file,
           \ 'changedtick': l:changedtick,
           \ 'analysis_mode': l:analysis_mode,
+          \ 'focus_start_line': l:focus_start_line,
+          \ 'focus_end_line': l:focus_end_line,
           \ 'cached': l:cached,
           \ 'buffer_dirty_tmp': '',
           \ }
@@ -911,6 +932,23 @@ function! s:current_cursor_context_key(bufnr) abort
   return printf('%s|%d|%d|%d', l:file, l:changedtick, l:start, l:end)
 endfunction
 
+function! s:buffer_cursor_line(bufnr) abort
+  if a:bufnr <= 0 || !bufloaded(a:bufnr)
+    return 1
+  endif
+
+  if a:bufnr == bufnr('%')
+    return max([1, line('.')])
+  endif
+
+  let l:info = getbufinfo(a:bufnr)
+  if type(l:info) == v:t_list && !empty(l:info)
+    return max([1, get(l:info[0], 'lnum', 1)])
+  endif
+
+  return 1
+endfunction
+
 function! s:analysis_focus_scope_for_buffer(bufnr, analysis_mode) abort
   if !get(g:, 'realtime_dev_agent_realtime_focus_scope_enabled', 1)
     return [0, 0]
@@ -925,18 +963,19 @@ function! s:analysis_focus_scope_for_buffer(bufnr, analysis_mode) abort
   return s:cursor_context_bounds_for_buffer(a:bufnr, line('.'))
 endfunction
 
-function! s:limit_cursor_context_auto_fix_candidates(items) abort
+function! s:limit_cursor_context_auto_fix_candidates(items, ...) abort
   let l:scope = s:auto_fix_scope()
   if l:scope ==# 'file'
     return a:items
   endif
 
-  let l:bufnr = bufnr('%')
+  let l:bufnr = a:0 > 0 ? a:1 : bufnr('%')
   if l:bufnr <= 0 || !bufloaded(l:bufnr)
     return a:items
   endif
 
-  let [l:start, l:end] = s:cursor_context_bounds_for_buffer(l:bufnr, line('.'))
+  let l:cursor_line = s:buffer_cursor_line(l:bufnr)
+  let [l:start, l:end] = s:cursor_context_bounds_for_buffer(l:bufnr, l:cursor_line)
   let l:selected = []
   for l:item in a:items
     if !s:should_limit_issue_to_cursor_context(l:item)
@@ -1028,13 +1067,14 @@ function! s:cluster_distance_to_cursor(cluster, cursor_line) abort
   return 0
 endfunction
 
-function! s:select_auto_fix_candidates_by_scope(items) abort
+function! s:select_auto_fix_candidates_by_scope(items, ...) abort
   let l:scope = s:auto_fix_scope()
   if l:scope ==# 'file'
     return a:items
   endif
 
-  let l:cursor_line = line('.')
+  let l:target_buf = a:0 > 0 ? a:1 : bufnr('%')
+  let l:cursor_line = s:buffer_cursor_line(l:target_buf)
   if l:scope ==# 'cursor_only'
     return filter(copy(a:items), {_, item -> abs(get(item, 'lnum', 0) - l:cursor_line) <= 1})
   endif
@@ -1215,6 +1255,19 @@ function! s:realtime_dev_agent_can_apply_auto_fixes() abort
     return v:false
   endif
 
+  return v:true
+endfunction
+
+function! s:realtime_dev_agent_can_apply_auto_fixes_for_buffer(bufnr) abort
+  if s:realtime_dev_agent_auto_fix_busy
+    return v:false
+  endif
+  if a:bufnr <= 0 || !bufloaded(a:bufnr)
+    return v:false
+  endif
+  if !getbufvar(a:bufnr, '&modifiable', 0) || getbufvar(a:bufnr, '&readonly', 0)
+    return v:false
+  endif
   return v:true
 endfunction
 
@@ -2209,6 +2262,9 @@ function! s:apply_issue_snippet(issue, keep_focus_code) abort
   let l:snippet_raw = get(l:issue, 'snippet', '')
   let l:op = get(l:action, 'op', '')
   let l:restore_view = {}
+  let l:active_buf = bufnr('%')
+  let l:active_file = fnamemodify(bufname(l:active_buf), ':p')
+  let l:target_file = fnamemodify(l:filename, ':p')
   if !s:issue_targets_active_scope(l:issue, l:filename)
     echomsg '[RealtimeDevAgent] Acao descartada: fora do arquivo atual'
     return v:false
@@ -2226,7 +2282,7 @@ function! s:apply_issue_snippet(issue, keep_focus_code) abort
       return v:false
     endif
   else
-    let l:snippet_lines = split(l:snippet_raw, "\n", 1)
+    let l:snippet_lines = s:split_snippet_lines(l:snippet_raw)
   endif
   if empty(l:snippet_lines)
     return v:false
@@ -2240,24 +2296,23 @@ function! s:apply_issue_snippet(issue, keep_focus_code) abort
     if !s:focus_issue_target_file(l:filename)
       return v:false
     endif
+    let l:target_buf = bufnr('%')
   endif
 
-  let l:target_buf = bufnr('%')
-  let l:current_file = fnamemodify(bufname('%'), ':p')
-  let l:target_file = fnamemodify(l:filename, ':p')
-  if !empty(l:target_file) && l:target_file !=# l:current_file
-    if a:keep_focus_code
-      let l:target_buf = bufnr('%')
-      if !bufexists(l:target_buf) || l:target_buf < 1
-        return v:false
-      endif
+  if !a:keep_focus_code
+    if empty(l:target_file)
+      let l:target_buf = l:active_buf
+    elseif l:target_file ==# l:active_file
+      let l:target_buf = l:active_buf
     else
-      echomsg '[RealtimeDevAgent] Snippet descartado: issue nao pertence ao buffer atual'
-      return v:false
+      let l:target_buf = s:issue_target_buffer(l:target_file)
     endif
   endif
 
-  if !bufexists(l:target_buf) || l:target_buf < 1
+  if l:target_buf <= 0 || !bufexists(l:target_buf)
+    if !a:keep_focus_code
+      echomsg '[RealtimeDevAgent] Snippet descartado: buffer alvo nao carregado'
+    endif
     return v:false
   endif
 
@@ -2265,7 +2320,7 @@ function! s:apply_issue_snippet(issue, keep_focus_code) abort
     return v:false
   endif
 
-  if !a:keep_focus_code && !s:is_auto_fix_visual_batch_active()
+  if !a:keep_focus_code && l:target_buf ==# l:active_buf && !s:is_auto_fix_visual_batch_active()
     let l:restore_view = winsaveview()
   endif
 
@@ -2368,6 +2423,19 @@ function! s:normalize_snippet_lines(snippet_lines, indent) abort
         \ )})
 endfunction
 
+function! s:split_snippet_lines(snippet) abort
+  if type(a:snippet) == v:t_list
+    return copy(a:snippet)
+  endif
+
+  let l:snippet = '' . a:snippet
+  if empty(l:snippet)
+    return []
+  endif
+
+  return split(l:snippet, "\%x00\\|\n", 1)
+endfunction
+
 function! s:realtime_issue_still_relevant(item, target_buf, lnum, line_content) abort
   let l:kind = get(a:item, 'kind', '')
   let l:text = get(a:item, 'text', '')
@@ -2393,7 +2461,7 @@ function! s:realtime_issue_still_relevant(item, target_buf, lnum, line_content) 
       return v:true
     endif
 
-    let l:expected_lines = split(l:snippet, "\n", 1)
+    let l:expected_lines = s:split_snippet_lines(l:snippet)
     let l:current_lines = readfile(l:target_file, 'b')
     return join(l:current_lines, "\n") !=# join(l:expected_lines, "\n")
   endif
@@ -2422,7 +2490,7 @@ function! s:realtime_issue_still_relevant(item, target_buf, lnum, line_content) 
   endif
 
   if l:op ==# 'replace_line'
-    let l:snippet_lines = split(get(a:item, 'snippet', ''), "\n")
+    let l:snippet_lines = s:split_snippet_lines(get(a:item, 'snippet', ''))
     if l:kind ==# 'tabs'
       return !empty(l:snippet_lines) && l:content !=# l:snippet_lines[0]
     endif
@@ -2449,7 +2517,7 @@ function! s:realtime_issue_still_relevant(item, target_buf, lnum, line_content) 
     if empty(l:snippet)
       return v:true
     endif
-    let l:snippet_lines = split(l:snippet, "\n")
+    let l:snippet_lines = s:split_snippet_lines(l:snippet)
     let l:expected = ''
     for l:snippet_line in l:snippet_lines
       let l:trimmed = substitute(l:snippet_line, '^\s*', '', '')
@@ -2727,11 +2795,11 @@ function! s:parse_analysis_output(output, file, buffer_dirty_tmp) abort
 endfunction
 
 function! s:issue_display_text(issue) abort
-  let l:severity = toupper(string(get(a:issue, 'severity', 'info')))
-  let l:kind = string(get(a:issue, 'kind', 'issue'))
-  let l:message = string(get(a:issue, 'message', ''))
+  let l:severity = toupper(trim('' . get(a:issue, 'severity', 'info')))
+  let l:kind = trim('' . get(a:issue, 'kind', 'issue'))
+  let l:message = '' . get(a:issue, 'message', '')
   let l:base = printf('[%s] %s: %s', l:severity, l:kind, l:message)
-  let l:suggestion = string(get(a:issue, 'suggestion', ''))
+  let l:suggestion = '' . get(a:issue, 'suggestion', '')
   return empty(l:suggestion) ? l:base : l:base . ' | ' . l:suggestion
 endfunction
 
@@ -2754,9 +2822,11 @@ function! s:qf_items_from_issues(issues, file) abort
           \ 'lnum': max([1, str2nr(string(get(l:issue, 'line', 1)))]),
           \ 'col': max([1, str2nr(string(get(l:issue, 'col', 1)))]),
           \ 'text': s:issue_display_text(l:issue),
-          \ 'kind': string(get(l:issue, 'kind', '')),
-          \ 'snippet': string(get(l:issue, 'snippet', '')),
+          \ 'kind': trim('' . get(l:issue, 'kind', '')),
+          \ 'snippet': type(get(l:issue, 'snippet', '')) == v:t_string ? get(l:issue, 'snippet', '') : '',
           \ 'action': type(get(l:issue, 'action', {})) == v:t_dict ? get(l:issue, 'action', {}) : {},
+          \ 'confidence': type(get(l:issue, 'confidence', {})) == v:t_dict ? deepcopy(get(l:issue, 'confidence', {})) : {},
+          \ 'autofixPriority': str2nr(string(get(l:issue, 'autofixPriority', 0))),
           \ }
     if !s:issue_targets_active_scope(l:item, a:file)
       continue
@@ -2811,7 +2881,14 @@ function! s:analysis_for_buffer(bufnr, ...) abort
         \ 'error': '',
         \ 'from_cache': v:false,
         \ }
-  return s:store_analysis_for_buffer(l:file, l:changedtick, l:analysis_mode, l:analysis)
+  return s:store_analysis_for_buffer(
+        \ l:file,
+        \ l:changedtick,
+        \ l:analysis_mode,
+        \ l:analysis,
+        \ get(l:request, 'focus_start_line', 0),
+        \ get(l:request, 'focus_end_line', 0)
+        \ )
 endfunction
 
 function! s:collect_analysis_for_buffer(bufnr, ...) abort
@@ -2906,6 +2983,21 @@ function! s:realtime_check_handle_analysis(bufnr, analysis, open_qf, show_echo, 
   endif
 endfunction
 
+function! s:schedule_realtime_check_handle_analysis(bufnr, analysis, open_qf, show_echo, realtime_mode) abort
+  let l:bufnr = a:bufnr
+  let l:analysis = deepcopy(a:analysis)
+  let l:open_qf = a:open_qf
+  let l:show_echo = a:show_echo
+  let l:realtime_mode = a:realtime_mode
+
+  if has('timers')
+    call timer_start(0, {-> s:realtime_check_handle_analysis(l:bufnr, l:analysis, l:open_qf, l:show_echo, l:realtime_mode)})
+    return
+  endif
+
+  call s:realtime_check_handle_analysis(l:bufnr, l:analysis, l:open_qf, l:show_echo, l:realtime_mode)
+endfunction
+
 function! s:stop_analysis_daemon() abort
   let l:job = get(s:, 'realtime_dev_agent_daemon_job', -1)
   let s:realtime_dev_agent_daemon_job = -1
@@ -2922,7 +3014,7 @@ function! s:analysis_daemon_handle_failure(message) abort
   let s:realtime_dev_agent_daemon_stdout_remainder = ''
 
   for l:context in l:pending
-    call s:realtime_check_handle_analysis(get(l:context, 'bufnr', -1), {
+    call s:schedule_realtime_check_handle_analysis(get(l:context, 'bufnr', -1), {
           \ 'ok': v:false,
           \ 'file': get(l:context, 'file', ''),
           \ 'qf': [],
@@ -2971,7 +3063,7 @@ function! s:analysis_daemon_on_stdout(job_id, data, event) abort
     endif
 
     if !get(l:response, 'ok', v:false)
-      call s:realtime_check_handle_analysis(l:bufnr, {
+      call s:schedule_realtime_check_handle_analysis(l:bufnr, {
             \ 'ok': v:false,
             \ 'file': get(l:context, 'file', ''),
             \ 'qf': [],
@@ -2993,9 +3085,11 @@ function! s:analysis_daemon_on_stdout(job_id, data, event) abort
           \ l:file,
           \ get(l:context, 'changedtick', 0),
           \ get(l:context, 'analysis_mode', 'full'),
-          \ l:analysis
+          \ l:analysis,
+          \ get(l:context, 'focus_start_line', 0),
+          \ get(l:context, 'focus_end_line', 0)
           \ )
-    call s:realtime_check_handle_analysis(
+    call s:schedule_realtime_check_handle_analysis(
           \ l:bufnr,
           \ l:analysis,
           \ get(l:context, 'open_qf', 0),
@@ -3099,6 +3193,8 @@ function! s:start_daemon_realtime_check(bufnr, open_qf, show_echo, analysis_mode
         \ 'open_qf': a:open_qf,
         \ 'show_echo': a:show_echo,
         \ 'analysis_mode': get(l:request, 'analysis_mode', a:analysis_mode),
+        \ 'focus_start_line': get(l:request, 'focus_start_line', 0),
+        \ 'focus_end_line': get(l:request, 'focus_end_line', 0),
         \ }
 
   try
@@ -3174,11 +3270,18 @@ function! s:async_analysis_on_exit(job_id, code, event) abort
           \ 'error': '',
           \ 'from_cache': v:false,
           \ }
-    let l:analysis = s:store_analysis_for_buffer(l:file, l:changedtick, get(l:context, 'analysis_mode', 'full'), l:analysis)
+    let l:analysis = s:store_analysis_for_buffer(
+          \ l:file,
+          \ l:changedtick,
+          \ get(l:context, 'analysis_mode', 'full'),
+          \ l:analysis,
+          \ get(l:context, 'focus_start_line', 0),
+          \ get(l:context, 'focus_end_line', 0)
+          \ )
   endif
 
   call s:cleanup_async_analysis_temp_file(l:context)
-  call s:realtime_check_handle_analysis(
+  call s:schedule_realtime_check_handle_analysis(
         \ l:bufnr,
         \ l:analysis,
         \ get(l:context, 'open_qf', 0),
@@ -3228,6 +3331,8 @@ function! s:start_async_realtime_check(bufnr, open_qf, show_echo, ...) abort
         \ 'open_qf': a:open_qf,
         \ 'show_echo': a:show_echo,
         \ 'analysis_mode': l:analysis_mode,
+        \ 'focus_start_line': get(l:request, 'focus_start_line', 0),
+        \ 'focus_end_line': get(l:request, 'focus_end_line', 0),
         \ 'stdout': [],
         \ 'stderr': [],
         \ }
@@ -3283,14 +3388,6 @@ function! s:realtime_check_from_buffer(bufnr, open_qf, show_echo, ...) abort
 endfunction
 
 function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
-  if !s:realtime_dev_agent_can_apply_auto_fixes()
-    return 0
-  endif
-
-  if s:realtime_dev_agent_auto_fix_busy
-    return 0
-  endif
-
   if type(a:qf) != v:t_list
     return 0
   endif
@@ -3299,10 +3396,9 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
     return 0
   endif
 
-  let l:current_buf = bufnr('%')
-  let l:current_file = fnamemodify(bufname(l:current_buf), ':p')
   let l:target_file = fnamemodify(a:file, ':p')
-  if l:current_file !=# l:target_file
+  let l:target_buf = s:issue_target_buffer(l:target_file)
+  if !s:realtime_dev_agent_can_apply_auto_fixes_for_buffer(l:target_buf)
     return 0
   endif
 
@@ -3358,8 +3454,8 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
     return 0
   endif
 
-  let l:auto_candidates = s:select_auto_fix_candidates_by_scope(l:auto_candidates)
-  let l:auto_candidates = s:limit_cursor_context_auto_fix_candidates(l:auto_candidates)
+  let l:auto_candidates = s:select_auto_fix_candidates_by_scope(l:auto_candidates, l:target_buf)
+  let l:auto_candidates = s:limit_cursor_context_auto_fix_candidates(l:auto_candidates, l:target_buf)
 
   if empty(l:auto_candidates)
     return 0
@@ -3400,7 +3496,7 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
   let l:fix_guard = get(s:realtime_dev_agent_fix_guard, l:file_key, {})
   let l:line_kind_applied = {}
   let l:line_adjustments = []
-  let l:visual_batch = s:start_auto_fix_visual_batch(l:current_buf)
+  let l:visual_batch = s:start_auto_fix_visual_batch(l:target_buf)
   let s:realtime_dev_agent_auto_fix_busy = v:true
   try
     for l:item in l:auto_candidates
@@ -3440,12 +3536,12 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
       if has_key(l:fix_guard, l:guard_key)
         continue
       endif
-      let l:fix_guard[l:guard_key] = 1
-      call add(l:line_kinds, l:item_apply_key)
-      let l:line_kind_applied[l:item_line_key] = l:line_kinds
 
       let l:shifted_item = s:shift_issue_for_batch(l:item, s:cumulative_line_shift(l:item_line, l:line_adjustments))
       if s:apply_issue_snippet(l:shifted_item, v:false)
+        let l:fix_guard[l:guard_key] = 1
+        call add(l:line_kinds, l:item_apply_key)
+        let l:line_kind_applied[l:item_line_key] = l:line_kinds
         let l:applied += 1
         call add(l:applied_items, l:shifted_item)
         let l:adjustment = s:issue_shift_adjustment(l:shifted_item)
@@ -3461,7 +3557,7 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
   endtry
 
   if l:applied > 0
-    let l:analysis = s:collect_analysis_for_buffer(l:current_buf)
+    let l:analysis = s:collect_analysis_for_buffer(l:target_buf)
     if !get(l:analysis, 'ok', v:false)
       call s:restore_file_snapshot(l:file_snapshot)
       echohl WarningMsg
@@ -3523,7 +3619,7 @@ function! s:issue_line_delta(item) abort
   endif
 
   let l:snippet = get(a:item, 'snippet', '')
-  let l:snippet_lines = empty(l:snippet) ? [] : split(l:snippet, "\n", 1)
+  let l:snippet_lines = s:split_snippet_lines(l:snippet)
   if l:op ==# 'insert_before' || l:op ==# 'insert_after'
     return len(l:snippet_lines)
   endif
@@ -3733,7 +3829,7 @@ function! s:window_refresh(file, qf) abort
     endif
     if !empty(l:item_snippet)
       call add(l:lines, '    Snippet:')
-      for l:snippet_line in split(l:item_snippet, "\n")
+      for l:snippet_line in s:split_snippet_lines(l:item_snippet)
         call add(l:lines, '        ' . l:snippet_line)
       endfor
     endif
@@ -3794,7 +3890,9 @@ function! s:extract_issue_snippet(raw) abort
 
   let l:snippet = substitute(l:match[1], '\s\+$', '', '')
   let l:snippet = substitute(l:snippet, '\\\\', '__REALTIME_DEV_AGENT_BACKSLASH__', 'g')
-  let l:snippet = substitute(l:snippet, '\\n', "\n", 'g')
+  let l:snippet_parts = split(l:snippet, '\\n', 1)
+  let l:snippet_parts = map(l:snippet_parts, {_, val -> substitute(val, '__REALTIME_DEV_AGENT_BACKSLASH__', '\\', 'g')})
+  let l:snippet = join(l:snippet_parts, "\n")
   let l:snippet = substitute(l:snippet, '__REALTIME_DEV_AGENT_BACKSLASH__', '\\', 'g')
   return l:snippet
 endfunction
