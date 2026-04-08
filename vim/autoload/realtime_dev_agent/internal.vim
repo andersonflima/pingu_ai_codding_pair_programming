@@ -707,6 +707,22 @@ function! s:is_safe_context_file_target(source_file, target_file) abort
     return v:true
   endif
 
+  if l:normalized_target ==# l:normalized_root . '/README.md'
+    return v:true
+  endif
+
+  if l:normalized_target =~# '^' . escape(l:normalized_root . '/docs/', '\')
+    return v:true
+  endif
+
+  if l:normalized_target =~# '^' . escape(l:normalized_root . '/.github/', '\')
+    return v:true
+  endif
+
+  if l:normalized_target =~# '^' . escape(l:normalized_root . '/\(src\|lib\|app\|domain\|application\|infrastructure\|interfaces\|main\|internal\|pkg\|cmd\)/', '\')
+    return v:true
+  endif
+
   return l:normalized_target =~# '^' . escape(l:normalized_root . '/.realtime-dev-agent/', '\')
 endfunction
 

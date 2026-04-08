@@ -948,6 +948,18 @@ function isSafeContextFileTarget(uri, targetFile) {
   if (normalizedTargetPath === `${normalizedProjectRoot}/.gitignore`) {
     return true;
   }
+  if (normalizedTargetPath === `${normalizedProjectRoot}/README.md`) {
+    return true;
+  }
+  if (normalizedTargetPath.startsWith(`${normalizedProjectRoot}/docs/`)) {
+    return true;
+  }
+  if (normalizedTargetPath.startsWith(`${normalizedProjectRoot}/.github/`)) {
+    return true;
+  }
+  if (/^(?:src|lib|app|domain|application|infrastructure|interfaces|main|internal|pkg|cmd)\//.test(normalizedTargetPath.slice(normalizedProjectRoot.length + 1))) {
+    return true;
+  }
   return normalizedTargetPath.startsWith(`${normalizedProjectRoot}/.realtime-dev-agent/`);
 }
 
