@@ -9,12 +9,17 @@ const { analyzeText } = require('../../lib/analyzer');
 const { evaluateAutofixGuard } = require('../../lib/autofix-guard');
 const { buildFollowUpComment } = require('../../lib/follow-up');
 const { createRuntimeAgentClient } = require('../../lib/runtime-agent-client');
+const { resolveProjectRoot } = require('../../lib/project-memory');
 const {
   mustClearKindsForIssue,
   resolveIssueAction,
   supportsFollowUp,
   supportsQuickFix,
 } = require('../../lib/issue-kinds');
+const {
+  autoFixNoOpReason,
+  semanticPriorityForIssue,
+} = require('../../lib/issue-confidence');
 const { resolvePreferredInsertBeforeLine } = require('../../lib/snippet-placement');
 const {
   isTerminalRiskAllowed,
@@ -925,6 +930,23 @@ function isSafeUnitTestTarget(uri, targetFile) {
   return false;
 }
 
+function isSafeContextFileTarget(uri, targetFile) {
+  const sourceFile = uriToFilePath(uri);
+  const projectRoot = resolveProjectRoot(sourceFile || '');
+  const normalizedSource = path.resolve(String(sourceFile || ''));
+  const normalizedTarget = path.resolve(String(targetFile || ''));
+  if (!normalizedSource || !normalizedTarget || normalizedSource === normalizedTarget) {
+    return false;
+  }
+
+  const normalizedProjectRoot = projectRoot.replace(/\\/g, '/');
+  const normalizedTargetPath = normalizedTarget.replace(/\\/g, '/');
+  if (normalizedTargetPath === `${normalizedProjectRoot}/.gitignore`) {
+    return true;
+  }
+  return normalizedTargetPath.startsWith(`${normalizedProjectRoot}/.realtime-dev-agent/`);
+}
+
 function isAutomaticUnitTestIssue(document, issue) {
   if (String(issue && issue.kind || '') !== 'unit_test') {
     return false;
@@ -939,8 +961,70 @@ function isAutomaticUnitTestIssue(document, issue) {
   return isSafeUnitTestTarget(document && document.uri, action && action.target_file);
 }
 
-function selectAutomaticIssue(document, issues) {
-  return (Array.isArray(issues) ? issues : []).find((issue) => isAutomaticUnitTestIssue(document, issue)) || null;
+function isAutomaticWriteFileIssue(document, issue) {
+  const action = issueAction(issue);
+  if (String(action && action.op || '') !== 'write_file') {
+    return false;
+  }
+  if (!String(issue && issue.snippet || '').trim()) {
+    return false;
+  }
+
+  const targetFile = String(action && action.target_file || '').trim();
+  if (!targetFile) {
+    return false;
+  }
+
+  const normalizedSource = path.resolve(String(uriToFilePath(document && document.uri) || ''));
+  const normalizedTarget = path.resolve(targetFile);
+  if (normalizedSource && normalizedSource === normalizedTarget) {
+    return true;
+  }
+
+  return isAutomaticUnitTestIssue(document, issue) || isSafeContextFileTarget(document && document.uri, targetFile);
+}
+
+function isAutomaticInlineIssue(issue) {
+  const action = issueAction(issue);
+  if (String(action && action.op || '') === 'run_command') {
+    return false;
+  }
+  return Boolean(
+    String(issue && issue.snippet || '').trim()
+    || String(issue && issue.kind || '') === 'trailing_whitespace'
+    || String(issue && issue.kind || '') === 'syntax_extra_delimiter'
+  );
+}
+
+function compareAutomaticIssues(left, right) {
+  const leftPriority = Number(left && left.autofixPriority || semanticPriorityForIssue(left));
+  const rightPriority = Number(right && right.autofixPriority || semanticPriorityForIssue(right));
+  if (leftPriority !== rightPriority) {
+    return leftPriority - rightPriority;
+  }
+
+  const leftLine = Number(left && left.line || 1);
+  const rightLine = Number(right && right.line || 1);
+  if (leftLine !== rightLine) {
+    return rightLine - leftLine;
+  }
+
+  return issueActionIdentity(left).localeCompare(issueActionIdentity(right));
+}
+
+function automaticIssueCandidates(document, issues) {
+  return (Array.isArray(issues) ? issues : [])
+    .filter((issue) => {
+      if (String(autoFixNoOpReason(issue, { autoMode: true }) || '').trim()) {
+        return false;
+      }
+      return isAutomaticInlineIssue(issue) || isAutomaticWriteFileIssue(document, issue);
+    })
+    .sort(compareAutomaticIssues);
+}
+
+function selectAutomaticIssues(document, issues) {
+  return automaticIssueCandidates(document, issues).slice(0, 6);
 }
 
 function isTerminalAction(action) {
@@ -1249,21 +1333,32 @@ async function maybeAutoApplyIssues(document, issues, options = {}) {
     return false;
   }
 
-  const candidate = selectAutomaticIssue(document, issues);
-  if (!candidate) {
-    return false;
-  }
-
   const uri = String(document.uri || '');
-  const issueKey = automaticIssueKey(document, candidate);
   const seen = automaticIssueAttempts.get(uri) || new Set();
-  if (seen.has(issueKey)) {
-    return false;
-  }
+  let applied = false;
+  for (let iteration = 0; iteration < 6; iteration += 1) {
+    const liveDocument = documents.get(uri);
+    if (!liveDocument) {
+      break;
+    }
 
-  seen.add(issueKey);
-  automaticIssueAttempts.set(uri, seen);
-  return applyIssueFix(document, candidate, 'Realtime Dev Agent automatic unit test');
+    const liveIssues = iteration === 0
+      ? issues
+      : (issuesByUri.get(uri) || analyzeIssuesForDocument(liveDocument, { force: true }));
+    const candidate = selectAutomaticIssues(liveDocument, liveIssues)
+      .find((issue) => !seen.has(automaticIssueKey(liveDocument, issue))) || null;
+    if (!candidate) {
+      break;
+    }
+
+    seen.add(automaticIssueKey(liveDocument, candidate));
+    automaticIssueAttempts.set(uri, seen);
+    if (!(await applyIssueFix(liveDocument, candidate, 'Realtime Dev Agent automatic fix'))) {
+      break;
+    }
+    applied = true;
+  }
+  return applied;
 }
 
 function captureIssueFixSnapshot(document, action) {

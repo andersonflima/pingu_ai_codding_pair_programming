@@ -466,8 +466,8 @@ Comandos:
 ### Zed
 
 - diagnosticos em tempo real via language server local
-- auto geracao segura de `unit_test` no `save`
-- quick fixes para `comment_task`, `context_file` e `unit_test`
+- consolidacao automatica no `save` para `comment_task`, `context_file`, `unit_test` e fixes locais seguros
+- quick fixes para `comment_task`, `context_file`, `unit_test` e correcoes locais
 - `terminal_task` executavel via code action
 - follow-up acionavel via code action
 
@@ -497,6 +497,7 @@ O repositorio expoe `plugin/` e `autoload/` na raiz, entao pode ser instalado di
     vim.g.realtime_dev_agent_realtime_async = 1
     vim.g.realtime_dev_agent_realtime_use_daemon = 1
     vim.g.realtime_dev_agent_realtime_focus_scope_enabled = 1
+    vim.g.realtime_dev_agent_auto_on_save = 1
     vim.g.realtime_dev_agent_auto_check_max_lines = 600
     vim.g.realtime_dev_agent_analysis_cache_max_entries = 24
     vim.g.realtime_dev_agent_realtime_auto_fix_max_per_check = 2
@@ -521,8 +522,8 @@ Plug 'andersonflima/pingu_ai_codding_pair_programming'
 - `let g:realtime_dev_agent_open_window_on_start = 1` reabre o painel no startup automatico
 - `let g:realtime_dev_agent_start_on_editor_enter = 0` desliga o startup automatico
 - `let g:realtime_dev_agent_review_on_open = 1` reativa revisao automatica ao abrir arquivos
-- `let g:realtime_dev_agent_target_scope = 'current_file'` mantem analise e correcoes no arquivo aberto, mas ainda permite `unit_test` automatico quando o alvo for um arquivo de teste adjacente e seguro
-- `let g:realtime_dev_agent_target_scope = 'workspace'` reativa acoes multi-arquivo amplas como `context_file`
+- `let g:realtime_dev_agent_target_scope = 'current_file'` mantem analise e correcoes no arquivo aberto, mas ainda permite `unit_test` adjacente seguro e `context_file` para `.realtime-dev-agent/` e `.gitignore`
+- `let g:realtime_dev_agent_target_scope = 'workspace'` reativa acoes multi-arquivo amplas fora desse conjunto seguro
 - `let g:realtime_dev_agent_auto_fix_scope = 'near_cursor'` aplica apenas o trecho mais proximo do cursor
 - `let g:realtime_dev_agent_auto_fix_scope = 'file'` volta para o comportamento de arquivo inteiro por ciclo
 - `let g:realtime_dev_agent_auto_fix_scope = 'cursor_only'` restringe ao cursor imediato
@@ -530,6 +531,7 @@ Plug 'andersonflima/pingu_ai_codding_pair_programming'
 - `let g:realtime_dev_agent_auto_fix_cluster_gap = 8` controla a distancia maxima entre issues do mesmo trecho
 - `let g:realtime_dev_agent_realtime_on_cursor_hold = 1` faz o agente agir sozinho quando o cursor para sobre um bloco sem exigir edicao manual
 - `let g:realtime_dev_agent_realtime_on_buf_enter = 0` evita custo extra em navegacao intensa; ligue se quiser checagem imediata ao entrar no arquivo
+- `let g:realtime_dev_agent_auto_on_save = 1` consolida comentarios, fixes locais, blueprint seguro e testes adjacentes automaticamente no save
 - `let g:realtime_dev_agent_auto_fix_visual_mode = 'preserve'` reduz ruido visual durante o batch
 - `let g:realtime_dev_agent_realtime_insert_mode = 1` volta a analisar tambem no meio da digitacao
 - `let g:realtime_dev_agent_realtime_async = 1` usa job assincrono no Neovim para evitar congelar a UI durante o loop automatico
@@ -542,7 +544,7 @@ Plug 'andersonflima/pingu_ai_codding_pair_programming'
 - `let g:realtime_dev_agent_auto_fix_doc_cursor_context_only = 1` restringe `function_doc`, `class_doc`, `variable_doc` e `flow_comment` ao bloco textual atual do cursor
 - `let g:realtime_dev_agent_auto_fix_local_cursor_context_only = 1` restringe `debug_output`, syntax local, `trailing_whitespace`, `function_spec`, `markdown_title`, `terraform_required_version` e `dockerfile_workdir` ao bloco textual atual
 - `let g:realtime_dev_agent_auto_fix_doc_cursor_context_max_lines = 80` controla o tamanho maximo desse bloco automatico
-- por padrao no Vim o auto-fix automatico fica no conjunto local e seguro do arquivo atual; `unit_test` volta a entrar automaticamente quando gerar um arquivo de teste adjacente seguro, enquanto `context_file` e `terminal_task` continuam por quick fix ou por opt-in em `g:realtime_dev_agent_auto_fix_kinds`
+- por padrao no Vim o auto-fix automatico fica no conjunto local e seguro do arquivo atual; no `save`, o agente consolida o arquivo inteiro e inclui `unit_test` adjacente seguro e `context_file` para `.realtime-dev-agent/` e `.gitignore`, enquanto `terminal_task` continua sob controle explicito do runtime de terminal
 
 ### Terminal no Vim / Neovim
 

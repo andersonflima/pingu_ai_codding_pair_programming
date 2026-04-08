@@ -84,7 +84,7 @@ function createEditRuntime(deps) {
 
   function realtimeAutoFixLimit(document, trigger) {
     const normalizedTrigger = String(trigger || '').trim();
-    if (!normalizedTrigger || normalizedTrigger === 'manual') {
+    if (!normalizedTrigger || normalizedTrigger === 'manual' || normalizedTrigger === 'save' || normalizedTrigger === 'autofix') {
       return 0;
     }
 

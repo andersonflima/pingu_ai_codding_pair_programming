@@ -99,7 +99,7 @@ function! s:is_safe_default_auto_fix_kind(kind, entry) abort
   endif
 
   let l:op = get(l:action, 'op', '')
-  if a:kind ==# 'unit_test' && l:op ==# 'write_file'
+  if index(['context_file', 'unit_test'], a:kind) != -1 && l:op ==# 'write_file'
     return v:true
   endif
   if l:op ==# 'write_file' || l:op ==# 'run_command'
@@ -192,9 +192,8 @@ if !exists('g:realtime_dev_agent_ignore_patterns')
 endif
 
 if !exists('g:realtime_dev_agent_auto_on_save')
-  " Controle de execucao automatica no BufWritePost.
-  " O padrao 0 evita impacto imediato para quem ainda esta ajustando a rotina.
-  let g:realtime_dev_agent_auto_on_save = 0
+  " Consolida correcoes e comentarios automaticamente no save.
+  let g:realtime_dev_agent_auto_on_save = 1
 endif
 
 if !exists('g:realtime_dev_agent_realtime_on_change')

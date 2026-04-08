@@ -689,6 +689,27 @@ function! s:is_safe_unit_test_target(source_file, target_file) abort
   return v:false
 endfunction
 
+function! s:is_safe_context_file_target(source_file, target_file) abort
+  let l:source_file = fnamemodify(a:source_file, ':p')
+  let l:target_file = fnamemodify(a:target_file, ':p')
+  if empty(l:source_file) || empty(l:target_file) || l:source_file ==# l:target_file
+    return v:false
+  endif
+
+  let l:project_root = fnamemodify(s:project_root(l:source_file), ':p')
+  let l:normalized_target = substitute(l:target_file, '\\', '/', 'g')
+  let l:normalized_root = substitute(l:project_root, '\\', '/', 'g')
+  if empty(l:normalized_root)
+    return v:false
+  endif
+
+  if l:normalized_target ==# l:normalized_root . '/.gitignore'
+    return v:true
+  endif
+
+  return l:normalized_target =~# '^' . escape(l:normalized_root . '/.realtime-dev-agent/', '\')
+endfunction
+
 function! s:is_scope_safe_write_file_issue(item, current_file) abort
   let l:action = s:issue_effective_action(a:item)
   if get(l:action, 'op', '') !=# 'write_file'
@@ -703,6 +724,9 @@ function! s:is_scope_safe_write_file_issue(item, current_file) abort
   let l:kind = get(a:item, 'kind', '')
   if l:kind ==# 'unit_test'
     return s:is_safe_unit_test_target(a:current_file, l:target_file)
+  endif
+  if l:kind ==# 'context_file'
+    return s:is_safe_context_file_target(a:current_file, l:target_file)
   endif
 
   return v:false
@@ -1450,7 +1474,7 @@ function! s:issue_auto_fix_noop_reason(item) abort
   if index(['context_contract', 'functional_reassignment', 'nested_condition'], l:kind) != -1 && l:score > 0 && l:score < 70
     return 'refactor semantico com confianca insuficiente para auto-fix'
   endif
-  if index(['comment_task', 'context_file', 'unit_test'], l:kind) != -1 && l:score > 0 && l:score < 65
+  if index(['comment_task', 'context_file', 'unit_test'], l:kind) != -1 && l:score > 0 && l:score < 60
     return 'geracao estrutural com confianca insuficiente para aplicar automaticamente'
   endif
   return ''
@@ -3454,8 +3478,10 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
     return 0
   endif
 
-  let l:auto_candidates = s:select_auto_fix_candidates_by_scope(l:auto_candidates, l:target_buf)
-  let l:auto_candidates = s:limit_cursor_context_auto_fix_candidates(l:auto_candidates, l:target_buf)
+  if s:realtime_dev_agent_is_realtime_check
+    let l:auto_candidates = s:select_auto_fix_candidates_by_scope(l:auto_candidates, l:target_buf)
+    let l:auto_candidates = s:limit_cursor_context_auto_fix_candidates(l:auto_candidates, l:target_buf)
+  endif
 
   if empty(l:auto_candidates)
     return 0
