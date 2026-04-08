@@ -28,6 +28,7 @@ const pendingClientRequests = new Map();
 const activeTerminalTasks = new Map();
 const pendingAnalysisTimers = new Map();
 const analysisCache = new Map();
+const automaticIssueAttempts = new Map();
 
 let messageBuffer = Buffer.alloc(0);
 let shutdownRequested = false;
@@ -161,6 +162,7 @@ function handleMessage(message) {
     }
     clearPendingAnalysis(document.uri);
     invalidateAnalysis(document.uri);
+    automaticIssueAttempts.delete(String(document.uri || ''));
     documents.delete(document.uri);
     issuesByUri.delete(document.uri);
     publishDiagnostics(document.uri, []);
@@ -202,6 +204,7 @@ function handleClientResponse(message) {
 
 function upsertDocument(uri, text, version) {
   invalidateAnalysis(uri);
+  automaticIssueAttempts.delete(String(uri || ''));
   documents.set(uri, {
     uri,
     text: String(text || ''),
@@ -276,13 +279,13 @@ function scheduleAnalyzeAndPublish(uri, trigger = 'change') {
   const expectedVersion = documentVersion(document);
   const delay = analysisDelayForTrigger(trigger);
   if (delay <= 0) {
-    analyzeAndPublish(uri, { expectedVersion, force: trigger === 'save' || trigger === 'autofix' });
+    analyzeAndPublish(uri, { expectedVersion, force: trigger === 'save' || trigger === 'autofix', trigger });
     return;
   }
 
   const timer = setTimeout(() => {
     pendingAnalysisTimers.delete(uri);
-    analyzeAndPublish(uri, { expectedVersion, force: false });
+    analyzeAndPublish(uri, { expectedVersion, force: false, trigger });
   }, delay);
   pendingAnalysisTimers.set(uri, timer);
 }
@@ -300,6 +303,9 @@ function analyzeAndPublish(uri, options = {}) {
   const issues = analyzeIssuesForDocument(document, options);
   issuesByUri.set(uri, issues);
   publishDiagnostics(uri, issues.map((issue) => issueToDiagnostic(document, issue)));
+  if (shouldRunAutomaticIssueFix(options.trigger)) {
+    void maybeAutoApplyIssues(document, issues, options);
+  }
 }
 
 function publishDiagnostics(uri, diagnostics) {
@@ -602,6 +608,72 @@ function issueAction(issue) {
   return resolveIssueAction(issue);
 }
 
+function issueActionIdentity(issue) {
+  const action = issueAction(issue);
+  if (String(action && action.op || '') === 'write_file') {
+    return String(action && action.target_file || '');
+  }
+  if (String(action && action.op || '') === 'run_command') {
+    return String(action && action.command || '');
+  }
+  return String(issue && issue.snippet || '');
+}
+
+function automaticIssueKey(document, issue) {
+  return [
+    String(document && document.uri || ''),
+    Number(issue && issue.line || 1),
+    String(issue && issue.kind || ''),
+    String(issue && issue.message || ''),
+    issueActionIdentity(issue),
+  ].join('|');
+}
+
+function shouldRunAutomaticIssueFix(trigger) {
+  return String(trigger || '').trim() === 'save';
+}
+
+function isSafeUnitTestTarget(uri, targetFile) {
+  const sourceFile = uriToFilePath(uri);
+  const normalizedSource = path.resolve(String(sourceFile || ''));
+  const normalizedTarget = path.resolve(String(targetFile || ''));
+  if (!normalizedSource || !normalizedTarget || normalizedSource === normalizedTarget) {
+    return false;
+  }
+
+  const targetDir = path.dirname(normalizedTarget).replace(/\\/g, '/');
+  const sourceDir = path.dirname(normalizedSource).replace(/\\/g, '/');
+  const targetName = path.basename(normalizedTarget).toLowerCase();
+
+  if (/\/tests?\//.test(`${targetDir}/`)) {
+    return true;
+  }
+
+  if (targetDir === sourceDir) {
+    return /(^test_.*\.py$|_test\.(go|py|exs|rs|rb|c|vim|sh)$|_spec\.lua$|\.test\.(js|jsx|ts|tsx|mjs|cjs)$|\.spec\.(js|jsx|ts|tsx|mjs|cjs)$)/.test(targetName);
+  }
+
+  return false;
+}
+
+function isAutomaticUnitTestIssue(document, issue) {
+  if (String(issue && issue.kind || '') !== 'unit_test') {
+    return false;
+  }
+  const action = issueAction(issue);
+  if (String(action && action.op || '') !== 'write_file') {
+    return false;
+  }
+  if (!String(issue && issue.snippet || '').trim()) {
+    return false;
+  }
+  return isSafeUnitTestTarget(document && document.uri, action && action.target_file);
+}
+
+function selectAutomaticIssue(document, issues) {
+  return (Array.isArray(issues) ? issues : []).find((issue) => isAutomaticUnitTestIssue(document, issue)) || null;
+}
+
 function isTerminalAction(action) {
   return Boolean(action && action.op === 'run_command' && String(action.command || '').trim() !== '');
 }
@@ -858,6 +930,73 @@ function applyWorkspaceEditLocally(edit) {
   });
 }
 
+async function applyIssueFix(document, issue, label) {
+  const action = issueAction(issue);
+  const edit = buildWorkspaceEdit(document, issue, action);
+  if (!edit) {
+    return false;
+  }
+
+  const snapshot = captureIssueFixSnapshot(document, action);
+  const beforeIssues = issuesByUri.get(document.uri) || [];
+  const applied = await requestApplyEdit(label, edit);
+  if (!applied) {
+    return false;
+  }
+
+  clearPendingAnalysis(document.uri);
+  applyWorkspaceEditLocally(edit);
+  const updatedDocument = documents.get(document.uri) || document;
+  const afterIssues = analyzeIssuesForDocument(updatedDocument, { force: true });
+  const guardResult = evaluateAutofixGuard({
+    appliedIssues: [issue],
+    beforeIssues,
+    afterIssues,
+    fileEntries: buildGuardFileEntries(snapshot),
+    resolveMustClearKinds: mustClearKindsForIssue,
+  });
+
+  if (!guardResult.ok) {
+    const restoreEdit = buildSnapshotRestoreEdit(snapshot);
+    const restored = await requestApplyEdit('Realtime Dev Agent rollback', restoreEdit);
+    if (restored) {
+      restoreSnapshotLocally(snapshot);
+      analyzeAndPublish(document.uri, { force: true, skipAutomaticAutoFix: true });
+    }
+    sendNotification('window/logMessage', {
+      type: 2,
+      message: `[RealtimeDevAgent/Zed] rollback aplicado: ${summarizeGuardFailures(guardResult)}`,
+    });
+    return false;
+  }
+
+  issuesByUri.set(document.uri, afterIssues);
+  publishDiagnostics(document.uri, afterIssues.map((afterIssue) => issueToDiagnostic(updatedDocument, afterIssue)));
+  return true;
+}
+
+async function maybeAutoApplyIssues(document, issues, options = {}) {
+  if (!document || options.skipAutomaticAutoFix) {
+    return false;
+  }
+
+  const candidate = selectAutomaticIssue(document, issues);
+  if (!candidate) {
+    return false;
+  }
+
+  const uri = String(document.uri || '');
+  const issueKey = automaticIssueKey(document, candidate);
+  const seen = automaticIssueAttempts.get(uri) || new Set();
+  if (seen.has(issueKey)) {
+    return false;
+  }
+
+  seen.add(issueKey);
+  automaticIssueAttempts.set(uri, seen);
+  return applyIssueFix(document, candidate, 'Realtime Dev Agent automatic unit test');
+}
+
 function captureIssueFixSnapshot(document, action) {
   const entries = [{
     uri: document.uri,
@@ -985,48 +1124,7 @@ async function executeIssueFix(payload) {
   if (!uri || !document || !issue) {
     return;
   }
-
-  const action = issueAction(issue);
-  const edit = buildWorkspaceEdit(document, issue, action);
-  if (!edit) {
-    return;
-  }
-
-  const snapshot = captureIssueFixSnapshot(document, action);
-  const beforeIssues = issuesByUri.get(uri) || [];
-  const applied = await requestApplyEdit('Realtime Dev Agent quick fix', edit);
-  if (!applied) {
-    return;
-  }
-
-  clearPendingAnalysis(uri);
-  applyWorkspaceEditLocally(edit);
-  const updatedDocument = documents.get(uri) || document;
-  const afterIssues = analyzeIssuesForDocument(updatedDocument, { force: true });
-  const guardResult = evaluateAutofixGuard({
-    appliedIssues: [issue],
-    beforeIssues,
-    afterIssues,
-    fileEntries: buildGuardFileEntries(snapshot),
-    resolveMustClearKinds: mustClearKindsForIssue,
-  });
-
-  if (!guardResult.ok) {
-    const restoreEdit = buildSnapshotRestoreEdit(snapshot);
-    const restored = await requestApplyEdit('Realtime Dev Agent rollback', restoreEdit);
-    if (restored) {
-      restoreSnapshotLocally(snapshot);
-      analyzeAndPublish(uri, { force: true });
-    }
-    sendNotification('window/logMessage', {
-      type: 2,
-      message: `[RealtimeDevAgent/Zed] rollback aplicado: ${summarizeGuardFailures(guardResult)}`,
-    });
-    return;
-  }
-
-  issuesByUri.set(uri, afterIssues);
-  publishDiagnostics(uri, afterIssues.map((afterIssue) => issueToDiagnostic(updatedDocument, afterIssue)));
+  await applyIssueFix(document, issue, 'Realtime Dev Agent quick fix');
 }
 
 function executeTerminalTask(payload) {

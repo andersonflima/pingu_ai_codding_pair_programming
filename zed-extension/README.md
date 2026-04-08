@@ -44,5 +44,6 @@ Knobs opcionais por ambiente:
 
 Observacao:
 
-- `context_file` e `unit_test` continuam sendo aplicados por quick fix no proprio arquivo
+- `unit_test` agora pode ser aplicado automaticamente no `save` quando o alvo for um arquivo de teste adjacente e seguro
+- `context_file` continua por quick fix
 - `terminal_task` no Zed usa code action e logs do language server, enquanto Vim/Neovim e VS Code usam terminal visivel do editor

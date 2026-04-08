@@ -466,6 +466,7 @@ Comandos:
 ### Zed
 
 - diagnosticos em tempo real via language server local
+- auto geracao segura de `unit_test` no `save`
 - quick fixes para `comment_task`, `context_file` e `unit_test`
 - `terminal_task` executavel via code action
 - follow-up acionavel via code action
