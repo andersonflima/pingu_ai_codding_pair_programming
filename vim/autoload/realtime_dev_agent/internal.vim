@@ -38,42 +38,41 @@ function! s:realtime_dev_agent_script_runner() abort
     return ''
   endif
 
-  let l:script = expand(g:realtime_dev_agent_script)
-  if empty(l:script)
-    return ''
-  endif
+  return empty(s:realtime_dev_agent_script_path()) ? '' : 'node'
+endfunction
 
-  if !filereadable(l:script)
-    let l:script = fnamemodify(l:script, ':p')
-  endif
-
-  if l:script =~? '\.exs$'
-    let l:script = substitute(l:script, '\.exs$', '.js', '')
-  endif
-
-  if l:script =~? '\.js$' && filereadable(l:script)
-    let g:realtime_dev_agent_script = l:script
-    return 'node'
+function! s:realtime_dev_agent_script_candidates() abort
+  let l:candidates = []
+  let l:configured = expand(get(g:, 'realtime_dev_agent_script', ''))
+  if !empty(l:configured)
+    call add(l:candidates, l:configured)
+    call add(l:candidates, fnamemodify(l:configured, ':p'))
   endif
 
   let l:plugin_dir = fnamemodify(resolve(expand('<sfile>:p')), ':h')
-  let l:candidates = [
+  call extend(l:candidates, [
         \ fnamemodify(l:plugin_dir . '/../../realtime_dev_agent.js', ':p'),
         \ fnamemodify(l:plugin_dir . '/../realtime_dev_agent.js', ':p'),
-        \ fnamemodify(l:plugin_dir . '/../../../realtime_dev_agent.js', ':p')
-        \ ]
-  for l:candidate in l:candidates
-    if filereadable(l:candidate)
-      let g:realtime_dev_agent_script = l:candidate
-      return 'node'
+        \ fnamemodify(l:plugin_dir . '/../../../realtime_dev_agent.js', ':p'),
+        \ fnamemodify('realtime_dev_agent.js', ':p')
+        \ ])
+  return l:candidates
+endfunction
+
+function! s:realtime_dev_agent_script_path() abort
+  for l:candidate in s:realtime_dev_agent_script_candidates()
+    let l:script = fnamemodify(resolve(fnamemodify(l:candidate, ':p')), ':p')
+    if empty(l:script)
+      continue
+    endif
+    if l:script =~? '\.exs$'
+      let l:script = substitute(l:script, '\.exs$', '.js', '')
+    endif
+    if l:script =~? '\.js$' && filereadable(l:script)
+      let g:realtime_dev_agent_script = l:script
+      return l:script
     endif
   endfor
-
-  let l:local_script = fnamemodify('realtime_dev_agent.js', ':p')
-  if filereadable(l:local_script)
-    let g:realtime_dev_agent_script = l:local_script
-    return 'node'
-  endif
 
   return ''
 endfunction
@@ -374,7 +373,8 @@ function! s:prepared_analysis_request(bufnr, ...) abort
   endif
 
   let l:runner = s:realtime_dev_agent_script_runner()
-  if empty(l:runner)
+  let l:script = s:realtime_dev_agent_script_path()
+  if empty(l:runner) || empty(l:script)
     return {
           \ 'ok': v:false,
           \ 'file': l:file,
@@ -392,7 +392,7 @@ function! s:prepared_analysis_request(bufnr, ...) abort
   endif
 
   let l:root = s:project_root(l:file)
-  let l:argv = [l:runner, g:realtime_dev_agent_script]
+  let l:argv = [l:runner, l:script]
   if l:uses_stdin
     call extend(l:argv, ['--stdin'])
   else
@@ -1577,7 +1577,7 @@ endfunction
 
 function! s:run_autofix_guard(payload, file) abort
   let l:runner = s:realtime_dev_agent_script_runner()
-  let l:script = fnamemodify(expand(g:realtime_dev_agent_script), ':p')
+  let l:script = s:realtime_dev_agent_script_path()
   if empty(l:runner) || empty(l:script) || !filereadable(l:script)
     return {'ok': v:false, 'error': 'guard cli nao encontrada'}
   endif
@@ -3008,7 +3008,7 @@ function! s:ensure_analysis_daemon() abort
   endif
 
   let l:runner = s:realtime_dev_agent_script_runner()
-  let l:script = fnamemodify(expand(g:realtime_dev_agent_script), ':p')
+  let l:script = s:realtime_dev_agent_script_path()
   if empty(l:runner) || empty(l:script) || !filereadable(l:script)
     return -1
   endif

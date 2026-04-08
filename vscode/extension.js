@@ -138,6 +138,14 @@ function activate(context) {
     return Math.max(0, Math.trunc(configured));
   }
 
+  function configuredRealtimeFocusPaddingLines(uri) {
+    const configured = Number(configuration(uri).get('realtimeFocusPaddingLines', 24));
+    if (!Number.isFinite(configured)) {
+      return 24;
+    }
+    return Math.max(0, Math.trunc(configured));
+  }
+
   function analysisModeForTrigger(uri, trigger) {
     const normalizedTrigger = String(trigger || '').trim();
     if (['change', 'focus', 'open', 'startup'].includes(normalizedTrigger)) {
@@ -145,6 +153,155 @@ function activate(context) {
       return configured === 'full' ? 'full' : 'light';
     }
     return 'full';
+  }
+
+  function documentLineCount(document) {
+    return Math.max(1, Number(document && document.lineCount) || 1);
+  }
+
+  function normalizeFocusRange(document, rawRange) {
+    if (!supportsDocument(document) || !rawRange || typeof rawRange !== 'object') {
+      return null;
+    }
+
+    const lineCount = documentLineCount(document);
+    const rawStartLine = Number.parseInt(String(rawRange.startLine || 0), 10);
+    const rawEndLine = Number.parseInt(String(rawRange.endLine || 0), 10);
+    if (!Number.isFinite(rawStartLine) || !Number.isFinite(rawEndLine) || rawStartLine <= 0 || rawEndLine <= 0) {
+      return null;
+    }
+
+    const startLine = Math.max(1, Math.min(lineCount, rawStartLine));
+    const endLine = Math.max(startLine, Math.min(lineCount, rawEndLine));
+    return { startLine, endLine };
+  }
+
+  function expandFocusRange(document, rawRange, paddingLines) {
+    const normalized = normalizeFocusRange(document, rawRange);
+    if (!normalized) {
+      return null;
+    }
+
+    return normalizeFocusRange(document, {
+      startLine: normalized.startLine - Math.max(0, Number(paddingLines) || 0),
+      endLine: normalized.endLine + Math.max(0, Number(paddingLines) || 0),
+    });
+  }
+
+  function mergeFocusRanges(ranges) {
+    const normalized = (Array.isArray(ranges) ? ranges : []).filter(Boolean);
+    if (normalized.length === 0) {
+      return null;
+    }
+
+    return normalized.reduce((merged, current) => ({
+      startLine: Math.min(merged.startLine, current.startLine),
+      endLine: Math.max(merged.endLine, current.endLine),
+    }));
+  }
+
+  function serializeFocusRange(focusRange) {
+    const normalized = focusRange && typeof focusRange === 'object'
+      ? focusRange
+      : null;
+    if (!normalized) {
+      return '';
+    }
+    return `${normalized.startLine}:${normalized.endLine}`;
+  }
+
+  function visibleEditorForDocument(document) {
+    return vscode.window.visibleTextEditors.find((editor) =>
+      supportsDocument(editor && editor.document)
+      && uriKey(editor.document.uri) === uriKey(document && document.uri));
+  }
+
+  function visibleFocusRangeForDocument(document, editor = null) {
+    if (!supportsDocument(document)) {
+      return null;
+    }
+
+    const resolvedEditor = editor || visibleEditorForDocument(document);
+    if (!resolvedEditor) {
+      return null;
+    }
+
+    const visibleRanges = Array.isArray(resolvedEditor.visibleRanges)
+      ? resolvedEditor.visibleRanges
+      : [];
+    const mergedVisibleRange = mergeFocusRanges(visibleRanges.map((range) => ({
+      startLine: Number(range && range.start && range.start.line || 0) + 1,
+      endLine: Number(range && range.end && range.end.line || 0) + 1,
+    })));
+    const fallbackSelectionRange = mergedVisibleRange || mergeFocusRanges(
+      (Array.isArray(resolvedEditor.selections) ? resolvedEditor.selections : []).map((selection) => ({
+        startLine: Number(selection && selection.start && selection.start.line || 0) + 1,
+        endLine: Number(selection && selection.end && selection.end.line || 0) + 1,
+      })),
+    );
+    return expandFocusRange(
+      document,
+      fallbackSelectionRange,
+      configuredRealtimeFocusPaddingLines(document.uri),
+    );
+  }
+
+  function changedFocusRangeForDocument(document, contentChanges) {
+    if (!supportsDocument(document)) {
+      return null;
+    }
+
+    const rawRange = mergeFocusRanges((Array.isArray(contentChanges) ? contentChanges : []).map((change) => {
+      if (!change || !change.range) {
+        return null;
+      }
+      return {
+        startLine: Number(change.range.start && change.range.start.line || 0) + 1,
+        endLine: Number(change.range.end && change.range.end.line || 0) + 1,
+      };
+    }).filter(Boolean));
+    if (!rawRange) {
+      return visibleFocusRangeForDocument(document);
+    }
+    return expandFocusRange(
+      document,
+      rawRange,
+      configuredRealtimeFocusPaddingLines(document.uri),
+    );
+  }
+
+  function resolveAnalysisFocusRange(document, trigger, options = {}) {
+    if (!supportsDocument(document)) {
+      return null;
+    }
+
+    const analysisMode = String(options.analysisMode || analysisModeForTrigger(document.uri, trigger) || 'full').trim().toLowerCase();
+    if (analysisMode === 'full') {
+      return null;
+    }
+
+    const explicit = normalizeFocusRange(document, options.focusRange);
+    if (explicit) {
+      return explicit;
+    }
+
+    if (['change', 'focus', 'open', 'startup'].includes(String(trigger || '').trim())) {
+      return visibleFocusRangeForDocument(document, options.editor || null);
+    }
+
+    return null;
+  }
+
+  function canReuseCachedAnalysis(cached, version, analysisMode, focusKey) {
+    if (!cached || cached.version !== version) {
+      return false;
+    }
+
+    if (cached.mode === 'full' && (cached.focusKey === '' || cached.focusKey === focusKey)) {
+      return true;
+    }
+
+    return cached.mode === analysisMode && cached.focusKey === focusKey;
   }
 
   function resolveScriptPath(uri) {
@@ -225,13 +382,14 @@ function activate(context) {
     const key = uriKey(document.uri);
     const version = documentVersion(document);
     const analysisMode = String(options.analysisMode || 'full').trim().toLowerCase() === 'light' ? 'light' : 'full';
+    const focusRange = normalizeFocusRange(document, options.focusRange);
+    const focusKey = serializeFocusRange(focusRange);
     const cached = analysisCache.get(key);
-    if (cached && cached.version === version) {
-      const canReuseCached = cached.mode === 'full' || cached.mode === analysisMode;
-      if (canReuseCached && Array.isArray(cached.issues)) {
+    if (canReuseCachedAnalysis(cached, version, analysisMode, focusKey)) {
+      if (Array.isArray(cached.issues)) {
         return cached.issues;
       }
-      if (canReuseCached && cached.promise) {
+      if (cached.promise) {
         return cached.promise;
       }
     }
@@ -244,12 +402,17 @@ function activate(context) {
       text: document.getText(),
       maxLineLength,
       analysisMode,
+      ...(focusRange ? {
+        focusStartLine: focusRange.startLine,
+        focusEndLine: focusRange.endLine,
+      } : {}),
     }).then((issues) => {
       const current = analysisCache.get(key);
       if (current && current.promise === promise) {
         analysisCache.set(key, {
           version,
           mode: analysisMode,
+          focusKey,
           issues,
           promise: null,
         });
@@ -265,6 +428,7 @@ function activate(context) {
     analysisCache.set(key, {
       version,
       mode: analysisMode,
+      focusKey,
       issues: null,
       promise,
     });
@@ -281,9 +445,13 @@ function activate(context) {
 
     try {
       const analysisMode = analysisModeForTrigger(document.uri, trigger);
+      const focusRange = resolveAnalysisFocusRange(document, trigger, {
+        ...options,
+        analysisMode,
+      });
       const issues = Array.isArray(options.issues)
         ? options.issues
-        : await collectIssues(document, { analysisMode });
+        : await collectIssues(document, { analysisMode, focusRange });
       const liveDocument = resolveLiveDocument(document.uri) || document;
       if (!supportsDocument(liveDocument)) {
         return;
@@ -326,7 +494,7 @@ function activate(context) {
     }
   }
 
-  function scheduleAnalysis(document, trigger = 'change') {
+  function scheduleAnalysis(document, trigger = 'change', options = {}) {
     if (!supportsDocument(document) || !isEnabled(document.uri)) {
       return;
     }
@@ -344,7 +512,10 @@ function activate(context) {
       if (!supportsDocument(liveDocument) || !isEnabled(liveDocument.uri)) {
         return;
       }
-      analyzeDocument(liveDocument, trigger);
+      analyzeDocument(liveDocument, trigger, {
+        focusRange: options.focusRange,
+        editor: options.editor,
+      });
     }, delay);
     pendingTimers.set(uriKey(document.uri), timer);
   }
@@ -451,19 +622,26 @@ function activate(context) {
         return;
       }
       terminalRuntime.clearTerminalAttempts(event.document.uri);
-      scheduleAnalysis(event.document, 'change');
+      scheduleAnalysis(event.document, 'change', {
+        focusRange: changedFocusRangeForDocument(event.document, event.contentChanges),
+      });
     }),
     vscode.workspace.onDidOpenTextDocument((document) => {
       if (!supportsDocument(document) || !isEnabled(document.uri)) {
         return;
       }
-      scheduleAnalysis(document, 'open');
+      scheduleAnalysis(document, 'open', {
+        focusRange: visibleFocusRangeForDocument(document),
+      });
     }),
     vscode.window.onDidChangeActiveTextEditor((editor) => {
       if (!editor || !supportsDocument(editor.document) || !isEnabled(editor.document.uri)) {
         return;
       }
-      scheduleAnalysis(editor.document, 'focus');
+      scheduleAnalysis(editor.document, 'focus', {
+        focusRange: visibleFocusRangeForDocument(editor.document, editor),
+        editor,
+      });
     }),
     vscode.workspace.onDidCloseTextDocument((document) => {
       clearPending(document.uri);
@@ -491,7 +669,9 @@ function activate(context) {
     startupDocuments.set(editor.document.uri.toString(), editor.document);
   });
   startupDocuments.forEach((document) => {
-    scheduleAnalysis(document, 'startup');
+    scheduleAnalysis(document, 'startup', {
+      focusRange: visibleFocusRangeForDocument(document),
+    });
   });
 }
 

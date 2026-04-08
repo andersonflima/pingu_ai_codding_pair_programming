@@ -617,6 +617,7 @@ code --install-extension /caminho/absoluto/para/pingu-dev-agent.vsix --force
 - `realtimeDevAgent.realtimeOnSave`
 - `realtimeDevAgent.realtimeOnChange`
 - `realtimeDevAgent.changeDebounceMs`
+- `realtimeDevAgent.realtimeFocusPaddingLines`
 - `realtimeDevAgent.realtimeAnalysisMode`
 - `realtimeDevAgent.realtimeAutoFixMaxPerPass`
 - `realtimeDevAgent.terminalActionsEnabled`
@@ -651,6 +652,7 @@ Comportamento realtime do Zed:
 - cache por versao do documento para reutilizar resultado quando o texto nao mudou
 - quick fix reaproveita a analise pos-edicao sem rodar o analisador duas vezes
 - open/change usam analise leve por padrao; save continua completo
+- no change o Zed passa a focar a janela de linhas alteradas em vez de reanalisar o arquivo inteiro
 
 Knobs opcionais por ambiente:
 
@@ -658,6 +660,7 @@ Knobs opcionais por ambiente:
 - `PINGU_ZED_CHANGE_DEBOUNCE_MS`
 - `PINGU_ZED_SAVE_DEBOUNCE_MS`
 - `PINGU_ZED_REALTIME_ANALYSIS_MODE`
+- `PINGU_ZED_REALTIME_FOCUS_PADDING_LINES`
 
 ## Credenciais e variaveis de ambiente
 

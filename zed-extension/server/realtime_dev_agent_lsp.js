@@ -42,6 +42,7 @@ const DEFAULT_ZED_OPEN_DEBOUNCE_MS = 150;
 const DEFAULT_ZED_CHANGE_DEBOUNCE_MS = 700;
 const DEFAULT_ZED_SAVE_DEBOUNCE_MS = 0;
 const DEFAULT_ZED_REALTIME_ANALYSIS_MODE = 'light';
+const DEFAULT_ZED_REALTIME_FOCUS_PADDING_LINES = 24;
 
 process.stdin.on('data', (chunk) => {
   messageBuffer = Buffer.concat([messageBuffer, chunk]);
@@ -154,7 +155,9 @@ function handleMessage(message) {
       return;
     }
     upsertDocument(document.uri, lastChange.text, document.version);
-    scheduleAnalyzeAndPublish(document.uri, 'change');
+    scheduleAnalyzeAndPublish(document.uri, 'change', {
+      focusRange: changedFocusRangeForDocument(documents.get(document.uri), contentChanges),
+    });
     return;
   }
 
@@ -255,8 +258,94 @@ function analysisModeForTrigger(trigger) {
   return normalizeAnalysisMode(process.env.PINGU_ZED_REALTIME_ANALYSIS_MODE || DEFAULT_ZED_REALTIME_ANALYSIS_MODE);
 }
 
+function readFocusPaddingLines() {
+  return readDelayEnv('PINGU_ZED_REALTIME_FOCUS_PADDING_LINES', DEFAULT_ZED_REALTIME_FOCUS_PADDING_LINES);
+}
+
 function documentVersion(document) {
   return Number.isFinite(document && document.version) ? Number(document.version) : null;
+}
+
+function documentLineCount(document) {
+  return Math.max(1, String(document && document.text || '').split('\n').length);
+}
+
+function normalizeFocusRange(document, rawRange) {
+  if (!document || !rawRange || typeof rawRange !== 'object') {
+    return null;
+  }
+
+  const lineCount = documentLineCount(document);
+  const rawStartLine = Number.parseInt(String(rawRange.startLine || 0), 10);
+  const rawEndLine = Number.parseInt(String(rawRange.endLine || 0), 10);
+  if (!Number.isFinite(rawStartLine) || !Number.isFinite(rawEndLine) || rawStartLine <= 0 || rawEndLine <= 0) {
+    return null;
+  }
+
+  const startLine = Math.max(1, Math.min(lineCount, rawStartLine));
+  const endLine = Math.max(startLine, Math.min(lineCount, rawEndLine));
+  return { startLine, endLine };
+}
+
+function mergeFocusRanges(ranges) {
+  const normalized = (Array.isArray(ranges) ? ranges : []).filter(Boolean);
+  if (normalized.length === 0) {
+    return null;
+  }
+
+  return normalized.reduce((merged, current) => ({
+    startLine: Math.min(merged.startLine, current.startLine),
+    endLine: Math.max(merged.endLine, current.endLine),
+  }));
+}
+
+function expandFocusRange(document, rawRange) {
+  const normalized = normalizeFocusRange(document, rawRange);
+  if (!normalized) {
+    return null;
+  }
+
+  const paddingLines = readFocusPaddingLines();
+  return normalizeFocusRange(document, {
+    startLine: normalized.startLine - paddingLines,
+    endLine: normalized.endLine + paddingLines,
+  });
+}
+
+function serializeFocusRange(focusRange) {
+  const normalized = focusRange && typeof focusRange === 'object'
+    ? focusRange
+    : null;
+  if (!normalized) {
+    return '';
+  }
+  return `${normalized.startLine}:${normalized.endLine}`;
+}
+
+function changedFocusRangeForDocument(document, contentChanges) {
+  return expandFocusRange(document, mergeFocusRanges(
+    (Array.isArray(contentChanges) ? contentChanges : []).map((change) => {
+      if (!change || !change.range) {
+        return null;
+      }
+      return {
+        startLine: Number(change.range.start && change.range.start.line || 0) + 1,
+        endLine: Number(change.range.end && change.range.end.line || 0) + 1,
+      };
+    }).filter(Boolean),
+  ));
+}
+
+function canReuseCachedAnalysis(cached, version, analysisMode, focusKey) {
+  if (!cached || cached.version !== version) {
+    return false;
+  }
+
+  if (cached.mode === 'full' && (cached.focusKey === '' || cached.focusKey === focusKey)) {
+    return true;
+  }
+
+  return cached.mode === analysisMode && cached.focusKey === focusKey;
 }
 
 function clearPendingAnalysis(uri) {
@@ -331,8 +420,10 @@ async function collectPublishedIssuesForDocument(document, options = {}) {
   const uri = String(document.uri || '');
   const version = documentVersion(document);
   const analysisMode = normalizeAnalysisMode(options.analysisMode || analysisModeForTrigger(options.trigger));
+  const focusRange = normalizeFocusRange(document, options.focusRange);
+  const focusKey = serializeFocusRange(focusRange);
   const cached = publishedAnalysisCache.get(uri);
-  if (!options.force && cached && cached.version === version && (cached.mode === 'full' || cached.mode === analysisMode)) {
+  if (!options.force && canReuseCachedAnalysis(cached, version, analysisMode, focusKey)) {
     if (Array.isArray(cached.issues)) {
       return cached.issues;
     }
@@ -347,6 +438,10 @@ async function collectPublishedIssuesForDocument(document, options = {}) {
     text: document.text,
     maxLineLength: 120,
     analysisMode,
+    ...(focusRange ? {
+      focusStartLine: focusRange.startLine,
+      focusEndLine: focusRange.endLine,
+    } : {}),
   }).catch((_error) => analyzeIssuesForDocument(document, {
     ...options,
     analysisMode,
@@ -357,6 +452,7 @@ async function collectPublishedIssuesForDocument(document, options = {}) {
       publishedAnalysisCache.set(uri, {
         version,
         mode: analysisMode,
+        focusKey,
         issues,
         promise: null,
       });
@@ -373,6 +469,7 @@ async function collectPublishedIssuesForDocument(document, options = {}) {
   publishedAnalysisCache.set(uri, {
     version,
     mode: analysisMode,
+    focusKey,
     issues: null,
     promise,
   });
@@ -387,8 +484,10 @@ function analyzeIssuesForDocument(document, options = {}) {
   const uri = String(document.uri || '');
   const version = documentVersion(document);
   const analysisMode = normalizeAnalysisMode(options.analysisMode || analysisModeForTrigger(options.trigger));
+  const focusRange = normalizeFocusRange(document, options.focusRange);
+  const focusKey = serializeFocusRange(focusRange);
   const cached = analysisCache.get(uri);
-  if (!options.force && cached && cached.version === version && (cached.mode === 'full' || cached.mode === analysisMode)) {
+  if (!options.force && canReuseCachedAnalysis(cached, version, analysisMode, focusKey)) {
     return cached.issues;
   }
 
@@ -396,16 +495,21 @@ function analyzeIssuesForDocument(document, options = {}) {
   const issues = analyzeText(filePath, document.text, {
     maxLineLength: 120,
     analysisMode,
+    ...(focusRange ? {
+      focusStartLine: focusRange.startLine,
+      focusEndLine: focusRange.endLine,
+    } : {}),
   });
   analysisCache.set(uri, {
     version,
     mode: analysisMode,
+    focusKey,
     issues,
   });
   return issues;
 }
 
-function scheduleAnalyzeAndPublish(uri, trigger = 'change') {
+function scheduleAnalyzeAndPublish(uri, trigger = 'change', options = {}) {
   const document = documents.get(uri);
   if (!document) {
     return;
@@ -415,13 +519,23 @@ function scheduleAnalyzeAndPublish(uri, trigger = 'change') {
   const expectedVersion = documentVersion(document);
   const delay = analysisDelayForTrigger(trigger);
   if (delay <= 0) {
-    void analyzeAndPublish(uri, { expectedVersion, force: trigger === 'save' || trigger === 'autofix', trigger });
+    void analyzeAndPublish(uri, {
+      expectedVersion,
+      force: trigger === 'save' || trigger === 'autofix',
+      trigger,
+      focusRange: options.focusRange,
+    });
     return;
   }
 
   const timer = setTimeout(() => {
     pendingAnalysisTimers.delete(uri);
-    void analyzeAndPublish(uri, { expectedVersion, force: false, trigger });
+    void analyzeAndPublish(uri, {
+      expectedVersion,
+      force: false,
+      trigger,
+      focusRange: options.focusRange,
+    });
   }, delay);
   pendingAnalysisTimers.set(uri, timer);
 }

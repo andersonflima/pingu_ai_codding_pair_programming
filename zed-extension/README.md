@@ -36,6 +36,7 @@ Ajustes de fluidez do language server:
 - cache por versao do documento
 - reaproveitamento da analise apos quick fix para evitar rodada duplicada
 - open/change usam analise leve por padrao; save continua completo
+- mudancas de texto priorizam a faixa alterada com padding configuravel, em vez de sempre reanalisar o arquivo inteiro
 
 Knobs opcionais por ambiente:
 
@@ -43,6 +44,7 @@ Knobs opcionais por ambiente:
 - `PINGU_ZED_CHANGE_DEBOUNCE_MS`
 - `PINGU_ZED_SAVE_DEBOUNCE_MS`
 - `PINGU_ZED_REALTIME_ANALYSIS_MODE`
+- `PINGU_ZED_REALTIME_FOCUS_PADDING_LINES`
 
 Observacao:
 
