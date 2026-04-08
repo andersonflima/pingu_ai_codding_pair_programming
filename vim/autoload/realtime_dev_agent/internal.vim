@@ -372,31 +372,37 @@ function! s:prepared_analysis_request(bufnr, ...) abort
 
   let l:target_file = l:file
   let l:buffer_dirty_tmp = ''
+  let l:stdin_payload = ''
+  let l:uses_stdin = v:false
   if getbufvar(a:bufnr, '&modified')
-    let l:buffer_dirty_tmp = tempname()
-    call writefile(getbufline(a:bufnr, 1, '$'), l:buffer_dirty_tmp)
-    let l:target_file = l:buffer_dirty_tmp
+    let l:stdin_payload = join(getbufline(a:bufnr, 1, '$'), "\n")
+    let l:uses_stdin = v:true
   endif
 
   let l:root = s:project_root(l:file)
+  let l:argv = [l:runner, g:realtime_dev_agent_script]
+  if l:uses_stdin
+    call extend(l:argv, ['--stdin'])
+  else
+    call extend(l:argv, ['--analyze', l:target_file])
+  endif
+  call extend(l:argv, [
+        \ '--source-path',
+        \ l:file,
+        \ '--analysis-mode',
+        \ l:analysis_mode,
+        \ '--vim'
+        \ ])
   return {
         \ 'ok': v:true,
         \ 'file': l:file,
         \ 'changedtick': l:changedtick,
         \ 'analysis_mode': l:analysis_mode,
         \ 'buffer_dirty_tmp': l:buffer_dirty_tmp,
+        \ 'stdin_payload': l:stdin_payload,
+        \ 'uses_stdin': l:uses_stdin,
         \ 'root': l:root,
-        \ 'argv': [
-        \   l:runner,
-        \   g:realtime_dev_agent_script,
-        \   '--analyze',
-        \   l:target_file,
-        \   '--source-path',
-        \   l:file,
-        \   '--analysis-mode',
-        \   l:analysis_mode,
-        \   '--vim'
-        \ ],
+        \ 'argv': l:argv,
         \ }
 endfunction
 
@@ -2680,7 +2686,9 @@ function! s:analysis_for_buffer(bufnr, ...) abort
   let l:changedtick = get(l:request, 'changedtick', 0)
   let l:buffer_dirty_tmp = get(l:request, 'buffer_dirty_tmp', '')
   let l:analysis_mode = get(l:request, 'analysis_mode', l:analysis_mode)
-  let l:output = s:run_systemlist(get(l:request, 'argv', []), get(l:request, 'root', ''))
+  let l:output = get(l:request, 'uses_stdin', v:false)
+        \ ? s:run_systemlist(get(l:request, 'argv', []), get(l:request, 'root', ''), get(l:request, 'stdin_payload', ''))
+        \ : s:run_systemlist(get(l:request, 'argv', []), get(l:request, 'root', ''))
   call s:cleanup_async_analysis_temp_file(l:request)
 
   if v:shell_error != 0
@@ -2901,6 +2909,8 @@ function! s:start_async_realtime_check(bufnr, open_qf, show_echo, ...) abort
         \ 'file': get(l:request, 'file', ''),
         \ 'changedtick': get(l:request, 'changedtick', 0),
         \ 'buffer_dirty_tmp': get(l:request, 'buffer_dirty_tmp', ''),
+        \ 'stdin_payload': get(l:request, 'stdin_payload', ''),
+        \ 'uses_stdin': get(l:request, 'uses_stdin', v:false),
         \ 'open_qf': a:open_qf,
         \ 'show_echo': a:show_echo,
         \ 'analysis_mode': l:analysis_mode,
@@ -2923,6 +2933,15 @@ function! s:start_async_realtime_check(bufnr, open_qf, show_echo, ...) abort
   endif
 
   let s:realtime_dev_agent_async_analysis_job = l:job
+  if get(l:request, 'uses_stdin', v:false)
+    try
+      call chansend(l:job, get(l:request, 'stdin_payload', ''))
+      call chanclose(l:job, 'stdin')
+    catch
+      call s:stop_async_analysis_job()
+      return v:false
+    endtry
+  endif
   return v:true
 endfunction
 

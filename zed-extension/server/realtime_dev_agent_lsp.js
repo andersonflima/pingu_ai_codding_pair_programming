@@ -8,6 +8,7 @@ const { fileURLToPath, pathToFileURL } = require('url');
 const { analyzeText } = require('../../lib/analyzer');
 const { evaluateAutofixGuard } = require('../../lib/autofix-guard');
 const { buildFollowUpComment } = require('../../lib/follow-up');
+const { createRuntimeAgentClient } = require('../../lib/runtime-agent-client');
 const {
   mustClearKindsForIssue,
   resolveIssueAction,
@@ -28,11 +29,14 @@ const pendingClientRequests = new Map();
 const activeTerminalTasks = new Map();
 const pendingAnalysisTimers = new Map();
 const analysisCache = new Map();
+const publishedAnalysisCache = new Map();
 const automaticIssueAttempts = new Map();
+const analysisRequestIds = new Map();
 
 let messageBuffer = Buffer.alloc(0);
 let shutdownRequested = false;
 let nextClientRequestId = 1;
+let runtimeAgentClient = null;
 
 const DEFAULT_ZED_OPEN_DEBOUNCE_MS = 150;
 const DEFAULT_ZED_CHANGE_DEBOUNCE_MS = 700;
@@ -45,7 +49,12 @@ process.stdin.on('data', (chunk) => {
 });
 
 process.stdin.on('end', () => {
+  disposeRuntimeAgentClient();
   process.exit(0);
+});
+
+process.on('exit', () => {
+  disposeRuntimeAgentClient();
 });
 
 function flushMessages() {
@@ -116,11 +125,13 @@ function handleMessage(message) {
 
   if (message.method === 'shutdown') {
     shutdownRequested = true;
+    disposeRuntimeAgentClient();
     sendResponse(message.id, null);
     return;
   }
 
   if (message.method === 'exit') {
+    disposeRuntimeAgentClient();
     process.exit(shutdownRequested ? 0 : 1);
   }
 
@@ -258,7 +269,114 @@ function clearPendingAnalysis(uri) {
 }
 
 function invalidateAnalysis(uri) {
-  analysisCache.delete(String(uri || ''));
+  const normalizedUri = String(uri || '');
+  analysisCache.delete(normalizedUri);
+  publishedAnalysisCache.delete(normalizedUri);
+  analysisRequestIds.delete(normalizedUri);
+}
+
+function nextAnalysisRequestId(uri) {
+  const normalizedUri = String(uri || '');
+  const nextId = Number(analysisRequestIds.get(normalizedUri) || 0) + 1;
+  analysisRequestIds.set(normalizedUri, nextId);
+  return nextId;
+}
+
+function isLatestAnalysisRequest(uri, requestId) {
+  return Number(analysisRequestIds.get(String(uri || '')) || 0) === Number(requestId || 0);
+}
+
+function runtimeScriptPath() {
+  return path.resolve(__dirname, '..', '..', 'realtime_dev_agent.js');
+}
+
+function getRuntimeAgentClient() {
+  if (runtimeAgentClient) {
+    return runtimeAgentClient;
+  }
+
+  runtimeAgentClient = createRuntimeAgentClient({
+    spawn,
+    nodePath: process.execPath,
+    scriptPath: runtimeScriptPath(),
+    cwd: path.resolve(__dirname, '..', '..'),
+    env: process.env,
+    onStderr(message) {
+      const normalized = String(message || '').trim();
+      if (!normalized) {
+        return;
+      }
+      sendNotification('window/logMessage', {
+        type: 4,
+        message: `[RealtimeDevAgent/Zed/runtime] ${normalized}`,
+      });
+    },
+  });
+  return runtimeAgentClient;
+}
+
+function disposeRuntimeAgentClient() {
+  if (!runtimeAgentClient) {
+    return;
+  }
+  runtimeAgentClient.dispose();
+  runtimeAgentClient = null;
+}
+
+async function collectPublishedIssuesForDocument(document, options = {}) {
+  if (!document) {
+    return [];
+  }
+
+  const uri = String(document.uri || '');
+  const version = documentVersion(document);
+  const analysisMode = normalizeAnalysisMode(options.analysisMode || analysisModeForTrigger(options.trigger));
+  const cached = publishedAnalysisCache.get(uri);
+  if (!options.force && cached && cached.version === version && (cached.mode === 'full' || cached.mode === analysisMode)) {
+    if (Array.isArray(cached.issues)) {
+      return cached.issues;
+    }
+    if (cached.promise) {
+      return cached.promise;
+    }
+  }
+
+  const filePath = uriToFilePath(uri);
+  const promise = getRuntimeAgentClient().requestAnalysis({
+    sourcePath: filePath,
+    text: document.text,
+    maxLineLength: 120,
+    analysisMode,
+  }).catch((_error) => analyzeIssuesForDocument(document, {
+    ...options,
+    analysisMode,
+    force: true,
+  })).then((issues) => {
+    const current = publishedAnalysisCache.get(uri);
+    if (current && current.promise === promise) {
+      publishedAnalysisCache.set(uri, {
+        version,
+        mode: analysisMode,
+        issues,
+        promise: null,
+      });
+    }
+    return issues;
+  }).catch((error) => {
+    const current = publishedAnalysisCache.get(uri);
+    if (current && current.promise === promise) {
+      publishedAnalysisCache.delete(uri);
+    }
+    throw error;
+  });
+
+  publishedAnalysisCache.set(uri, {
+    version,
+    mode: analysisMode,
+    issues: null,
+    promise,
+  });
+  return promise;
 }
 
 function analyzeIssuesForDocument(document, options = {}) {
@@ -297,32 +415,51 @@ function scheduleAnalyzeAndPublish(uri, trigger = 'change') {
   const expectedVersion = documentVersion(document);
   const delay = analysisDelayForTrigger(trigger);
   if (delay <= 0) {
-    analyzeAndPublish(uri, { expectedVersion, force: trigger === 'save' || trigger === 'autofix', trigger });
+    void analyzeAndPublish(uri, { expectedVersion, force: trigger === 'save' || trigger === 'autofix', trigger });
     return;
   }
 
   const timer = setTimeout(() => {
     pendingAnalysisTimers.delete(uri);
-    analyzeAndPublish(uri, { expectedVersion, force: false, trigger });
+    void analyzeAndPublish(uri, { expectedVersion, force: false, trigger });
   }, delay);
   pendingAnalysisTimers.set(uri, timer);
 }
 
-function analyzeAndPublish(uri, options = {}) {
-  const document = documents.get(uri);
-  if (!document) {
-    return;
-  }
+async function analyzeAndPublish(uri, options = {}) {
+  try {
+    const document = documents.get(uri);
+    if (!document) {
+      return;
+    }
 
-  if (options.expectedVersion !== undefined && documentVersion(document) !== options.expectedVersion) {
-    return;
-  }
+    const requestId = nextAnalysisRequestId(uri);
+    if (options.expectedVersion !== undefined && documentVersion(document) !== options.expectedVersion) {
+      return;
+    }
 
-  const issues = analyzeIssuesForDocument(document, options);
-  issuesByUri.set(uri, issues);
-  publishDiagnostics(uri, issues.map((issue) => issueToDiagnostic(document, issue)));
-  if (shouldRunAutomaticIssueFix(options.trigger)) {
-    void maybeAutoApplyIssues(document, issues, options);
+    const issues = await collectPublishedIssuesForDocument(document, options);
+    const liveDocument = documents.get(uri);
+    if (!liveDocument) {
+      return;
+    }
+    if (!isLatestAnalysisRequest(uri, requestId)) {
+      return;
+    }
+    if (options.expectedVersion !== undefined && documentVersion(liveDocument) !== options.expectedVersion) {
+      return;
+    }
+
+    issuesByUri.set(uri, issues);
+    publishDiagnostics(uri, issues.map((issue) => issueToDiagnostic(liveDocument, issue)));
+    if (shouldRunAutomaticIssueFix(options.trigger)) {
+      await maybeAutoApplyIssues(liveDocument, issues, options);
+    }
+  } catch (error) {
+    sendNotification('window/logMessage', {
+      type: 1,
+      message: `[RealtimeDevAgent/Zed] Falha ao analisar ${uri}: ${String(error && (error.stack || error.message) || error)}`,
+    });
   }
 }
 
@@ -979,7 +1116,7 @@ async function applyIssueFix(document, issue, label) {
     const restored = await requestApplyEdit('Realtime Dev Agent rollback', restoreEdit);
     if (restored) {
       restoreSnapshotLocally(snapshot);
-      analyzeAndPublish(document.uri, { force: true, skipAutomaticAutoFix: true });
+      void analyzeAndPublish(document.uri, { force: true, skipAutomaticAutoFix: true });
     }
     sendNotification('window/logMessage', {
       type: 2,
@@ -1257,7 +1394,7 @@ function requestTriggerRemoval(uri, line, triggerText) {
     }
     clearPendingAnalysis(uri);
     applyTriggerRemovalToDocument(uri, line, triggerText);
-    analyzeAndPublish(uri, { force: true });
+    void analyzeAndPublish(uri, { force: true });
   });
 }
 

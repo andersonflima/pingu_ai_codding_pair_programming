@@ -2,6 +2,7 @@
 'use strict';
 
 const fs = require('fs');
+const readline = require('readline');
 const { analyzeText } = require('./lib/analyzer');
 const { evaluateAutofixGuard } = require('./lib/autofix-guard');
 const { renderVim, renderText, renderSuccessOrText, renderJson } = require('./lib/support');
@@ -9,11 +10,13 @@ const { renderVim, renderText, renderSuccessOrText, renderJson } = require('./li
 const DEFAULT_MAX_LINE_LENGTH = 120;
 
 const args = parseArgs(process.argv.slice(2));
-if (!args.guardMode && !args.analyze && !args.stdin) {
+if (!args.guardMode && !args.analyze && !args.stdin && !args.serveMode) {
   process.exit(1);
 }
 
-if (args.guardMode) {
+if (args.serveMode) {
+  startServer();
+} else if (args.guardMode) {
   const rawPayload = fs.readFileSync(0, 'utf8');
   const payload = String(rawPayload || '').trim() ? JSON.parse(rawPayload) : {};
   renderJson(evaluateAutofixGuard(payload));
@@ -44,6 +47,7 @@ function parseArgs(rawArgs) {
     maxLineLength: DEFAULT_MAX_LINE_LENGTH,
     stdin: false,
     guardMode: false,
+    serveMode: false,
   };
   for (let i = 0; i < rawArgs.length; i += 1) {
     const current = rawArgs[i];
@@ -71,7 +75,80 @@ function parseArgs(rawArgs) {
     } else if (current === '--autofix-guard') {
       options.guardMode = true;
       options.output = 'json';
+    } else if (current === '--serve') {
+      options.serveMode = true;
     }
   }
   return options;
+}
+
+function startServer() {
+  const lineReader = readline.createInterface({
+    input: process.stdin,
+    crlfDelay: Infinity,
+  });
+
+  lineReader.on('line', (line) => {
+    const trimmed = String(line || '').trim();
+    if (!trimmed) {
+      return;
+    }
+
+    let request = null;
+    try {
+      request = JSON.parse(trimmed);
+    } catch (error) {
+      writeServerResponse({
+        id: null,
+        ok: false,
+        error: String(error && error.message || error || 'Falha ao interpretar request'),
+      });
+      return;
+    }
+
+    handleServerRequest(request);
+  });
+}
+
+function handleServerRequest(request) {
+  const responseId = request && Object.prototype.hasOwnProperty.call(request, 'id')
+    ? request.id
+    : null;
+
+  try {
+    const command = String(request && request.command || 'analyze').trim();
+    if (command === 'guard') {
+      writeServerResponse({
+        id: responseId,
+        ok: true,
+        result: evaluateAutofixGuard(request && request.payload ? request.payload : {}),
+      });
+      return;
+    }
+
+    const sourcePath = String(request && request.sourcePath || request && request.filePath || 'stdin');
+    const text = String(request && request.text || '');
+    const issues = analyzeText(sourcePath, text, {
+      maxLineLength: Number.isFinite(request && request.maxLineLength)
+        ? request.maxLineLength
+        : DEFAULT_MAX_LINE_LENGTH,
+      analysisMode: request && request.analysisMode,
+    });
+
+    writeServerResponse({
+      id: responseId,
+      ok: true,
+      issues,
+    });
+  } catch (error) {
+    writeServerResponse({
+      id: responseId,
+      ok: false,
+      error: String(error && error.stack || error && error.message || error || 'Falha inesperada'),
+    });
+  }
+}
+
+function writeServerResponse(response) {
+  process.stdout.write(`${JSON.stringify(response)}\n`);
 }

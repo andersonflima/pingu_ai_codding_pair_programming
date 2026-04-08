@@ -1,10 +1,15 @@
 'use strict';
 
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const vscode = require('vscode');
 const { buildFollowUpComment } = require('../lib/follow-up');
+const {
+  createRuntimeAgentClient,
+  fingerprintRuntimeEnvironment,
+} = require('../lib/runtime-agent-client');
 const {
   defaultAutoFixKinds,
   fixPriorityForKind,
@@ -16,7 +21,6 @@ const {
   autoFixNoOpReason,
   semanticPriorityForIssue,
 } = require('../lib/issue-confidence');
-const { runAgent } = require('./agent-process');
 const { publishDiagnostics } = require('./diagnostics');
 const { createCodeActionRuntime } = require('./code-actions');
 const { createEditRuntime } = require('./edits');
@@ -30,6 +34,7 @@ function activate(context) {
   const pendingTimers = new Map();
   const analysisCache = new Map();
   const analysisRequestIds = new Map();
+  const runtimeClients = new Map();
 
   function configuration(uri) {
     return vscode.workspace.getConfiguration('realtimeDevAgent', uri);
@@ -100,7 +105,18 @@ function activate(context) {
   }
 
   function invalidateAnalysis(uri) {
-    analysisCache.delete(uriKey(uri));
+    const key = uriKey(uri);
+    analysisCache.delete(key);
+    analysisRequestIds.delete(key);
+  }
+
+  function disposeRuntimeClients() {
+    runtimeClients.forEach((client) => {
+      if (client && typeof client.dispose === 'function') {
+        client.dispose();
+      }
+    });
+    runtimeClients.clear();
   }
 
   function nextAnalysisRequestId(uri) {
@@ -152,6 +168,51 @@ function activate(context) {
     };
   }
 
+  function runtimeClientKey(document) {
+    const config = configuration(document.uri);
+    const nodePath = String(config.get('nodePath', 'node') || '').trim() || 'node';
+    const scriptPath = resolveScriptPath(document.uri);
+    const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
+    const cwd = workspaceFolder ? workspaceFolder.uri.fsPath : path.dirname(document.fileName);
+    const env = resolveAgentEnvironment(document.uri);
+    const baseKey = JSON.stringify({
+      nodePath,
+      scriptPath,
+      cwd,
+      env: fingerprintRuntimeEnvironment(env),
+      apiKey: crypto.createHash('sha1').update(String(env.OPENAI_API_KEY || '').trim()).digest('hex'),
+    });
+    return crypto.createHash('sha1').update(baseKey).digest('hex');
+  }
+
+  function runtimeClientForDocument(document) {
+    const key = runtimeClientKey(document);
+    if (runtimeClients.has(key)) {
+      return runtimeClients.get(key);
+    }
+
+    const config = configuration(document.uri);
+    const nodePath = config.get('nodePath', 'node');
+    const scriptPath = resolveScriptPath(document.uri);
+    const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
+    const cwd = workspaceFolder ? workspaceFolder.uri.fsPath : path.dirname(document.fileName);
+    const client = createRuntimeAgentClient({
+      spawn,
+      nodePath,
+      scriptPath,
+      cwd,
+      env: resolveAgentEnvironment(document.uri),
+      onStderr(message) {
+        const normalized = String(message || '').trim();
+        if (normalized) {
+          output.appendLine(`[RealtimeDevAgent/runtime] ${normalized}`);
+        }
+      },
+    });
+    runtimeClients.set(key, client);
+    return client;
+  }
+
   let editRuntime;
   let terminalRuntime;
   let codeActionRuntime;
@@ -176,22 +237,13 @@ function activate(context) {
     }
 
     const config = configuration(document.uri);
-    const nodePath = config.get('nodePath', 'node');
-    const scriptPath = resolveScriptPath(document.uri);
     const maxLineLength = Number(config.get('maxLineLength', 120));
-    const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
-    const cwd = workspaceFolder ? workspaceFolder.uri.fsPath : path.dirname(document.fileName);
 
-    const promise = runAgent({
-      spawn,
-      nodePath,
-      scriptPath,
+    const promise = runtimeClientForDocument(document).requestAnalysis({
       sourcePath: document.fileName,
       text: document.getText(),
       maxLineLength,
       analysisMode,
-      cwd,
-      env: resolveAgentEnvironment(document.uri),
     }).then((issues) => {
       const current = analysisCache.get(key);
       if (current && current.promise === promise) {
@@ -376,6 +428,9 @@ function activate(context) {
       if (!event.affectsConfiguration('realtimeDevAgent')) {
         return;
       }
+      disposeRuntimeClients();
+      analysisCache.clear();
+      analysisRequestIds.clear();
       refreshStatusBar();
       if (vscode.window.activeTextEditor && isEnabled(vscode.window.activeTextEditor.document.uri)) {
         scheduleAnalysis(vscode.window.activeTextEditor.document, 'focus');
@@ -420,6 +475,11 @@ function activate(context) {
     vscode.window.onDidCloseTerminal((terminal) => {
       terminalRuntime.handleTerminalClosed(terminal);
     }),
+    {
+      dispose() {
+        disposeRuntimeClients();
+      },
+    },
   );
 
   refreshStatusBar();
