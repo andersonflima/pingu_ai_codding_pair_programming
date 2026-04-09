@@ -1788,6 +1788,12 @@ function! s:delete_issue_line(file, lnum, trigger_line) abort
     return v:false
   endif
 
+  if l:last == 1
+    noautocmd call setbufline(l:target_buf, 1, '')
+    call setbufvar(l:target_buf, '&modified', 1)
+    return v:true
+  endif
+
   if a:lnum <= l:last
     let l:line_at_lnum = get(getbufline(l:target_buf, a:lnum), 0, '')
     if empty(a:trigger_line) || l:line_at_lnum ==# a:trigger_line
@@ -2218,6 +2224,9 @@ function! s:apply_issue_run_command(issue, keep_focus_code) abort
 
   let l:context = s:issue_terminal_context(a:issue, a:keep_focus_code)
   let l:strategy = s:issue_terminal_strategy()
+  if l:strategy ==# 'hidden'
+    return s:apply_issue_run_command_hidden(l:context, a:keep_focus_code)
+  endif
   let l:is_background = l:strategy ==# 'background' || s:realtime_dev_agent_auto_fix_busy || a:keep_focus_code
 
   if l:is_background
