@@ -48,5 +48,5 @@ Knobs opcionais por ambiente:
 
 Observacao:
 
-- no `save`, o Zed agora consolida automaticamente `comment_task`, fixes locais, `unit_test` adjacente seguro e `context_file` quando o alvo estiver em `.realtime-dev-agent/` ou `.gitignore`
+- no `save`, o Zed agora consolida automaticamente `comment_task`, fixes locais, `unit_test` adjacente seguro e `context_file` quando o alvo estiver em `.realtime-dev-agent/`, `.gitignore`, `README.md`, `docs/`, `.github/` ou em raizes arquiteturais previsiveis como `src/`, `lib/`, `app/`, `domain/`, `application/`, `infrastructure/`, `interfaces/`, `main/`, `internal/`, `pkg/` e `cmd/`
 - `terminal_task` no Zed entra automaticamente no `save`, respeitando o mesmo modo de risco do runtime e mantendo logs no language server

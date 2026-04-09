@@ -410,12 +410,28 @@ Resumo pratico:
   `comment_task`, `context_file`, `unit_test`, `terminal_task`
   configuracao, secoes estruturadas, testes de contrato e terminal por comentario
 
+Maturidade automatica atual do core:
+
+| Linguagem | Comentarios e docs | Correcoes de codigo | Testes automaticos | Observacao |
+| --- | --- | --- | --- | --- |
+| JavaScript / TypeScript | forte | forte | forte | cobre `function_doc`, `class_doc`, `variable_doc`, `context_contract` e testes para funcoes e classes exportadas |
+| Python | forte | forte | forte | cobre `function_doc`, `class_doc`, `variable_doc`, `context_contract` e testes para funcoes e classes |
+| Elixir | forte | forte | forte | cobre `@moduledoc`, `@doc`, `@spec`, `context_contract` e testes publicos do modulo |
+| Go | forte | forte | forte | cobre `function_doc`, `context_contract` e testes para funcoes e tipos publicos |
+| Rust | forte | forte | forte | cobre `function_doc`, `context_contract` e testes para funcoes e tipos publicos |
+| Ruby | forte | forte | forte | cobre `function_doc`, `class_doc`, `variable_doc`, `context_contract` e testes para funcoes e classes |
+| C | forte | forte | forte | cobre `function_doc`, `context_contract` e testes de contrato nativos |
+| Lua | forte | parcial | forte | cobre `function_doc`, `variable_doc`, `context_contract` e testes de disponibilidade do modulo |
+| Vimscript | forte | parcial | forte | cobre `function_doc`, `context_contract` e testes de disponibilidade por funcao |
+| Shell | forte | parcial | forte | cobre `function_doc`, `context_contract` textual e testes de contrato em shell |
+| Terraform / YAML / Markdown / Mermaid / Dockerfile / TOML | forte | estrutural | forte | foco em `comment_task`, `context_file`, testes de contrato e terminal acionavel |
+
 ## Regras de testes automaticos
 
-- O agente so gera testes automaticamente quando o projeto ja possui `tests/` ou `test/`.
-- Se nem `tests/` nem `test/` existirem, ele nao cria a pasta por conta propria.
+- O agente cria automaticamente `tests/` ou `test/` pelo convenio da linguagem quando a pasta ainda nao existir.
 - Quando o arquivo ainda nao tem teste correspondente, ele cria o teste base.
-- Quando o arquivo ja tem teste base, ele tenta gerar testes complementares para comportamento novo.
+- Quando o arquivo ja tem teste base, ele tenta gerar testes complementares para simbolos publicos ainda sem cobertura.
+- Em linguagens com classe ou tipo publico, o agente tambem gera teste de disponibilidade para essas estruturas, nao so para funcoes.
 - Para `Dockerfile`, `compose`, `Markdown` e `Mermaid`, o agente gera testes de contrato em shell dentro de `tests/`.
 
 ## Como o terminal e inferido
