@@ -169,13 +169,32 @@ function! s:realtime_daemon_enabled() abort
 endfunction
 
 function! s:project_root(file) abort
-  " Usa a raiz do git como raiz do projeto para evitar comando no diretorio errado.
-  let l:dir = fnamemodify(a:file, ':p:h')
-  let l:git_dir = finddir('.git', l:dir . ';')
-  if empty(l:git_dir)
-    return l:dir
-  endif
-  return fnamemodify(l:git_dir . '/../', ':p:h')
+  let l:start_dir = fnamemodify(a:file, ':p:h')
+  let l:current_dir = l:start_dir
+  let l:source_dir_names = ['src', 'app', 'lib', 'domain', 'application', 'infrastructure', 'interfaces', 'main', 'internal', 'pkg', 'cmd', 'lua', 'autoload', 'scripts']
+
+  while v:true
+    let l:git_dir = finddir('.git', l:current_dir . ';')
+    if !empty(l:git_dir)
+      return fnamemodify(l:git_dir . '/../', ':p:h')
+    endif
+
+    if index(l:source_dir_names, tolower(fnamemodify(l:current_dir, ':t'))) != -1
+      return fnamemodify(l:current_dir, ':h')
+    endif
+
+    for l:source_dir_name in l:source_dir_names
+      if isdirectory(l:current_dir . '/' . l:source_dir_name)
+        return l:current_dir
+      endif
+    endfor
+
+    let l:parent_dir = fnamemodify(l:current_dir, ':h')
+    if empty(l:parent_dir) || l:parent_dir ==# l:current_dir
+      return l:start_dir
+    endif
+    let l:current_dir = l:parent_dir
+  endwhile
 endfunction
 
 function! s:file_type_token(file) abort
@@ -217,14 +236,16 @@ function! s:should_check_file(file) abort
     if empty(g:realtime_dev_agent_extensions)
       return v:true
     endif
-    return index(g:realtime_dev_agent_extensions, l:ext) >= 0
+    let l:allowed = index(g:realtime_dev_agent_extensions, l:ext) >= 0
+    return l:allowed
   endif
 
   if empty(g:realtime_dev_agent_extensions)
     return v:true
   endif
 
-  return index(g:realtime_dev_agent_extensions, l:ext) >= 0
+  let l:allowed = index(g:realtime_dev_agent_extensions, l:ext) >= 0
+  return l:allowed
 endfunction
 
 function! s:buffer_line_count(bufnr) abort
@@ -259,7 +280,7 @@ function! s:analysis_cache_max_entries() abort
 endfunction
 
 function! s:normalize_analysis_mode(mode) abort
-  let l:mode = tolower(trim(string(a:mode)))
+  let l:mode = tolower(trim('' . a:mode))
   return l:mode ==# 'full' ? 'full' : 'light'
 endfunction
 
@@ -446,7 +467,7 @@ function! s:prepared_analysis_request(bufnr, ...) abort
         \ l:file,
         \ '--analysis-mode',
         \ l:analysis_mode,
-        \ '--vim'
+        \ '--json'
         \ ])
   if l:focus_start_line > 0 && l:focus_end_line >= l:focus_start_line
     call extend(l:argv, [
@@ -469,6 +490,18 @@ function! s:prepared_analysis_request(bufnr, ...) abort
         \ 'root': l:root,
         \ 'argv': l:argv,
         \ }
+endfunction
+
+function! s:analysis_qf_from_output(output, file, buffer_dirty_tmp) abort
+  try
+    let l:decoded = json_decode(join(a:output, "\n"))
+    if type(l:decoded) == v:t_list
+      return s:qf_items_from_issues(l:decoded, a:file)
+    endif
+  catch
+  endtry
+
+  return s:parse_analysis_output(a:output, a:file, a:buffer_dirty_tmp)
 endfunction
 
 function! s:should_run_auto_check(bufnr) abort
@@ -649,7 +682,7 @@ function! s:focus_issue_target_file(file) abort
 endfunction
 
 function! s:auto_fix_visual_mode() abort
-  let l:mode = tolower(trim(string(get(g:, 'realtime_dev_agent_auto_fix_visual_mode', 'preserve'))))
+  let l:mode = tolower(trim('' . get(g:, 'realtime_dev_agent_auto_fix_visual_mode', 'preserve')))
   if index(['preserve', 'step'], l:mode) == -1
     return 'preserve'
   endif
@@ -657,7 +690,7 @@ function! s:auto_fix_visual_mode() abort
 endfunction
 
 function! s:target_scope() abort
-  let l:scope = tolower(trim(string(get(g:, 'realtime_dev_agent_target_scope', 'current_file'))))
+  let l:scope = tolower(trim('' . get(g:, 'realtime_dev_agent_target_scope', 'current_file')))
   if index(['current_file', 'workspace'], l:scope) == -1
     return 'current_file'
   endif
@@ -777,7 +810,7 @@ function! s:auto_fix_scope() abort
     return 'cursor_only'
   endif
 
-  let l:scope = tolower(trim(string(get(g:, 'realtime_dev_agent_auto_fix_scope', 'near_cursor'))))
+  let l:scope = tolower(trim('' . get(g:, 'realtime_dev_agent_auto_fix_scope', 'near_cursor')))
   if index(['near_cursor', 'file', 'cursor_only'], l:scope) == -1
     return 'near_cursor'
   endif
@@ -1578,6 +1611,18 @@ function! s:issue_target_buffer(file) abort
   return l:target_buf
 endfunction
 
+function! s:persist_buffer_contents(bufnr, file) abort
+  let l:target_file = fnamemodify(a:file, ':p')
+  if a:bufnr <= 0 || !bufloaded(a:bufnr) || empty(l:target_file)
+    return v:false
+  endif
+
+  call mkdir(fnamemodify(l:target_file, ':h'), 'p')
+  call writefile(getbufline(a:bufnr, 1, '$'), l:target_file, 'b')
+  call setbufvar(a:bufnr, '&modified', 0)
+  return v:true
+endfunction
+
 function! s:collect_affected_files(file, items) abort
   let l:affected = {}
   let l:current_file = fnamemodify(a:file, ':p')
@@ -1997,6 +2042,21 @@ function! s:issue_terminal_context(issue, keep_focus_code) abort
   return l:context
 endfunction
 
+function! s:issue_terminal_remove_trigger_now(context) abort
+  if !get(get(a:context, 'action', {}), 'remove_trigger', v:false)
+    return
+  endif
+  if !s:remove_issue_trigger_line(a:context, get(a:context, 'keep_focus_code', v:false))
+    return
+  endif
+
+  let l:target_file = get(a:context, 'filename', '')
+  let l:target_buf = s:issue_target_buffer(l:target_file)
+  if l:target_buf > 0
+    call s:persist_buffer_contents(l:target_buf, l:target_file)
+  endif
+endfunction
+
 function! s:issue_terminal_reanalyze(context) abort
   let l:target_buf = s:issue_target_buffer(get(a:context, 'filename', ''))
   if l:target_buf <= 0
@@ -2093,6 +2153,7 @@ function! s:apply_issue_run_command_toggleterm(command, cwd, context, background
   else
     echomsg '[RealtimeDevAgent] Executando no ToggleTerm: ' . a:command
   endif
+  call s:issue_terminal_remove_trigger_now(a:context)
   call s:issue_terminal_schedule_poll(a:context, l:status_file)
   return v:true
 endfunction
@@ -2109,6 +2170,7 @@ function! s:apply_issue_run_command_vscode(command, cwd, context, background) ab
   else
     echomsg '[RealtimeDevAgent] Executando no terminal do VS Code: ' . a:command
   endif
+  call s:issue_terminal_remove_trigger_now(a:context)
   call s:issue_terminal_schedule_poll(a:context, l:status_file)
   return v:true
 endfunction
@@ -2133,6 +2195,7 @@ function! s:apply_issue_run_command_native(command, cwd, context, background) ab
       startinsert
       echomsg '[RealtimeDevAgent] Executando no terminal: ' . a:command
     endif
+    call s:issue_terminal_remove_trigger_now(a:context)
     return v:true
   endif
 
@@ -2149,6 +2212,7 @@ function! s:apply_issue_run_command_native(command, cwd, context, background) ab
     else
       echomsg '[RealtimeDevAgent] Executando no terminal: ' . a:command
     endif
+    call s:issue_terminal_remove_trigger_now(a:context)
     return v:true
   endif
 
@@ -2929,7 +2993,7 @@ function! s:analysis_for_buffer(bufnr, ...) abort
   let l:analysis = {
         \ 'ok': v:true,
         \ 'file': l:file,
-        \ 'qf': s:parse_analysis_output(l:output, l:file, l:buffer_dirty_tmp),
+        \ 'qf': s:analysis_qf_from_output(l:output, l:file, l:buffer_dirty_tmp),
         \ 'error': '',
         \ 'from_cache': v:false,
         \ }
@@ -3318,7 +3382,7 @@ function! s:async_analysis_on_exit(job_id, code, event) abort
     let l:analysis = {
           \ 'ok': v:true,
           \ 'file': l:file,
-          \ 'qf': s:parse_analysis_output(l:stdout, l:file, get(l:context, 'buffer_dirty_tmp', '')),
+          \ 'qf': s:analysis_qf_from_output(l:stdout, l:file, get(l:context, 'buffer_dirty_tmp', '')),
           \ 'error': '',
           \ 'from_cache': v:false,
           \ }
@@ -3611,6 +3675,10 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
   endtry
 
   if l:applied > 0
+    for l:affected_file in l:affected_files
+      call s:drop_analysis_cache_for_file(l:affected_file)
+    endfor
+
     let l:analysis = s:collect_analysis_for_buffer(l:target_buf)
     if !get(l:analysis, 'ok', v:false)
       call s:restore_file_snapshot(l:file_snapshot)

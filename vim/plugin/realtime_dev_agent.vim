@@ -344,6 +344,8 @@ if !exists('g:realtime_dev_agent_auto_fix_kinds')
           \ 'syntax_missing_comma',
           \ 'undefined_variable',
           \ 'comment_task',
+          \ 'context_file',
+          \ 'context_contract',
           \ 'moduledoc',
           \ 'function_spec',
           \ 'function_doc',
@@ -437,7 +439,7 @@ endif
 
 if !exists('g:realtime_dev_agent_target_scope')
   " current_file: limita analise exibida e auto-fix ao arquivo atual; workspace: permite acoes multi-arquivo.
-  let g:realtime_dev_agent_target_scope = 'current_file'
+  let g:realtime_dev_agent_target_scope = 'workspace'
 endif
 
 let s:internal_script = fnamemodify(resolve(expand('<sfile>:p')), ':h:h') . '/autoload/realtime_dev_agent/internal.vim'
