@@ -606,7 +606,7 @@ function createEditRuntime(deps) {
 
     const inlineCandidates = boundedCandidates.filter((issue) => resolveIssueAction(issue).op !== 'write_file');
     const deferredWriteCandidates = boundedCandidates.filter((issue) => resolveIssueAction(issue).op === 'write_file');
-    const batch = inlineCandidates.length > 0 ? inlineCandidates : deferredWriteCandidates;
+    const batch = inlineCandidates.concat(deferredWriteCandidates);
     const affectedFiles = collectAffectedFilePaths(document.uri.fsPath, batch, resolveIssueAction);
     const snapshot = captureFileSnapshot(affectedFiles);
 
