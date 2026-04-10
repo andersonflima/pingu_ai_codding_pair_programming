@@ -1527,7 +1527,7 @@ function! s:issue_auto_fix_noop_reason(item) abort
   if index(['context_contract', 'functional_reassignment', 'nested_condition'], l:kind) != -1 && l:score > 0 && l:score < 70
     return 'refactor semantico com confianca insuficiente para auto-fix'
   endif
-  if index(['comment_task', 'context_file', 'unit_test'], l:kind) != -1 && l:score > 0 && l:score < 60
+  if index(['context_file', 'unit_test'], l:kind) != -1 && l:score > 0 && l:score < 60
     return 'geracao estrutural com confianca insuficiente para aplicar automaticamente'
   endif
   return ''
