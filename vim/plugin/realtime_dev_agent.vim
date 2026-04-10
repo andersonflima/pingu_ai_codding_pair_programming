@@ -257,6 +257,16 @@ if !exists('g:realtime_dev_agent_realtime_async')
   let g:realtime_dev_agent_realtime_async = has('nvim') ? 1 : 0
 endif
 
+if !exists('g:realtime_dev_agent_non_blocking_mode')
+  " Prioriza execucao em background e evita caminhos sincronos pesados no editor.
+  let g:realtime_dev_agent_non_blocking_mode = has('nvim') ? 1 : 0
+endif
+
+if !exists('g:realtime_dev_agent_allow_sync_fallback')
+  " Em modo non-blocking, evita fallback sincrono quando o job async nao inicia.
+  let g:realtime_dev_agent_allow_sync_fallback = has('nvim') ? 0 : 1
+endif
+
 if !exists('g:realtime_dev_agent_realtime_use_daemon')
   " Reaproveita um runtime residente no Neovim para reduzir spawn por analise realtime.
   let g:realtime_dev_agent_realtime_use_daemon = has('nvim') ? 1 : 0
@@ -375,6 +385,16 @@ endif
 if !exists('g:realtime_dev_agent_realtime_auto_fix_max_per_check')
   " Limita o lote automatico por ciclo realtime para reduzir congelamentos perceptiveis.
   let g:realtime_dev_agent_realtime_auto_fix_max_per_check = 2
+endif
+
+if !exists('g:realtime_dev_agent_auto_fix_non_blocking_max_per_check')
+  " Limita lote de autofix em modo non-blocking para reduzir impacto por ciclo.
+  let g:realtime_dev_agent_auto_fix_non_blocking_max_per_check = 4
+endif
+
+if !exists('g:realtime_dev_agent_auto_fix_strict_validation')
+  " 1 reanalisa e valida guard de forma sincrona apos autofix; 0 prioriza fluxo non-blocking.
+  let g:realtime_dev_agent_auto_fix_strict_validation = 0
 endif
 
 if !exists('g:realtime_dev_agent_auto_fix_cursor_only')

@@ -169,6 +169,54 @@ function! s:realtime_daemon_enabled() abort
   return get(g:, 'realtime_dev_agent_realtime_use_daemon', has('nvim') ? 1 : 0) ? v:true : v:false
 endfunction
 
+function! s:non_blocking_mode_enabled() abort
+  return str2nr(string(get(g:, 'realtime_dev_agent_non_blocking_mode', has('nvim') ? 1 : 0))) > 0
+endfunction
+
+function! s:allow_sync_fallback() abort
+  if !s:non_blocking_mode_enabled()
+    return v:true
+  endif
+  return str2nr(string(get(g:, 'realtime_dev_agent_allow_sync_fallback', has('nvim') ? 0 : 1))) > 0
+endfunction
+
+function! s:auto_fix_strict_validation_enabled() abort
+  if !s:non_blocking_mode_enabled()
+    return v:true
+  endif
+  return str2nr(string(get(g:, 'realtime_dev_agent_auto_fix_strict_validation', 0))) > 0
+endfunction
+
+function! s:auto_fix_non_blocking_max_per_check() abort
+  let l:max_to_apply = get(g:, 'realtime_dev_agent_auto_fix_non_blocking_max_per_check', 4)
+  if type(l:max_to_apply) != v:t_number
+    let l:max_to_apply = str2nr(string(l:max_to_apply))
+  endif
+  return max([1, l:max_to_apply])
+endfunction
+
+function! s:start_async_realtime_check_with_fallback(bufnr, open_qf, show_echo, analysis_mode, realtime_mode) abort
+  if s:start_async_realtime_check(a:bufnr, a:open_qf, a:show_echo, a:analysis_mode, a:realtime_mode)
+    return v:true
+  endif
+
+  if !s:allow_sync_fallback()
+    if a:show_echo
+      echomsg '[RealtimeDevAgent] Analise async indisponivel; fallback sincrono desativado em modo non-blocking'
+    endif
+    return v:false
+  endif
+
+  let l:previous_mode = get(s:, 'realtime_dev_agent_is_realtime_check', v:false)
+  let s:realtime_dev_agent_is_realtime_check = a:realtime_mode ? v:true : v:false
+  try
+    call s:realtime_check_from_buffer(a:bufnr, a:open_qf, a:show_echo, a:analysis_mode)
+  finally
+    let s:realtime_dev_agent_is_realtime_check = l:previous_mode
+  endtry
+  return v:true
+endfunction
+
 function! s:project_root(file) abort
   let l:start_dir = fnamemodify(a:file, ':p:h')
   let l:current_dir = l:start_dir
@@ -540,9 +588,7 @@ function! s:realtime_dev_agent_open_review() abort
 
   call s:remember_code_window(win_getid())
   let l:analysis_mode = s:analysis_mode_for_request(v:true)
-  if !s:start_async_realtime_check(l:bufnr, g:realtime_dev_agent_realtime_open_qf, 0, l:analysis_mode)
-    call s:realtime_check_from_buffer(l:bufnr, g:realtime_dev_agent_realtime_open_qf, 0, l:analysis_mode)
-  endif
+  call s:start_async_realtime_check_with_fallback(l:bufnr, g:realtime_dev_agent_realtime_open_qf, 0, l:analysis_mode, v:true)
 endfunction
 
 function! s:realtime_dev_agent_start_current_buffer() abort
@@ -580,9 +626,7 @@ function! s:realtime_dev_agent_start_current_buffer() abort
   endif
 
   let l:analysis_mode = s:analysis_mode_for_request(v:true)
-  if !s:start_async_realtime_check(l:bufnr, g:realtime_dev_agent_open_qf, 0, l:analysis_mode)
-    call s:realtime_check_from_buffer(l:bufnr, g:realtime_dev_agent_open_qf, 0, l:analysis_mode)
-  endif
+  call s:start_async_realtime_check_with_fallback(l:bufnr, g:realtime_dev_agent_open_qf, 0, l:analysis_mode, v:true)
   return v:true
 endfunction
 
@@ -1407,7 +1451,8 @@ function! s:window_insert_followup() abort
   call cursor(l:issue.lnum + 1, 1)
   redraw
   if g:realtime_dev_agent_realtime_on_change
-    call s:realtime_check_from_buffer(bufnr(l:issue.filename), g:realtime_dev_agent_realtime_open_qf, 0)
+    let l:analysis_mode = s:analysis_mode_for_request(v:true)
+    call s:start_async_realtime_check_with_fallback(bufnr(l:issue.filename), g:realtime_dev_agent_realtime_open_qf, 0, l:analysis_mode, v:true)
   else
     call s:realtime_dev_agent_window_check()
   endif
@@ -2070,11 +2115,7 @@ function! s:issue_terminal_reanalyze(context) abort
   endif
 
   let l:analysis_mode = s:analysis_mode_for_request(v:false)
-  if s:start_async_realtime_check(l:target_buf, g:realtime_dev_agent_realtime_open_qf, 0, l:analysis_mode, v:false)
-    return
-  endif
-
-  call s:realtime_check_from_buffer(l:target_buf, g:realtime_dev_agent_realtime_open_qf, 0, l:analysis_mode)
+  call s:start_async_realtime_check_with_fallback(l:target_buf, g:realtime_dev_agent_realtime_open_qf, 0, l:analysis_mode, v:false)
 endfunction
 
 function! s:issue_terminal_finish(context, exit_code) abort
@@ -3180,14 +3221,8 @@ function! s:realtime_check_handle_analysis(bufnr, analysis, open_qf, show_echo, 
   endtry
 
   if l:auto_fix_applied > 0
-    if a:realtime_mode && s:realtime_async_enabled()
-      let l:analysis_mode = s:analysis_mode_for_request(v:true)
-      if !s:start_async_realtime_check(a:bufnr, a:open_qf, a:show_echo, l:analysis_mode)
-        call s:realtime_check_from_buffer(a:bufnr, a:open_qf, a:show_echo, l:analysis_mode)
-      endif
-    else
-      call s:realtime_check_from_buffer(a:bufnr, a:open_qf, a:show_echo)
-    endif
+    let l:analysis_mode = s:analysis_mode_for_request(a:realtime_mode ? v:true : v:false)
+    call s:start_async_realtime_check_with_fallback(a:bufnr, a:open_qf, a:show_echo, l:analysis_mode, a:realtime_mode)
     return
   endif
 
@@ -3708,7 +3743,8 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
   endif
 
   let l:affected_files = s:collect_affected_files(a:file, l:auto_candidates)
-  let l:file_snapshot = s:capture_file_snapshot(l:affected_files)
+  let l:strict_validation = s:auto_fix_strict_validation_enabled()
+  let l:file_snapshot = l:strict_validation ? s:capture_file_snapshot(l:affected_files) : {}
   let l:applied = 0
   let l:applied_items = []
   let l:max_to_apply = get(g:, 'realtime_dev_agent_auto_fix_max_per_check', 0)
@@ -3723,6 +3759,9 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
     if l:realtime_limit > 0 && (l:max_to_apply <= 0 || l:realtime_limit < l:max_to_apply)
       let l:max_to_apply = l:realtime_limit
     endif
+  endif
+  if l:max_to_apply <= 0 && s:non_blocking_mode_enabled()
+    let l:max_to_apply = s:auto_fix_non_blocking_max_per_check()
   endif
   let l:file_key = fnamemodify(a:file, ':p')
   let l:fix_guard = get(s:realtime_dev_agent_fix_guard, l:file_key, {})
@@ -3792,6 +3831,12 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
     for l:affected_file in l:affected_files
       call s:drop_analysis_cache_for_file(l:affected_file)
     endfor
+
+    if !l:strict_validation
+      let l:summary = printf('[RealtimeDevAgent] Auto-fix aplicado em %d sugerenca(s) [background]', l:applied)
+      echo l:summary
+      return l:applied
+    endif
 
     let l:analysis = s:collect_analysis_for_buffer(l:target_buf)
     if !get(l:analysis, 'ok', v:false)
@@ -4006,21 +4051,7 @@ function! s:realtime_dev_agent_run_pending_check(timer_id) abort
   endif
 
   let l:analysis_mode = s:analysis_mode_for_request(v:true)
-  if s:start_async_realtime_check(l:bufnr, g:realtime_dev_agent_realtime_open_qf, 0, l:analysis_mode)
-    return
-  endif
-
-  let l:previous_show_window = g:realtime_dev_agent_show_window
-  let l:previous_mode = get(s:, 'realtime_dev_agent_is_realtime_check', v:false)
-  let s:realtime_dev_agent_is_realtime_check = v:true
-  let g:realtime_dev_agent_show_window = 0
-
-  try
-    call s:realtime_check_from_buffer(l:bufnr, g:realtime_dev_agent_realtime_open_qf, 0, l:analysis_mode)
-  finally
-    let s:realtime_dev_agent_is_realtime_check = l:previous_mode
-    call s:realtime_dev_agent_restore_show_window(l:previous_show_window)
-  endtry
+  call s:start_async_realtime_check_with_fallback(l:bufnr, g:realtime_dev_agent_realtime_open_qf, 0, l:analysis_mode, v:true)
 endfunction
 
 function! s:window_refresh(file, qf) abort
@@ -4142,9 +4173,7 @@ function! s:realtime_dev_agent_check() abort
   let s:realtime_dev_agent_is_realtime_check = v:false
   call s:stop_async_analysis_job()
   try
-    if !s:start_async_realtime_check(l:bufnr, g:realtime_dev_agent_open_qf, 1, l:analysis_mode, v:false)
-      call s:realtime_check_from_buffer(l:bufnr, g:realtime_dev_agent_open_qf, 1, l:analysis_mode)
-    endif
+    call s:start_async_realtime_check_with_fallback(l:bufnr, g:realtime_dev_agent_open_qf, 1, l:analysis_mode, v:false)
   finally
     call s:realtime_dev_agent_restore_show_window(l:prev_show_window)
     let s:realtime_dev_agent_is_realtime_check = l:prev_mode
@@ -4160,9 +4189,7 @@ function! s:realtime_dev_agent_window_check() abort
   let s:realtime_dev_agent_is_realtime_check = v:false
   call s:stop_async_analysis_job()
   try
-    if !s:start_async_realtime_check(l:bufnr, 0, 1, l:analysis_mode, v:false)
-      call s:realtime_check_from_buffer(l:bufnr, 0, 1, l:analysis_mode)
-    endif
+    call s:start_async_realtime_check_with_fallback(l:bufnr, 0, 1, l:analysis_mode, v:false)
   finally
     call s:realtime_dev_agent_restore_show_window(l:prev_show_window)
     let s:realtime_dev_agent_is_realtime_check = l:prev_mode
