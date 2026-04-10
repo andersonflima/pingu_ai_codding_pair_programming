@@ -24,6 +24,7 @@ let s:realtime_dev_agent_daemon_job = -1
 let s:realtime_dev_agent_daemon_request_seq = 0
 let s:realtime_dev_agent_daemon_pending = {}
 let s:realtime_dev_agent_daemon_stdout_remainder = ''
+let s:realtime_dev_agent_hidden_terminal_jobs = {}
 
 function! s:issue_kind_entry(kind) abort
   let l:registry = get(g:, 'realtime_dev_agent_issue_kind_registry', {})
@@ -2035,6 +2036,11 @@ function! s:issue_terminal_hidden_command(command, cwd) abort
   return shellescape(l:shell) . ' ' . l:flag . ' ' . shellescape(l:inner)
 endfunction
 
+function! s:issue_terminal_hidden_argv(command, cwd) abort
+  let l:inner = s:issue_terminal_inner_command(a:command, a:cwd, '')
+  return [s:sh_binary(), '-lc', l:inner]
+endfunction
+
 function! s:issue_terminal_context(issue, keep_focus_code) abort
   let l:context = copy(a:issue)
   let l:context.keep_focus_code = a:keep_focus_code ? v:true : v:false
@@ -2063,7 +2069,12 @@ function! s:issue_terminal_reanalyze(context) abort
     return
   endif
 
-  call s:realtime_check_from_buffer(l:target_buf, g:realtime_dev_agent_realtime_open_qf, 0)
+  let l:analysis_mode = s:analysis_mode_for_request(v:false)
+  if s:start_async_realtime_check(l:target_buf, g:realtime_dev_agent_realtime_open_qf, 0, l:analysis_mode, v:false)
+    return
+  endif
+
+  call s:realtime_check_from_buffer(l:target_buf, g:realtime_dev_agent_realtime_open_qf, 0, l:analysis_mode)
 endfunction
 
 function! s:issue_terminal_finish(context, exit_code) abort
@@ -2219,12 +2230,104 @@ function! s:apply_issue_run_command_native(command, cwd, context, background) ab
   return v:false
 endfunction
 
+function! s:issue_terminal_hidden_job_append(job_id, data) abort
+  if type(a:data) != v:t_list || !has_key(s:realtime_dev_agent_hidden_terminal_jobs, a:job_id)
+    return
+  endif
+
+  let l:entry = get(s:realtime_dev_agent_hidden_terminal_jobs, a:job_id, {})
+  let l:output = get(l:entry, 'output', [])
+  if type(l:output) != v:t_list
+    let l:output = []
+  endif
+
+  for l:line in a:data
+    if type(l:line) != v:t_string || empty(l:line)
+      continue
+    endif
+    call add(l:output, l:line)
+  endfor
+
+  let l:entry.output = l:output
+  let s:realtime_dev_agent_hidden_terminal_jobs[a:job_id] = l:entry
+endfunction
+
+function! s:issue_terminal_hidden_job_on_stdout(job_id, data, event) abort
+  call s:issue_terminal_hidden_job_append(a:job_id, a:data)
+endfunction
+
+function! s:issue_terminal_hidden_job_on_stderr(job_id, data, event) abort
+  call s:issue_terminal_hidden_job_append(a:job_id, a:data)
+endfunction
+
+function! s:issue_terminal_hidden_job_finalize(job_id, exit_code) abort
+  if !has_key(s:realtime_dev_agent_hidden_terminal_jobs, a:job_id)
+    return
+  endif
+
+  let l:entry = remove(s:realtime_dev_agent_hidden_terminal_jobs, a:job_id)
+  let l:context = get(l:entry, 'context', {})
+  let l:output = filter(copy(get(l:entry, 'output', [])), {_, val -> type(val) == v:t_string && !empty(trim(val))})
+  if a:exit_code != 0
+    echohl ErrorMsg
+    echomsg '[RealtimeDevAgent] Falha ao executar acao de terminal'
+    if !empty(l:output)
+      echomsg '[RealtimeDevAgent] ' . trim(get(l:output, -1, ''))
+    endif
+    echohl None
+    return
+  endif
+
+  if get(get(l:context, 'action', {}), 'remove_trigger', v:false)
+    call s:remove_issue_trigger_line(l:context, get(l:context, 'keep_focus_code', v:false))
+  endif
+
+  if !empty(l:output)
+    let l:last_output = trim(get(l:output, -1, ''))
+    if !empty(l:last_output)
+      echomsg '[RealtimeDevAgent] ' . l:last_output
+    endif
+  endif
+
+  call s:issue_terminal_reanalyze(l:context)
+endfunction
+
+function! s:issue_terminal_hidden_job_on_exit(job_id, code, event) abort
+  call s:issue_terminal_hidden_job_finalize(a:job_id, a:code)
+endfunction
+
+function! s:issue_terminal_start_hidden_async(context, command, cwd) abort
+  if !has('nvim') || !exists('*jobstart')
+    return v:false
+  endif
+
+  let l:job = jobstart(s:issue_terminal_hidden_argv(a:command, a:cwd), {
+        \ 'on_stdout': function('s:issue_terminal_hidden_job_on_stdout'),
+        \ 'on_stderr': function('s:issue_terminal_hidden_job_on_stderr'),
+        \ 'on_exit': function('s:issue_terminal_hidden_job_on_exit')
+        \ })
+  if l:job <= 0
+    return v:false
+  endif
+
+  let s:realtime_dev_agent_hidden_terminal_jobs[l:job] = {
+        \ 'context': deepcopy(a:context),
+        \ 'output': []
+        \ }
+  echomsg '[RealtimeDevAgent] Executando comando hidden em background: ' . a:command
+  return v:true
+endfunction
+
 function! s:apply_issue_run_command_hidden(issue, keep_focus_code) abort
   let l:action = s:issue_effective_action(a:issue)
   let l:command = get(l:action, 'command', '')
   let l:cwd = fnamemodify(get(l:action, 'cwd', ''), ':p')
   if empty(l:cwd)
     let l:cwd = s:project_root(get(a:issue, 'filename', ''))
+  endif
+
+  if s:issue_terminal_start_hidden_async(a:issue, l:command, l:cwd)
+    return v:true
   endif
 
   let l:output = s:run_shell_systemlist(l:command, l:cwd)
@@ -3136,7 +3239,7 @@ function! s:analysis_daemon_handle_failure(message) abort
           \ 'qf': [],
           \ 'error': a:message,
           \ 'from_cache': v:false,
-          \ }, get(l:context, 'open_qf', 0), get(l:context, 'show_echo', 0), v:true)
+          \ }, get(l:context, 'open_qf', 0), get(l:context, 'show_echo', 0), get(l:context, 'realtime_mode', v:true))
   endfor
 endfunction
 
@@ -3185,7 +3288,7 @@ function! s:analysis_daemon_on_stdout(job_id, data, event) abort
             \ 'qf': [],
             \ 'error': string(get(l:response, 'error', 'falha ao analisar via daemon')),
             \ 'from_cache': v:false,
-            \ }, get(l:context, 'open_qf', 0), get(l:context, 'show_echo', 0), v:true)
+            \ }, get(l:context, 'open_qf', 0), get(l:context, 'show_echo', 0), get(l:context, 'realtime_mode', v:true))
       continue
     endif
 
@@ -3210,7 +3313,7 @@ function! s:analysis_daemon_on_stdout(job_id, data, event) abort
           \ l:analysis,
           \ get(l:context, 'open_qf', 0),
           \ get(l:context, 'show_echo', 0),
-          \ v:true
+          \ get(l:context, 'realtime_mode', v:true)
           \ )
   endfor
 endfunction
@@ -3264,7 +3367,7 @@ function! s:ensure_analysis_daemon() abort
   return l:job
 endfunction
 
-function! s:start_daemon_realtime_check(bufnr, open_qf, show_echo, analysis_mode) abort
+function! s:start_daemon_realtime_check(bufnr, open_qf, show_echo, analysis_mode, realtime_mode) abort
   let l:job = s:ensure_analysis_daemon()
   if l:job <= 0
     return v:false
@@ -3278,13 +3381,13 @@ function! s:start_daemon_realtime_check(bufnr, open_qf, show_echo, analysis_mode
           \ 'qf': [],
           \ 'error': get(l:request, 'error', 'falha ao preparar analise'),
           \ 'from_cache': v:false,
-          \ }, a:open_qf, a:show_echo, v:true)
+          \ }, a:open_qf, a:show_echo, a:realtime_mode)
     return v:true
   endif
 
   let l:cached = get(l:request, 'cached', {})
   if !empty(l:cached)
-    call s:realtime_check_handle_analysis(a:bufnr, l:cached, a:open_qf, a:show_echo, v:true)
+    call s:realtime_check_handle_analysis(a:bufnr, l:cached, a:open_qf, a:show_echo, a:realtime_mode)
     return v:true
   endif
 
@@ -3308,6 +3411,7 @@ function! s:start_daemon_realtime_check(bufnr, open_qf, show_echo, analysis_mode
         \ 'changedtick': get(l:request, 'changedtick', 0),
         \ 'open_qf': a:open_qf,
         \ 'show_echo': a:show_echo,
+        \ 'realtime_mode': a:realtime_mode ? v:true : v:false,
         \ 'analysis_mode': get(l:request, 'analysis_mode', a:analysis_mode),
         \ 'focus_start_line': get(l:request, 'focus_start_line', 0),
         \ 'focus_end_line': get(l:request, 'focus_end_line', 0),
@@ -3402,7 +3506,7 @@ function! s:async_analysis_on_exit(job_id, code, event) abort
         \ l:analysis,
         \ get(l:context, 'open_qf', 0),
         \ get(l:context, 'show_echo', 0),
-        \ v:true
+        \ get(l:context, 'realtime_mode', v:true)
         \ )
 endfunction
 
@@ -3412,8 +3516,9 @@ function! s:start_async_realtime_check(bufnr, open_qf, show_echo, ...) abort
   endif
 
   let l:analysis_mode = a:0 > 0 ? s:normalize_analysis_mode(a:1) : 'full'
+  let l:realtime_mode = a:0 > 1 ? (a:2 ? v:true : v:false) : v:true
   if s:realtime_daemon_enabled()
-    if s:start_daemon_realtime_check(a:bufnr, a:open_qf, a:show_echo, l:analysis_mode)
+    if s:start_daemon_realtime_check(a:bufnr, a:open_qf, a:show_echo, l:analysis_mode, l:realtime_mode)
       return v:true
     endif
   endif
@@ -3425,13 +3530,13 @@ function! s:start_async_realtime_check(bufnr, open_qf, show_echo, ...) abort
           \ 'qf': [],
           \ 'error': get(l:request, 'error', 'falha ao preparar analise'),
           \ 'from_cache': v:false,
-          \ }, a:open_qf, a:show_echo, v:true)
+          \ }, a:open_qf, a:show_echo, l:realtime_mode)
     return v:true
   endif
 
   let l:cached = get(l:request, 'cached', {})
   if !empty(l:cached)
-    call s:realtime_check_handle_analysis(a:bufnr, l:cached, a:open_qf, a:show_echo, v:true)
+    call s:realtime_check_handle_analysis(a:bufnr, l:cached, a:open_qf, a:show_echo, l:realtime_mode)
     return v:true
   endif
 
@@ -3446,6 +3551,7 @@ function! s:start_async_realtime_check(bufnr, open_qf, show_echo, ...) abort
         \ 'uses_stdin': get(l:request, 'uses_stdin', v:false),
         \ 'open_qf': a:open_qf,
         \ 'show_echo': a:show_echo,
+        \ 'realtime_mode': l:realtime_mode,
         \ 'analysis_mode': l:analysis_mode,
         \ 'focus_start_line': get(l:request, 'focus_start_line', 0),
         \ 'focus_end_line': get(l:request, 'focus_end_line', 0),
@@ -4020,13 +4126,17 @@ function! s:extract_issue_snippet(raw) abort
 endfunction
 
 function! s:realtime_dev_agent_check() abort
+  let l:bufnr = bufnr('%')
+  let l:analysis_mode = s:analysis_mode_for_request(v:false)
   let l:prev_show_window = g:realtime_dev_agent_show_window
   let l:prev_mode = get(s:, 'realtime_dev_agent_is_realtime_check', v:false)
   let g:realtime_dev_agent_show_window = 0
   let s:realtime_dev_agent_is_realtime_check = v:false
   call s:stop_async_analysis_job()
   try
-    call s:realtime_check_from_buffer(bufnr('%'), g:realtime_dev_agent_open_qf, 1)
+    if !s:start_async_realtime_check(l:bufnr, g:realtime_dev_agent_open_qf, 1, l:analysis_mode, v:false)
+      call s:realtime_check_from_buffer(l:bufnr, g:realtime_dev_agent_open_qf, 1, l:analysis_mode)
+    endif
   finally
     call s:realtime_dev_agent_restore_show_window(l:prev_show_window)
     let s:realtime_dev_agent_is_realtime_check = l:prev_mode
@@ -4034,13 +4144,17 @@ function! s:realtime_dev_agent_check() abort
 endfunction
 
 function! s:realtime_dev_agent_window_check() abort
+  let l:bufnr = bufnr('%')
+  let l:analysis_mode = s:analysis_mode_for_request(v:false)
   let l:prev_show_window = g:realtime_dev_agent_show_window
   let l:prev_mode = get(s:, 'realtime_dev_agent_is_realtime_check', v:false)
   let g:realtime_dev_agent_show_window = 1
   let s:realtime_dev_agent_is_realtime_check = v:false
   call s:stop_async_analysis_job()
   try
-    call s:realtime_check_from_buffer(bufnr('%'), 0, 1)
+    if !s:start_async_realtime_check(l:bufnr, 0, 1, l:analysis_mode, v:false)
+      call s:realtime_check_from_buffer(l:bufnr, 0, 1, l:analysis_mode)
+    endif
   finally
     call s:realtime_dev_agent_restore_show_window(l:prev_show_window)
     let s:realtime_dev_agent_is_realtime_check = l:prev_mode
