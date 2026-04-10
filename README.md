@@ -388,7 +388,7 @@ Resumo pratico:
 - Vimscript:
   `comment_task`, `context_file`, `unit_test`, `terminal_task`
   funcoes, namespace local, dicionarios e helpers de automacao
-- Shell:
+- Shell (`.sh`, `.bash`, `.zsh`):
   `comment_task`, `context_file`, `unit_test`, `terminal_task`
   funcoes, scripts, colecoes simples e enums equivalentes
 - Terraform:
