@@ -2682,7 +2682,15 @@ function! s:realtime_issue_still_relevant(item, target_buf, lnum, line_content) 
 
     let l:expected_lines = s:split_snippet_lines(l:snippet)
     let l:current_lines = readfile(l:target_file, 'b')
-    return join(l:current_lines, "\n") !=# join(l:expected_lines, "\n")
+    if join(l:current_lines, "\n") !=# join(l:expected_lines, "\n")
+      return v:true
+    endif
+
+    if get(a:item, 'kind', '') ==# 'comment_task' && get(l:action, 'remove_trigger', v:false)
+      " Permite aplicar write_file idempotente para remover a linha gatilho mesmo sem diff no arquivo.
+      return v:true
+    endif
+    return v:false
   endif
 
   if l:op ==# 'run_command'
