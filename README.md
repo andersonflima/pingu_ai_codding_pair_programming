@@ -13,7 +13,7 @@ O projeto funciona hoje em `Vim/Neovim`, `VS Code` e `Zed`, com runtime local e 
 - Analisa o arquivo atual em tempo real e publica diagnosticos orientados a manutencao.
 - Interpreta comentarios acionaveis para gerar codigo no proprio arquivo.
 - Cria `context_file` a partir de blueprints descritos no comentario, com scaffold nativo nas stacks principais.
-- Gera ou complementa testes quando `tests/` ou `test/` ja existem no projeto.
+- Gera ou complementa testes automaticamente e cria `tests/` ou `test/` quando necessario, seguindo o convenio da linguagem.
 - Detecta dependencias faltantes quando o snippet gerado exige imports, `use`, `require` ou `#include`.
 - Tenta inserir imports e includes na fronteira correta do arquivo em vez de simplesmente despejar tudo na linha do comentario.
 - Executa `terminal_task` com inferencia por stack e politica de risco configuravel.
@@ -59,7 +59,7 @@ Esse fluxo define:
 - Nao e um chat generico de perguntas soltas.
 - Nao substitui decisao arquitetural do time.
 - Nao promete gerar qualquer coisa em qualquer linguagem sem contrato de capacidade.
-- Nao cria testes automaticamente em projeto sem `tests/` ou `test/`.
+- Nao gera cobertura para arquivos que ja estao dentro de `tests/` ou `test/`, evitando loop de auto-geracao.
 
 ## Como o loop funciona
 
@@ -351,7 +351,7 @@ Categorias suportadas:
 - `object`
 - `collection`
 - `variable`
-- `script`
+- `script` (principalmente em Shell)
 
 Quando uma estrutura equivalente ja existir no arquivo, o agente tenta evitar duplicacao.
 
@@ -533,13 +533,13 @@ Plug 'andersonflima/pingu_ai_codding_pair_programming'
 
 - inicia no primeiro buffer suportado
 - mantem o painel fechado por padrao
-- por padrao limita diagnosticos exibidos e auto-fix ao arquivo atual
+- por padrao usa `let g:realtime_dev_agent_target_scope = 'workspace'`; para restringir ao arquivo atual, use `current_file`
 - `let g:realtime_dev_agent_open_window_on_start = 0` mantem o agente ativo sem abrir painel
 - `let g:realtime_dev_agent_open_window_on_start = 1` reabre o painel no startup automatico
 - `let g:realtime_dev_agent_start_on_editor_enter = 0` desliga o startup automatico
 - `let g:realtime_dev_agent_review_on_open = 1` reativa revisao automatica ao abrir arquivos
 - `let g:realtime_dev_agent_target_scope = 'current_file'` mantem analise e correcoes no arquivo aberto, mas ainda permite `unit_test` adjacente seguro e `context_file` para `.realtime-dev-agent/` e `.gitignore`
-- `let g:realtime_dev_agent_target_scope = 'workspace'` reativa acoes multi-arquivo amplas fora desse conjunto seguro
+- `let g:realtime_dev_agent_target_scope = 'workspace'` mantem acoes multi-arquivo amplas fora desse conjunto seguro
 - `let g:realtime_dev_agent_auto_fix_scope = 'near_cursor'` aplica apenas o trecho mais proximo do cursor
 - `let g:realtime_dev_agent_auto_fix_scope = 'file'` volta para o comportamento de arquivo inteiro por ciclo
 - `let g:realtime_dev_agent_auto_fix_scope = 'cursor_only'` restringe ao cursor imediato
@@ -560,7 +560,7 @@ Plug 'andersonflima/pingu_ai_codding_pair_programming'
 - `let g:realtime_dev_agent_auto_fix_doc_cursor_context_only = 1` restringe `function_doc`, `class_doc`, `variable_doc` e `flow_comment` ao bloco textual atual do cursor
 - `let g:realtime_dev_agent_auto_fix_local_cursor_context_only = 1` restringe `debug_output`, syntax local, `trailing_whitespace`, `function_spec`, `markdown_title`, `terraform_required_version` e `dockerfile_workdir` ao bloco textual atual
 - `let g:realtime_dev_agent_auto_fix_doc_cursor_context_max_lines = 80` controla o tamanho maximo desse bloco automatico
-- por padrao no Vim o auto-fix automatico fica no conjunto local e seguro do arquivo atual; no `save`, o agente consolida o arquivo inteiro e inclui `unit_test` adjacente seguro e `context_file` para `.realtime-dev-agent/` e `.gitignore`, enquanto `terminal_task` continua sob controle explicito do runtime de terminal
+- com os defaults atuais no Vim, o auto-fix realtime prioriza o conjunto local e seguro ao redor do cursor; no `save`, o agente consolida o arquivo inteiro e pode incluir `unit_test` adjacente seguro e `context_file` para `.realtime-dev-agent/` e `.gitignore`, enquanto `terminal_task` continua sob controle explicito do runtime de terminal
 
 ### Terminal no Vim / Neovim
 
@@ -568,6 +568,7 @@ Plug 'andersonflima/pingu_ai_codding_pair_programming'
 - `let g:realtime_dev_agent_terminal_risk_mode = 'safe'`
 - `let g:realtime_dev_agent_terminal_risk_mode = 'workspace_write'`
 - `let g:realtime_dev_agent_terminal_risk_mode = 'all'`
+- `let g:realtime_dev_agent_terminal_strategy = 'auto'` (default)
 - `let g:realtime_dev_agent_terminal_strategy = 'vscode'`
 - `let g:realtime_dev_agent_terminal_strategy = 'toggleterm'`
 - `let g:realtime_dev_agent_terminal_strategy = 'native'`
@@ -633,6 +634,8 @@ code --install-extension /caminho/absoluto/para/pingu-dev-agent.vsix --force
 - `realtimeDevAgent.nodePath`
 - `realtimeDevAgent.scriptPath`
 - `realtimeDevAgent.maxLineLength`
+- `realtimeDevAgent.openAiModel`
+- `realtimeDevAgent.openAiTimeoutMs`
 - `realtimeDevAgent.realtimeOnSave`
 - `realtimeDevAgent.realtimeOnChange`
 - `realtimeDevAgent.changeDebounceMs`
