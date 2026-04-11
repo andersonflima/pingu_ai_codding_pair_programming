@@ -438,8 +438,8 @@ if !exists('g:realtime_dev_agent_auto_fix_doc_max_per_check_large_file')
 endif
 
 if !exists('g:realtime_dev_agent_auto_fix_doc_cursor_context_only')
-  " Restringe comentarios automaticos ao bloco textual atual do cursor.
-  let g:realtime_dev_agent_auto_fix_doc_cursor_context_only = 1
+  " Mantem comentarios automaticos elegiveis no arquivo inteiro.
+  let g:realtime_dev_agent_auto_fix_doc_cursor_context_only = 0
 endif
 
 if !exists('g:realtime_dev_agent_auto_fix_local_cursor_context_only')

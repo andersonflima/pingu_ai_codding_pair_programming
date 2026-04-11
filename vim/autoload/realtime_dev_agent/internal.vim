@@ -1191,14 +1191,25 @@ function! s:select_auto_fix_candidates_by_scope(items, ...) abort
     return a:items
   endif
 
+  let l:documentation_items = []
+  let l:items_to_scope = copy(a:items)
+  if !s:auto_fix_doc_cursor_context_only()
+    let l:documentation_items = filter(copy(a:items), {_, item -> s:is_documentation_issue(item)})
+    let l:items_to_scope = filter(copy(a:items), {_, item -> !s:is_documentation_issue(item)})
+    if empty(l:items_to_scope)
+      return l:documentation_items
+    endif
+  endif
+
   let l:target_buf = a:0 > 0 ? a:1 : bufnr('%')
   let l:cursor_line = s:buffer_cursor_line(l:target_buf)
   if l:scope ==# 'cursor_only'
-    return filter(copy(a:items), {_, item -> abs(get(item, 'lnum', 0) - l:cursor_line) <= 1})
+    let l:selected_items = filter(copy(l:items_to_scope), {_, item -> abs(get(item, 'lnum', 0) - l:cursor_line) <= 1})
+    return extend(l:documentation_items, l:selected_items)
   endif
 
   let l:radius = s:auto_fix_near_cursor_radius()
-  let l:clusters = s:build_auto_fix_clusters(a:items)
+  let l:clusters = s:build_auto_fix_clusters(l:items_to_scope)
   let l:best_cluster = []
   let l:best_distance = -1
   let l:best_span = -1
@@ -1221,7 +1232,7 @@ function! s:select_auto_fix_candidates_by_scope(items, ...) abort
     endif
   endfor
 
-  return l:best_cluster
+  return extend(l:documentation_items, l:best_cluster)
 endfunction
 
 function! s:is_auto_fix_visual_batch_active() abort

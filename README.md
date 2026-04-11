@@ -470,7 +470,7 @@ Atalhos principais:
 
 - analisa ao abrir, focar, editar e salvar
 - publica diagnosticos
-- auto-fix para `comment_task`, `context_file` e `unit_test`
+- auto-fix para `comment_task`, `context_file`, `unit_test` e comentarios contextuais como `moduledoc`, `function_doc`, `class_doc`, `variable_doc` e `flow_comment`
 - consolida `terminal_task` automaticamente em `save` e no pos-autofix usando o terminal integrado
 - expoe follow-up via code action
 
@@ -517,7 +517,7 @@ O repositorio expoe `plugin/` e `autoload/` na raiz, entao pode ser instalado di
     vim.g.realtime_dev_agent_auto_check_max_lines = 600
     vim.g.realtime_dev_agent_analysis_cache_max_entries = 24
     vim.g.realtime_dev_agent_realtime_auto_fix_max_per_check = 2
-    vim.g.realtime_dev_agent_auto_fix_doc_cursor_context_only = 1
+    vim.g.realtime_dev_agent_auto_fix_doc_cursor_context_only = 0
     vim.g.realtime_dev_agent_auto_fix_local_cursor_context_only = 1
   end,
 }
@@ -557,10 +557,10 @@ Plug 'andersonflima/pingu_ai_codding_pair_programming'
 - `let g:realtime_dev_agent_auto_check_max_lines = 600` limita checks automaticos a arquivos menores
 - `let g:realtime_dev_agent_analysis_cache_max_entries = 24` reaproveita a ultima analise do mesmo texto e reduz relancamento do agente
 - `let g:realtime_dev_agent_realtime_auto_fix_max_per_check = 2` reduz o lote automatico por ciclo realtime para manter o editor fluido
-- `let g:realtime_dev_agent_auto_fix_doc_cursor_context_only = 1` restringe `function_doc`, `class_doc`, `variable_doc` e `flow_comment` ao bloco textual atual do cursor
+- `let g:realtime_dev_agent_auto_fix_doc_cursor_context_only = 0` deixa `function_doc`, `class_doc`, `variable_doc` e `flow_comment` elegiveis no arquivo inteiro
 - `let g:realtime_dev_agent_auto_fix_local_cursor_context_only = 1` restringe `debug_output`, syntax local, `trailing_whitespace`, `function_spec`, `markdown_title`, `terraform_required_version` e `dockerfile_workdir` ao bloco textual atual
 - `let g:realtime_dev_agent_auto_fix_doc_cursor_context_max_lines = 80` controla o tamanho maximo desse bloco automatico
-- com os defaults atuais no Vim, o auto-fix realtime prioriza o conjunto local e seguro ao redor do cursor; no `save`, o agente consolida o arquivo inteiro e pode incluir `unit_test` adjacente seguro e `context_file` para `.realtime-dev-agent/` e `.gitignore`, enquanto `terminal_task` continua sob controle explicito do runtime de terminal
+- com os defaults atuais no Vim, o auto-fix realtime continua priorizando correcoes locais para syntax e higiene, mas comentarios documentais voltam a ser elegiveis no arquivo inteiro; no `save`, o agente consolida o buffer inteiro e pode incluir `unit_test` adjacente seguro e `context_file` para `.realtime-dev-agent/` e `.gitignore`, enquanto `terminal_task` continua sob controle explicito do runtime de terminal
 
 ### Terminal no Vim / Neovim
 
