@@ -130,9 +130,11 @@ if !exists('g:realtime_dev_agent_strict_code_only')
 endif
 
 if !exists('g:realtime_dev_agent_code_extensions')
-  " Lista base para modo estrito de produtividade.
+  " Lista base para modo estrito de produtividade, alinhada com as linguagens mapeadas no runtime.
   let g:realtime_dev_agent_code_extensions = [
+    \ '.bash',
     \ '.c',
+    \ '.cjs',
     \ '.clj',
     \ '.cpp',
     \ '.cs',
@@ -148,6 +150,8 @@ if !exists('g:realtime_dev_agent_code_extensions')
     \ '.kt',
     \ '.lua',
     \ '.md',
+    \ '.mermaid',
+    \ '.mmd',
     \ '.mjs',
     \ '.php',
     \ '.pl',
@@ -158,11 +162,13 @@ if !exists('g:realtime_dev_agent_code_extensions')
     \ '.sh',
     \ '.swift',
     \ '.tf',
+    \ '.toml',
     \ '.ts',
     \ '.tsx',
     \ '.vim',
     \ '.yaml',
     \ '.yml',
+    \ '.zsh',
     \ '.dockerfile',
     \ '.vue'
   \ ]
@@ -243,12 +249,12 @@ endif
 if !exists('g:realtime_dev_agent_auto_check_max_lines')
   " Limite de linhas para checks automaticos no editor.
   " 0 desliga o limite.
-  let g:realtime_dev_agent_auto_check_max_lines = 600
+  let g:realtime_dev_agent_auto_check_max_lines = 1200
 endif
 
 if !exists('g:realtime_dev_agent_realtime_delay')
   " Milisegundos de espera apos a ultima mudanca para disparar a checagem.
-  let g:realtime_dev_agent_realtime_delay = 1200
+  let g:realtime_dev_agent_realtime_delay = 700
 endif
 
 if !exists('g:realtime_dev_agent_realtime_async')
@@ -335,9 +341,9 @@ if !exists('g:realtime_dev_agent_terminal_height')
 endif
 
 if !exists('g:realtime_dev_agent_terminal_strategy')
-  " auto: ToggleTerm quando houver TermExec, terminal nativa como fallback.
+  " background: mantem foco no codigo; auto usa ToggleTerm quando houver TermExec e terminal nativa como fallback.
   " background: abre o terminal, inicia a execucao e devolve o foco ao codigo mantendo o output visivel em tempo real.
-  let g:realtime_dev_agent_terminal_strategy = 'auto'
+  let g:realtime_dev_agent_terminal_strategy = 'background'
 endif
 
 if !exists('g:realtime_dev_agent_auto_fix_kinds')
@@ -360,14 +366,17 @@ if !exists('g:realtime_dev_agent_auto_fix_kinds')
           \ 'function_doc',
           \ 'class_doc',
           \ 'variable_doc',
-          \ 'flow_comment',
-          \ 'functional_reassignment',
-          \ 'debug_output',
-          \ 'missing_dependency',
-          \ 'terminal_task',
-          \ 'unit_test',
-          \ 'trailing_whitespace',
-          \ 'tabs',
+        \ 'flow_comment',
+        \ 'function_comment',
+        \ 'functional_reassignment',
+        \ 'debug_output',
+        \ 'missing_dependency',
+        \ 'nested_condition',
+        \ 'terminal_task',
+        \ 'todo_fixme',
+        \ 'unit_test',
+        \ 'trailing_whitespace',
+        \ 'tabs',
           \ 'markdown_title',
           \ 'terraform_required_version',
           \ 'dockerfile_workdir'
@@ -388,7 +397,7 @@ endif
 
 if !exists('g:realtime_dev_agent_auto_fix_non_blocking_max_per_check')
   " Limita lote de autofix em modo non-blocking para reduzir impacto por ciclo.
-  let g:realtime_dev_agent_auto_fix_non_blocking_max_per_check = 4
+  let g:realtime_dev_agent_auto_fix_non_blocking_max_per_check = 2
 endif
 
 if !exists('g:realtime_dev_agent_auto_fix_strict_validation')

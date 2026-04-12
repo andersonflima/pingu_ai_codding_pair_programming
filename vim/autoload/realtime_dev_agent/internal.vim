@@ -25,6 +25,8 @@ let s:realtime_dev_agent_daemon_request_seq = 0
 let s:realtime_dev_agent_daemon_pending = {}
 let s:realtime_dev_agent_daemon_stdout_remainder = ''
 let s:realtime_dev_agent_hidden_terminal_jobs = {}
+let s:realtime_dev_agent_auto_fix_timer = -1
+let s:realtime_dev_agent_auto_fix_state = {}
 
 function! s:issue_kind_entry(kind) abort
   let l:registry = get(g:, 'realtime_dev_agent_issue_kind_registry', {})
@@ -558,7 +560,20 @@ function! s:should_run_auto_check(bufnr) abort
   if l:max_lines <= 0
     return v:true
   endif
-  return s:buffer_line_count(a:bufnr) <= l:max_lines
+  let l:line_count = s:buffer_line_count(a:bufnr)
+  if l:line_count <= l:max_lines
+    return v:true
+  endif
+
+  if !s:realtime_async_enabled() || !s:non_blocking_mode_enabled() || !get(g:, 'realtime_dev_agent_realtime_focus_scope_enabled', 1)
+    return v:false
+  endif
+
+  if s:analysis_mode_for_request(v:true) !=# 'light'
+    return v:false
+  endif
+
+  return l:line_count <= max([l:max_lines, 5000])
 endfunction
 
 function! s:realtime_dev_agent_open_review() abort
@@ -3196,15 +3211,18 @@ function! s:realtime_check_handle_analysis(bufnr, analysis, open_qf, show_echo, 
   let s:realtime_dev_agent_is_realtime_check = a:realtime_mode
   try
     if g:realtime_dev_agent_auto_fix_enabled
-      let l:auto_fix_applied = s:realtime_dev_agent_apply_auto_fixes(l:qf, l:file)
+      let l:auto_fix_applied = s:realtime_dev_agent_apply_auto_fixes(l:qf, l:file, {
+            \ 'bufnr': a:bufnr,
+            \ 'open_qf': a:open_qf,
+            \ 'show_echo': a:show_echo,
+            \ 'realtime_mode': a:realtime_mode ? v:true : v:false,
+            \ })
     endif
   finally
     let s:realtime_dev_agent_is_realtime_check = l:previous_mode
   endtry
 
-  if l:auto_fix_applied > 0
-    let l:analysis_mode = s:analysis_mode_for_request(a:realtime_mode ? v:true : v:false)
-    call s:start_async_realtime_check_with_fallback(a:bufnr, a:open_qf, a:show_echo, l:analysis_mode, a:realtime_mode)
+  if l:auto_fix_applied != 0
     return
   endif
 
@@ -3634,19 +3652,55 @@ function! s:realtime_check_from_buffer(bufnr, open_qf, show_echo, ...) abort
   call s:realtime_check_handle_analysis(a:bufnr, l:analysis, a:open_qf, a:show_echo, s:realtime_dev_agent_is_realtime_check)
 endfunction
 
-function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
+function! s:auto_fix_target_available(bufnr) abort
+  if a:bufnr <= 0 || !bufloaded(a:bufnr)
+    return v:false
+  endif
+  if !getbufvar(a:bufnr, '&modifiable', 0) || getbufvar(a:bufnr, '&readonly', 0)
+    return v:false
+  endif
+  return v:true
+endfunction
+
+function! s:stop_auto_fix_timer() abort
+  if get(s:, 'realtime_dev_agent_auto_fix_timer', -1) != -1
+    call timer_stop(s:realtime_dev_agent_auto_fix_timer)
+    let s:realtime_dev_agent_auto_fix_timer = -1
+  endif
+endfunction
+
+function! s:clear_auto_fix_runtime() abort
+  call s:stop_auto_fix_timer()
+  let s:realtime_dev_agent_auto_fix_state = {}
+  let s:realtime_dev_agent_auto_fix_busy = v:false
+endfunction
+
+function! s:auto_fix_queue_delay() abort
+  return 10
+endfunction
+
+function! s:schedule_auto_fix_queue(delay) abort
+  if !has('timers')
+    return
+  endif
+  call s:stop_auto_fix_timer()
+  let l:delay = max([0, str2nr(string(a:delay))])
+  let s:realtime_dev_agent_auto_fix_timer = timer_start(l:delay, function('s:auto_fix_queue_tick'))
+endfunction
+
+function! s:build_auto_fix_state(qf, file, opts) abort
   if type(a:qf) != v:t_list
-    return 0
+    return {}
   endif
 
   if !g:realtime_dev_agent_auto_fix_enabled
-    return 0
+    return {}
   endif
 
   let l:target_file = fnamemodify(a:file, ':p')
   let l:target_buf = s:issue_target_buffer(l:target_file)
   if !s:realtime_dev_agent_can_apply_auto_fixes_for_buffer(l:target_buf)
-    return 0
+    return {}
   endif
 
   let l:kinds = get(g:, 'realtime_dev_agent_auto_fix_kinds', [])
@@ -3698,16 +3752,17 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
   endfor
 
   if empty(l:auto_candidates)
-    return 0
+    return {}
   endif
 
-  if s:realtime_dev_agent_is_realtime_check
+  let l:realtime_mode = get(a:opts, 'realtime_mode', s:realtime_dev_agent_is_realtime_check ? v:true : v:false)
+  if l:realtime_mode
     let l:auto_candidates = s:select_auto_fix_candidates_by_scope(l:auto_candidates, l:target_buf)
     let l:auto_candidates = s:limit_cursor_context_auto_fix_candidates(l:auto_candidates, l:target_buf)
   endif
 
   if empty(l:auto_candidates)
-    return 0
+    return {}
   endif
 
   call sort(l:auto_candidates, {entry_a, entry_b ->
@@ -3716,12 +3771,12 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
   let l:auto_candidates = s:limit_documentation_candidates(l:auto_candidates)
 
   if empty(l:auto_candidates)
-    return 0
+    return {}
   endif
 
   if mode() =~# '^i'
     let s:realtime_dev_agent_pending_auto_fixes = l:auto_candidates
-    return 0
+    return {}
   endif
 
   let l:affected_files = s:collect_affected_files(a:file, l:auto_candidates)
@@ -3733,7 +3788,7 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
   if type(l:max_to_apply) != v:t_number
     let l:max_to_apply = str2nr(string(l:max_to_apply))
   endif
-  if s:realtime_dev_agent_is_realtime_check
+  if l:realtime_mode
     let l:realtime_limit = get(g:, 'realtime_dev_agent_realtime_auto_fix_max_per_check', 2)
     if type(l:realtime_limit) != v:t_number
       let l:realtime_limit = str2nr(string(l:realtime_limit))
@@ -3747,35 +3802,74 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
   endif
   let l:file_key = fnamemodify(a:file, ':p')
   let l:fix_guard = get(s:realtime_dev_agent_fix_guard, l:file_key, {})
-  let l:line_kind_applied = {}
-  let l:line_adjustments = []
-  let l:visual_batch = s:start_auto_fix_visual_batch(l:target_buf)
-  let s:realtime_dev_agent_auto_fix_busy = v:true
+  let l:chunk_limit = s:non_blocking_mode_enabled() && has('timers') ? s:auto_fix_non_blocking_max_per_check() : 0
+
+  return {
+        \ 'file': l:target_file,
+        \ 'target_buf': l:target_buf,
+        \ 'open_qf': get(a:opts, 'open_qf', 0),
+        \ 'show_echo': get(a:opts, 'show_echo', 0),
+        \ 'realtime_mode': l:realtime_mode ? v:true : v:false,
+        \ 'source_qf': deepcopy(a:qf),
+        \ 'candidates': l:auto_candidates,
+        \ 'affected_files': l:affected_files,
+        \ 'strict_validation': l:strict_validation ? v:true : v:false,
+        \ 'file_snapshot': l:file_snapshot,
+        \ 'applied': l:applied,
+        \ 'applied_items': l:applied_items,
+        \ 'max_to_apply': l:max_to_apply,
+        \ 'chunk_limit': l:chunk_limit,
+        \ 'file_key': l:file_key,
+        \ 'fix_guard': l:fix_guard,
+        \ 'line_kind_applied': {},
+        \ 'line_adjustments': [],
+        \ }
+endfunction
+
+function! s:run_auto_fix_state(state, max_items) abort
+  let l:state = a:state
+  let l:processed = 0
+  let l:visual_batch = s:start_auto_fix_visual_batch(get(l:state, 'target_buf', -1))
   try
-    for l:item in l:auto_candidates
-      if l:max_to_apply > 0 && l:applied >= l:max_to_apply
+    while !empty(get(l:state, 'candidates', []))
+      if get(l:state, 'max_to_apply', 0) > 0 && get(l:state, 'applied', 0) >= get(l:state, 'max_to_apply', 0)
         break
       endif
 
+      let l:item = remove(l:state.candidates, 0)
       let l:item_line = get(l:item, 'lnum', 0)
       if l:item_line <= 0
+        let l:processed += 1
+        if a:max_items > 0 && l:processed >= a:max_items
+          break
+        endif
         continue
       endif
+
       let l:item_kind = get(l:item, 'kind', '')
       let l:item_identity = s:issue_action_identity(l:item)
       let l:item_line_key = string(l:item_line)
-      let l:line_kinds = get(l:line_kind_applied, l:item_line_key, [])
+      let l:line_kinds = get(l:state.line_kind_applied, l:item_line_key, [])
       if type(l:line_kinds) != v:t_list
         let l:line_kinds = []
       endif
       if index(l:line_kinds, 'undefined_variable') != -1 && l:item_kind ==# 'debug_output'
+        let l:processed += 1
+        if a:max_items > 0 && l:processed >= a:max_items
+          break
+        endif
         continue
       endif
+
       let l:item_apply_key = l:item_kind
       if !empty(l:item_identity)
         let l:item_apply_key = l:item_kind . '|' . l:item_identity
       endif
       if !empty(l:line_kinds) && index(l:line_kinds, l:item_apply_key) != -1
+        let l:processed += 1
+        if a:max_items > 0 && l:processed >= a:max_items
+          break
+        endif
         continue
       endif
 
@@ -3786,68 +3880,146 @@ function! s:realtime_dev_agent_apply_auto_fixes(qf, file) abort
             \ l:item_line,
             \ l:item_identity
             \ )
-      if has_key(l:fix_guard, l:guard_key)
+      if has_key(l:state.fix_guard, l:guard_key)
+        let l:processed += 1
+        if a:max_items > 0 && l:processed >= a:max_items
+          break
+        endif
         continue
       endif
 
-      let l:shifted_item = s:shift_issue_for_batch(l:item, s:cumulative_line_shift(l:item_line, l:line_adjustments))
+      let l:shifted_item = s:shift_issue_for_batch(l:item, s:cumulative_line_shift(l:item_line, l:state.line_adjustments))
       if s:apply_issue_snippet(l:shifted_item, v:false)
-        let l:fix_guard[l:guard_key] = 1
+        let l:state.fix_guard[l:guard_key] = 1
         call add(l:line_kinds, l:item_apply_key)
-        let l:line_kind_applied[l:item_line_key] = l:line_kinds
-        let l:applied += 1
-        call add(l:applied_items, l:shifted_item)
+        let l:state.line_kind_applied[l:item_line_key] = l:line_kinds
+        let l:state.applied += 1
+        call add(l:state.applied_items, l:shifted_item)
         let l:adjustment = s:issue_shift_adjustment(l:shifted_item)
         if !empty(l:adjustment)
-          call add(l:line_adjustments, l:adjustment)
+          call add(l:state.line_adjustments, l:adjustment)
         endif
       endif
-    endfor
-    let s:realtime_dev_agent_fix_guard[l:file_key] = l:fix_guard
+
+      let l:processed += 1
+      if a:max_items > 0 && l:processed >= a:max_items
+        break
+      endif
+    endwhile
   finally
     call s:end_auto_fix_visual_batch(l:visual_batch)
-    let s:realtime_dev_agent_auto_fix_busy = v:false
   endtry
 
+  return l:state
+endfunction
+
+function! s:finalize_auto_fix_state(state) abort
+  let l:state = type(a:state) == v:t_dict ? a:state : {}
+  let l:applied = get(l:state, 'applied', 0)
+
+  if !empty(get(l:state, 'file_key', ''))
+    let s:realtime_dev_agent_fix_guard[l:state.file_key] = get(l:state, 'fix_guard', {})
+  endif
+
   if l:applied > 0
-    for l:affected_file in l:affected_files
+    for l:affected_file in get(l:state, 'affected_files', [])
       call s:drop_analysis_cache_for_file(l:affected_file)
     endfor
 
-    if !l:strict_validation
-      let l:summary = printf('[RealtimeDevAgent] Auto-fix aplicado em %d sugerenca(s) [background]', l:applied)
-      echo l:summary
-      return l:applied
+    if !get(l:state, 'strict_validation', v:false)
+      echo printf('[RealtimeDevAgent] Auto-fix aplicado em %d sugerenca(s) [background]', l:applied)
+    else
+      let l:analysis = s:collect_analysis_for_buffer(get(l:state, 'target_buf', -1))
+      if !get(l:analysis, 'ok', v:false)
+        call s:restore_file_snapshot(get(l:state, 'file_snapshot', {}))
+        echohl WarningMsg
+        echomsg '[RealtimeDevAgent] Auto-fix revertido: falha ao reanalisar o buffer'
+        echohl None
+        let l:applied = 0
+      else
+        let l:guard_payload = {
+              \ 'appliedIssues': get(l:state, 'applied_items', []),
+              \ 'beforeIssues': get(l:state, 'source_qf', []),
+              \ 'afterIssues': get(l:analysis, 'qf', []),
+              \ 'fileEntries': s:build_guard_file_entries(get(l:state, 'affected_files', [])),
+              \ }
+        let l:guard_result = s:run_autofix_guard(l:guard_payload, get(l:state, 'file', ''))
+        if !get(l:guard_result, 'ok', v:false)
+          call s:restore_file_snapshot(get(l:state, 'file_snapshot', {}))
+          echohl WarningMsg
+          echomsg '[RealtimeDevAgent] Auto-fix revertido: ' . s:format_guard_failure(l:guard_result)
+          echohl None
+          let l:applied = 0
+        else
+          echo printf('[RealtimeDevAgent] Auto-fix aplicado em %d sugerenca(s)', l:applied)
+        endif
+      endif
     endif
-
-    let l:analysis = s:collect_analysis_for_buffer(l:target_buf)
-    if !get(l:analysis, 'ok', v:false)
-      call s:restore_file_snapshot(l:file_snapshot)
-      echohl WarningMsg
-      echomsg '[RealtimeDevAgent] Auto-fix revertido: falha ao reanalisar o buffer'
-      echohl None
-      return 0
-    endif
-
-    let l:guard_payload = {
-          \ 'appliedIssues': l:applied_items,
-          \ 'beforeIssues': a:qf,
-          \ 'afterIssues': get(l:analysis, 'qf', []),
-          \ 'fileEntries': s:build_guard_file_entries(l:affected_files),
-          \ }
-    let l:guard_result = s:run_autofix_guard(l:guard_payload, a:file)
-    if !get(l:guard_result, 'ok', v:false)
-      call s:restore_file_snapshot(l:file_snapshot)
-      echohl WarningMsg
-      echomsg '[RealtimeDevAgent] Auto-fix revertido: ' . s:format_guard_failure(l:guard_result)
-      echohl None
-      return 0
-    endif
-
-    let l:summary = printf('[RealtimeDevAgent] Auto-fix aplicado em %d sugerenca(s)', l:applied)
-    echo l:summary
   endif
+
+  call s:clear_auto_fix_runtime()
+
+  if l:applied > 0
+    let l:realtime_mode = get(l:state, 'realtime_mode', v:false) ? v:true : v:false
+    let l:analysis_mode = s:analysis_mode_for_request(l:realtime_mode)
+    call s:start_async_realtime_check_with_fallback(
+          \ get(l:state, 'target_buf', -1),
+          \ get(l:state, 'open_qf', 0),
+          \ get(l:state, 'show_echo', 0),
+          \ l:analysis_mode,
+          \ l:realtime_mode
+          \ )
+  endif
+
   return l:applied
+endfunction
+
+function! s:auto_fix_queue_tick(timer_id) abort
+  let s:realtime_dev_agent_auto_fix_timer = -1
+
+  if empty(s:realtime_dev_agent_auto_fix_state)
+    let s:realtime_dev_agent_auto_fix_busy = v:false
+    return
+  endif
+
+  let l:state = s:realtime_dev_agent_auto_fix_state
+  if !s:auto_fix_target_available(get(l:state, 'target_buf', -1))
+    call s:clear_auto_fix_runtime()
+    return
+  endif
+
+  if mode() =~# '^i'
+    call s:schedule_auto_fix_queue(150)
+    return
+  endif
+
+  let l:state = s:run_auto_fix_state(l:state, get(l:state, 'chunk_limit', s:auto_fix_non_blocking_max_per_check()))
+  let s:realtime_dev_agent_auto_fix_state = l:state
+
+  if !empty(get(l:state, 'candidates', [])) && (get(l:state, 'max_to_apply', 0) <= 0 || get(l:state, 'applied', 0) < get(l:state, 'max_to_apply', 0))
+    call s:schedule_auto_fix_queue(s:auto_fix_queue_delay())
+    return
+  endif
+
+  call s:finalize_auto_fix_state(l:state)
+endfunction
+
+function! s:realtime_dev_agent_apply_auto_fixes(qf, file, ...) abort
+  let l:opts = a:0 > 0 && type(a:1) == v:t_dict ? a:1 : {}
+  let l:state = s:build_auto_fix_state(a:qf, a:file, l:opts)
+  if empty(l:state)
+    return 0
+  endif
+
+  let s:realtime_dev_agent_auto_fix_busy = v:true
+  if get(l:state, 'chunk_limit', 0) > 0
+    let s:realtime_dev_agent_auto_fix_state = l:state
+    call s:schedule_auto_fix_queue(0)
+    return -1
+  endif
+
+  let l:state = s:run_auto_fix_state(l:state, 0)
+  return s:finalize_auto_fix_state(l:state)
 endfunction
 
 function! s:shift_issue_for_batch(item, line_shift) abort
@@ -3964,7 +4136,12 @@ function! s:realtime_dev_agent_drain_pending_auto_fixes() abort
   let s:realtime_dev_agent_pending_auto_fixes = []
 
   let l:file = fnamemodify(bufname('%'), ':p')
-  call s:realtime_dev_agent_apply_auto_fixes(l:items, l:file)
+  call s:realtime_dev_agent_apply_auto_fixes(l:items, l:file, {
+        \ 'bufnr': bufnr('%'),
+        \ 'open_qf': g:realtime_dev_agent_realtime_open_qf,
+        \ 'show_echo': 0,
+        \ 'realtime_mode': v:true,
+        \ })
 endfunction
 
 function! s:realtime_dev_agent_schedule_check(...) abort
