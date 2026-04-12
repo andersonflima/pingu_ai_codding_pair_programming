@@ -38,13 +38,11 @@ Para sincronizar tudo no GitHub de uma vez, rode manualmente o workflow `sync-is
 - `imports`: imports, `use`, `require`, includes, aliases
 - `performance`: latencia, travamento, consumo excessivo no editor
 - `ai`: comportamento ligado a geracao contextual por IA
-- `packaging`: npm, VSIX, instalacao, release
+- `packaging`: npm, instalacao, release
 
 ### Superficie
 
 - `lazyvim`: fluxo do Vim, Neovim ou LazyVim
-- `vscode`: fluxo do VS Code
-- `zed`: fluxo do Zed
 
 ### Risco
 
@@ -93,7 +91,7 @@ Ao concluir uma issue, registre:
 Monitore estas visoes no GitHub:
 
 - issues abertas sem label
-- issues abertas por editor: `lazyvim`, `vscode`, `zed`
+- issues abertas por editor: `lazyvim`
 - issues abertas por natureza: `bug`, `improvement`, `performance`, `imports`, `comments`
 - issues com `breaking-risk`
 - issues `P0` abertas

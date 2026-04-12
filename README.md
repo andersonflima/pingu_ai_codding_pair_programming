@@ -6,7 +6,7 @@
 
 Pingu e um agente de pair programming em tempo real orientado a arquivo e editor. Ele nao foi desenhado como um chat generico. Ele observa o buffer atual, encontra problemas e pedidos explicitos no proprio codigo, gera snippets idiomaticos por linguagem, cria contexto persistente, sugere ou cria testes, injeta dependencias faltantes e executa acoes de terminal com politica de risco.
 
-O projeto funciona hoje em `Vim/Neovim`, `VS Code` e `Zed`, com runtime local e cobertura offline por linguagem. Isso significa que uma parte grande do fluxo funciona sem API key.
+O projeto funciona hoje em `Vim/Neovim`, com foco pratico em `LazyVim`, runtime local e cobertura offline por linguagem. Isso significa que uma parte grande do fluxo funciona sem API key.
 
 ## O que o Pingu faz
 
@@ -18,7 +18,7 @@ O projeto funciona hoje em `Vim/Neovim`, `VS Code` e `Zed`, com runtime local e 
 - Tenta inserir imports e includes na fronteira correta do arquivo em vez de simplesmente despejar tudo na linha do comentario.
 - Executa `terminal_task` com inferencia por stack e politica de risco configuravel.
 - Expoe follow-up acionavel para continuar o pareamento sem sair do arquivo.
-- Mantem um contrato de paridade entre `LazyVim`, `VS Code` e `Zed`.
+- Mantem um fluxo unico e consistente para `LazyVim`, `Vim` e `Neovim`.
 
 ## O que o Pingu melhora para quem usa
 
@@ -63,8 +63,8 @@ Esse fluxo define:
 
 ## Como o loop funciona
 
-1. Voce abre um arquivo suportado em `Vim/Neovim`, `VS Code` ou `Zed`.
-2. O Pingu analisa o buffer em abertura, foco, edicao e `save`, conforme o editor.
+1. Voce abre um arquivo suportado em `Vim/Neovim`.
+2. O Pingu analisa o buffer em abertura, foco, edicao e `save`, conforme o fluxo do editor.
 3. Quando encontra um comentario acionavel, ele transforma isso em uma issue do tipo:
    - `comment_task`
    - `context_file`
@@ -262,7 +262,7 @@ O que melhora aqui:
 - o agente passa a usar esse contrato nas proximas geracoes
 - o bootstrap de um BFF CRUD deixa de ser trabalho repetitivo
 
-### 4. Acao de terminal no VS Code
+### 4. Acao de terminal no Vim / Neovim
 
 Entrada:
 
@@ -270,7 +270,7 @@ Entrada:
 //* rodar testes
 ```
 
-Output esperado no terminal integrado:
+Output esperado no terminal:
 
 ```text
 [RealtimeDevAgent] command: npm test
@@ -281,7 +281,7 @@ Output esperado no terminal integrado:
 
 Comportamento esperado:
 
-- o terminal integrado abre
+- o terminal do editor abre
 - o comando e inferido pelo contexto do projeto
 - a linha gatilho e removida quando o processo termina com sucesso
 
@@ -466,27 +466,6 @@ Atalhos principais:
 - `r`: reanalisa
 - `q`: fecha o painel
 
-### VS Code
-
-- analisa ao abrir, focar, editar e salvar
-- publica diagnosticos
-- auto-fix para `comment_task`, `context_file`, `unit_test` e comentarios contextuais como `moduledoc`, `function_doc`, `class_doc`, `variable_doc` e `flow_comment`
-- consolida `terminal_task` automaticamente em `save` e no pos-autofix usando o terminal integrado
-- expoe follow-up via code action
-
-Comandos:
-
-- `Pingu - Dev Agent: Analyze Current File`
-- `Pingu - Dev Agent: Toggle Realtime Analysis`
-
-### Zed
-
-- diagnosticos em tempo real via language server local
-- consolidacao automatica no `save` para `comment_task`, `context_file`, `unit_test` e fixes locais seguros
-- quick fixes para `comment_task`, `context_file`, `unit_test` e correcoes locais
-- `terminal_task` automatico no `save` com o mesmo modo de risco do runtime
-- follow-up acionavel via code action
-
 ## Instalacao via GitHub no Vim
 
 O repositorio expoe `plugin/` e `autoload/` na raiz, entao pode ser instalado direto do GitHub.
@@ -505,11 +484,11 @@ O repositorio expoe `plugin/` e `autoload/` na raiz, entao pode ser instalado di
     vim.g.realtime_dev_agent_auto_fix_near_cursor_radius = 24
     vim.g.realtime_dev_agent_auto_fix_cluster_gap = 8
     vim.g.realtime_dev_agent_auto_fix_visual_mode = "preserve"
-    vim.g.realtime_dev_agent_review_on_open = 0
+    vim.g.realtime_dev_agent_review_on_open = 1
     vim.g.realtime_dev_agent_realtime_on_change = 1
     vim.g.realtime_dev_agent_realtime_on_cursor_hold = 1
-    vim.g.realtime_dev_agent_realtime_on_buf_enter = 0
-    vim.g.realtime_dev_agent_realtime_insert_mode = 0
+    vim.g.realtime_dev_agent_realtime_on_buf_enter = 1
+    vim.g.realtime_dev_agent_realtime_insert_mode = 1
     vim.g.realtime_dev_agent_realtime_async = 1
     vim.g.realtime_dev_agent_realtime_use_daemon = 1
     vim.g.realtime_dev_agent_realtime_focus_scope_enabled = 1
@@ -537,7 +516,7 @@ Plug 'andersonflima/pingu_ai_codding_pair_programming'
 - `let g:realtime_dev_agent_open_window_on_start = 0` mantem o agente ativo sem abrir painel
 - `let g:realtime_dev_agent_open_window_on_start = 1` reabre o painel no startup automatico
 - `let g:realtime_dev_agent_start_on_editor_enter = 0` desliga o startup automatico
-- `let g:realtime_dev_agent_review_on_open = 1` reativa revisao automatica ao abrir arquivos
+- `let g:realtime_dev_agent_review_on_open = 1` mantem revisao automatica ao abrir arquivos
 - `let g:realtime_dev_agent_target_scope = 'current_file'` mantem analise e correcoes no arquivo aberto, mas ainda permite `unit_test` adjacente seguro e `context_file` para `.realtime-dev-agent/` e `.gitignore`
 - `let g:realtime_dev_agent_target_scope = 'workspace'` mantem acoes multi-arquivo amplas fora desse conjunto seguro
 - `let g:realtime_dev_agent_auto_fix_scope = 'near_cursor'` aplica apenas o trecho mais proximo do cursor
@@ -546,10 +525,10 @@ Plug 'andersonflima/pingu_ai_codding_pair_programming'
 - `let g:realtime_dev_agent_auto_fix_near_cursor_radius = 24` controla a distancia maxima entre cursor e trecho elegivel
 - `let g:realtime_dev_agent_auto_fix_cluster_gap = 8` controla a distancia maxima entre issues do mesmo trecho
 - `let g:realtime_dev_agent_realtime_on_cursor_hold = 1` faz o agente agir sozinho quando o cursor para sobre um bloco sem exigir edicao manual
-- `let g:realtime_dev_agent_realtime_on_buf_enter = 0` evita custo extra em navegacao intensa; ligue se quiser checagem imediata ao entrar no arquivo
+- `let g:realtime_dev_agent_realtime_on_buf_enter = 1` reanalisa o contexto assim que voce entra no arquivo
 - `let g:realtime_dev_agent_auto_on_save = 1` consolida comentarios, fixes locais, blueprint seguro e testes adjacentes automaticamente no save
 - `let g:realtime_dev_agent_auto_fix_visual_mode = 'preserve'` reduz ruido visual durante o batch
-- `let g:realtime_dev_agent_realtime_insert_mode = 1` volta a analisar tambem no meio da digitacao
+- `let g:realtime_dev_agent_realtime_insert_mode = 1` mantem analise tambem no meio da digitacao
 - `let g:realtime_dev_agent_realtime_async = 1` usa job assincrono no Neovim para evitar congelar a UI durante o loop automatico
 - `let g:realtime_dev_agent_realtime_use_daemon = 1` reaproveita um runtime residente no Neovim para reduzir spawn por analise realtime
 - `let g:realtime_dev_agent_realtime_focus_scope_enabled = 1` limita a analise leve realtime ao bloco atual do cursor
@@ -569,120 +548,9 @@ Plug 'andersonflima/pingu_ai_codding_pair_programming'
 - `let g:realtime_dev_agent_terminal_risk_mode = 'workspace_write'`
 - `let g:realtime_dev_agent_terminal_risk_mode = 'all'`
 - `let g:realtime_dev_agent_terminal_strategy = 'auto'` (default)
-- `let g:realtime_dev_agent_terminal_strategy = 'vscode'`
 - `let g:realtime_dev_agent_terminal_strategy = 'toggleterm'`
 - `let g:realtime_dev_agent_terminal_strategy = 'native'`
 - `let g:realtime_dev_agent_terminal_strategy = 'background'`
-
-## Instalacao via GitHub no VS Code
-
-### Instalar a partir de release
-
-1. Baixe `pingu-dev-agent.vsix` na pagina de `Releases`.
-2. Instale com:
-
-```bash
-code --install-extension pingu-dev-agent.vsix
-```
-
-### Empacotar localmente
-
-```bash
-npm run package:vscode
-code --install-extension ./pingu-dev-agent.vsix --force
-```
-
-### Publicar no Visual Studio Marketplace
-
-O manifesto da extensao ja esta configurado com:
-
-- `publisher: andersonflima`
-- `name: pingu-dev-agent`
-
-Para publicar pela CLI:
-
-```bash
-export VSCE_PAT='SEU_TOKEN_DO_MARKETPLACE'
-npm run publish:vscode
-```
-
-O script publica a partir de um stage limpo da extensao, sem carregar arquivos de Vim, Zed ou outros artefatos do repositorio.
-
-### Migracao do nome antigo
-
-Se voce ja instalou a extensao antiga `andersonflima.realtime-dev-agent`, o VS Code pode manter as duas instaladas ao mesmo tempo. Para ficar apenas com o nome novo:
-
-```bash
-code --uninstall-extension andersonflima.realtime-dev-agent
-code --install-extension ./pingu-dev-agent.vsix --force
-```
-
-### Problema comum ao instalar pelo CLI
-
-Se o `code --install-extension` falhar com algo como `uv_cwd` ou `getcwd: cannot access parent directories`, o problema nao e da extensao. O terminal atual esta em um diretorio invalido.
-
-Rode a instalacao a partir de um diretorio existente:
-
-```bash
-cd ~
-code --install-extension /caminho/absoluto/para/pingu-dev-agent.vsix --force
-```
-
-### Configuracoes do VS Code
-
-- `realtimeDevAgent.enabled`
-- `realtimeDevAgent.nodePath`
-- `realtimeDevAgent.scriptPath`
-- `realtimeDevAgent.maxLineLength`
-- `realtimeDevAgent.openAiModel`
-- `realtimeDevAgent.openAiTimeoutMs`
-- `realtimeDevAgent.realtimeOnSave`
-- `realtimeDevAgent.realtimeOnChange`
-- `realtimeDevAgent.changeDebounceMs`
-- `realtimeDevAgent.realtimeFocusPaddingLines`
-- `realtimeDevAgent.realtimeAnalysisMode`
-- `realtimeDevAgent.realtimeAutoFixMaxPerPass`
-- `realtimeDevAgent.terminalActionsEnabled`
-- `realtimeDevAgent.terminalRiskMode`
-- `realtimeDevAgent.autoFixEnabled`
-- `realtimeDevAgent.autoFixKinds`
-
-### Modos de risco do terminal no VS Code
-
-- `safe`: apenas comandos de leitura
-- `workspace_write`: leitura, testes, build, formatacao, install e execucao local
-- `all`: inclui comandos classificados como destrutivos
-
-## Instalacao local no Zed
-
-O suporte do Zed fica em [zed-extension/](./zed-extension).
-
-### Instalar como dev extension
-
-1. Abra `zed: extensions`
-2. Clique em `Install Dev Extension`
-3. Selecione a pasta `zed-extension/`
-
-Pre-requisitos:
-
-- `node` no PATH
-- toolchain Rust instalada para o Zed compilar a extensao
-
-Comportamento realtime do Zed:
-
-- debounce por mudanca para evitar reanalise a cada tecla
-- cache por versao do documento para reutilizar resultado quando o texto nao mudou
-- quick fix reaproveita a analise pos-edicao sem rodar o analisador duas vezes
-- open/change usam analise leve por padrao; save continua completo
-- no change o Zed passa a focar a janela de linhas alteradas em vez de reanalisar o arquivo inteiro
-
-Knobs opcionais por ambiente:
-
-- `PINGU_ZED_OPEN_DEBOUNCE_MS`
-- `PINGU_ZED_CHANGE_DEBOUNCE_MS`
-- `PINGU_ZED_SAVE_DEBOUNCE_MS`
-- `PINGU_ZED_REALTIME_ANALYSIS_MODE`
-- `PINGU_ZED_REALTIME_FOCUS_PADDING_LINES`
 
 ## Credenciais e variaveis de ambiente
 
@@ -711,7 +579,7 @@ export PINGU_OPENAI_MODEL="gpt-5-codex"
 
 Importante:
 
-- Vim, Neovim e VS Code herdam variaveis de ambiente no momento em que sao iniciados
+- Vim e Neovim herdam variaveis de ambiente no momento em que sao iniciados
 - se a chave mudar depois que o editor ja estiver aberto, reinicie o editor
 - nunca commite credenciais
 - `PINGU_AUTOMATIC_AI_COMMENT_MAX_ISSUES=8` limita quantas issues de comentario/documentacao podem subir para IA por ciclo automatico; use `0` para remover o limite
@@ -719,18 +587,12 @@ Importante:
 - `PINGU_DOCUMENTATION_MAX_LINES=420` evita `function_doc`, `class_doc`, `variable_doc` e `flow_comment` automaticos em arquivos grandes; use `0` para remover o corte
 - `PINGU_FLOW_COMMENT_MAX_LINES=260` evita `flow_comment` automatico em arquivos grandes; use `0` para remover o corte
 - `PINGU_LIGHT_ANALYSIS_DEEP_PASS_MAX_LINES=260` limita checks mais profundos do modo `light` a arquivos menores; use `0` para manter o deep pass mesmo em arquivo grande
-- `PINGU_AUTOFIX_LARGE_FILE_LINE_THRESHOLD=260` define a partir de quantas linhas o VS Code passa a encolher o lote automatico
-- `PINGU_AUTOFIX_DOC_MAX_PER_PASS=0` limita quantas issues documentais o VS Code aplica por ciclo; `0` remove o corte
-- `PINGU_AUTOFIX_DOC_MAX_PER_PASS_LARGE_FILE=4` limita docstrings/comentarios por ciclo em arquivo grande no VS Code
+- `PINGU_AUTOFIX_LARGE_FILE_LINE_THRESHOLD=260` define a partir de quantas linhas o runtime encolhe o lote automatico
+- `PINGU_AUTOFIX_DOC_MAX_PER_PASS=0` limita quantas issues documentais sobem por ciclo; `0` remove o corte
+- `PINGU_AUTOFIX_DOC_MAX_PER_PASS_LARGE_FILE=4` limita docstrings/comentarios por ciclo em arquivo grande
 - com `OPENAI_API_KEY` configurada, o agente pode usar OpenAI Codex nos fluxos assistidos por IA
 - no LazyVim, os equivalentes sao `g:realtime_dev_agent_auto_fix_large_file_line_threshold`, `g:realtime_dev_agent_auto_fix_large_file_radius` e `g:realtime_dev_agent_auto_fix_doc_max_per_check_large_file`
 - no LazyVim, `debug_output` e `function_spec` cursor-local entram no lote automatico seguro sem depender da trilha live
-
-## Empacotamento
-
-```bash
-npm run package:vscode
-```
 
 ## Como funciona internamente
 
@@ -738,17 +600,11 @@ npm run package:vscode
 - `lib/analyzer.js`: analise e emissao de issues
 - `lib/generation*.js`: geracao de snippets, blueprints, testes, dependencias e terminal tasks
 - `lib/language-capabilities.js`: contrato declarativo de linguagem
-- `vscode/`: runtime da extensao VS Code
 - `vim/`, `plugin/`, `autoload/`: runtime do plugin Vim / Neovim
-- `zed-extension/`: extensao do Zed com language server local
 
 ## Estrutura principal
 
 - `realtime_dev_agent.js`: entrada CLI do agente
 - `lib/`: analise, geracao e suporte
-- `vscode/`: extensao VS Code
 - `vim/`: implementacao principal do plugin Vim
 - `plugin/` e `autoload/`: wrappers para instalacao direta no Vim
-- `zed-extension/`: extensao do Zed
-- `scripts/package_vscode.js`: empacotamento da extensao VS Code
-- `.github/workflows/vscode-package.yml`: empacotamento e release da extensao VS Code

@@ -37,22 +37,12 @@
   {
     "name": "packaging",
     "color": "0052cc",
-    "description": "npm, VSIX, instalacao, release ou distribuicao"
+    "description": "npm, instalacao, release ou distribuicao"
   },
   {
     "name": "lazyvim",
     "color": "c2e0c6",
     "description": "Fluxo do Vim, Neovim ou LazyVim"
-  },
-  {
-    "name": "vscode",
-    "color": "bfd4f2",
-    "description": "Fluxo do VS Code"
-  },
-  {
-    "name": "zed",
-    "color": "fef2c0",
-    "description": "Fluxo do Zed"
   },
   {
     "name": "breaking-risk",

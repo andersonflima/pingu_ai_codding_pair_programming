@@ -1,18 +1,16 @@
 {
   "name": "pingu-dev-agent",
-  "displayName": "Pingu - Dev Agent",
-  "description": "Pingu - Dev Agent: agente de pair programming em tempo real para Vim e VS Code.",
+  "description": "Pingu - Dev Agent: agente de pair programming em tempo real para Vim, Neovim e LazyVim.",
   "version": "0.1.0",
-  "publisher": "andersonflima",
   "license": "MIT",
-  "icon": "assets/pingu.png",
   "keywords": [
     "pingu",
     "dev-agent",
     "pair-programming",
     "agent",
-    "vscode",
-    "vim"
+    "vim",
+    "neovim",
+    "lazyvim"
   ],
   "repository": {
     "type": "git",
@@ -29,159 +27,6 @@
     "lib/",
     "plugin/",
     "realtime_dev_agent.js",
-    "scripts/package_vscode.js",
-    "scripts/vscode_package_meta.js",
-    "vim/",
-    "vscode/",
-    "zed-extension/"
-  ],
-  "engines": {
-    "vscode": "^1.85.0"
-  },
-  "categories": [
-    "Other"
-  ],
-  "main": "./vscode/extension.js",
-  "activationEvents": [
-    "onStartupFinished",
-    "onCommand:realtimeDevAgent.analyzeCurrentFile",
-    "onCommand:realtimeDevAgent.toggleRealtime"
-  ],
-  "contributes": {
-    "commands": [
-      {
-        "command": "realtimeDevAgent.analyzeCurrentFile",
-        "title": "Pingu - Dev Agent: Analyze Current File"
-      },
-      {
-        "command": "realtimeDevAgent.toggleRealtime",
-        "title": "Pingu - Dev Agent: Toggle Realtime Analysis"
-      }
-    ],
-    "configuration": {
-      "title": "Pingu - Dev Agent",
-      "properties": {
-        "realtimeDevAgent.enabled": {
-          "type": "boolean",
-          "default": true,
-          "description": "Ativa a analise automatica em tempo real no VS Code."
-        },
-        "realtimeDevAgent.nodePath": {
-          "type": "string",
-          "default": "node",
-          "description": "Executavel Node.js usado para chamar o agente."
-        },
-        "realtimeDevAgent.scriptPath": {
-          "type": "string",
-          "default": "",
-          "description": "Caminho opcional para um realtime_dev_agent.js externo. Quando vazio, usa o script do proprio plugin."
-        },
-        "realtimeDevAgent.maxLineLength": {
-          "type": "number",
-          "default": 120,
-          "description": "Limite maximo de caracteres considerado pela analise."
-        },
-        "realtimeDevAgent.openAiModel": {
-          "type": "string",
-          "default": "gpt-5-codex",
-          "description": "Modelo OpenAI Codex usado pelos fluxos orientados por IA do agente."
-        },
-        "realtimeDevAgent.openAiTimeoutMs": {
-          "type": "number",
-          "default": 30000,
-          "description": "Tempo maximo em milissegundos para as chamadas OpenAI Codex do agente."
-        },
-        "realtimeDevAgent.realtimeOnSave": {
-          "type": "boolean",
-          "default": true,
-          "description": "Executa analise automatica ao salvar arquivos."
-        },
-        "realtimeDevAgent.realtimeOnChange": {
-          "type": "boolean",
-          "default": true,
-          "description": "Executa analise automatica durante a digitacao."
-        },
-        "realtimeDevAgent.changeDebounceMs": {
-          "type": "number",
-          "default": 1200,
-          "description": "Tempo de debounce em milissegundos antes de rodar a analise por mudanca."
-        },
-        "realtimeDevAgent.realtimeFocusPaddingLines": {
-          "type": "number",
-          "default": 24,
-          "description": "Quantidade de linhas extras ao redor do bloco alterado ou visivel usada pela analise realtime leve no VS Code."
-        },
-        "realtimeDevAgent.realtimeAnalysisMode": {
-          "type": "string",
-          "enum": [
-            "light",
-            "full"
-          ],
-          "default": "light",
-          "description": "Profundidade da analise automatica em open/change/focus/startup. light reduz custo no loop realtime; full mantem a mesma profundidade da analise manual."
-        },
-        "realtimeDevAgent.realtimeAutoFixMaxPerPass": {
-          "type": "number",
-          "default": 2,
-          "description": "Quantidade maxima de autofixes automaticos aplicada por ciclo realtime no VS Code."
-        },
-        "realtimeDevAgent.terminalActionsEnabled": {
-          "type": "boolean",
-          "default": true,
-          "description": "Executa acoes de terminal inferidas a partir de comentarios com * no terminal integrado do VS Code."
-        },
-        "realtimeDevAgent.terminalRiskMode": {
-          "type": "string",
-          "enum": [
-            "safe",
-            "workspace_write",
-            "all"
-          ],
-          "default": "workspace_write",
-          "description": "Nivel maximo de risco permitido para comandos inferidos pelo agente. safe permite apenas leitura, workspace_write permite alteracoes locais e all libera tambem comandos destrutivos."
-        },
-        "realtimeDevAgent.autoFixEnabled": {
-          "type": "boolean",
-          "default": true,
-          "description": "Aplica automaticamente snippets de geracao de codigo, arquivos de contexto e testes no VS Code."
-        },
-        "realtimeDevAgent.autoFixKinds": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": [
-            "moduledoc",
-            "context_contract",
-            "function_spec",
-            "function_doc",
-            "class_doc",
-            "variable_doc",
-            "flow_comment",
-            "missing_dependency",
-            "functional_reassignment",
-            "trailing_whitespace",
-            "tabs",
-            "undefined_variable",
-            "debug_output",
-            "comment_task",
-            "context_file",
-            "unit_test",
-            "syntax_missing_quote",
-            "syntax_extra_delimiter",
-            "syntax_missing_delimiter",
-            "syntax_missing_comma",
-            "markdown_title",
-            "terraform_required_version",
-            "dockerfile_workdir"
-          ],
-          "description": "Lista de tipos de sugestao que podem ser autoaplicados pela extensao do VS Code."
-        }
-      }
-    }
-  },
-  "scripts": {
-    "package:vscode": "node scripts/package_vscode.js",
-    "publish:vscode": "node scripts/publish_vscode.js"
-  }
+    "vim/"
+  ]
 }

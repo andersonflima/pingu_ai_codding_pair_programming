@@ -57,7 +57,7 @@
   },
   "function_comment": {
     "defaultAction": { "op": "insert_before" },
-    "autoFixDefault": false,
+    "autoFixDefault": true,
     "autoFixPriority": 330,
     "supportsQuickFix": true,
     "supportsFollowUp": true

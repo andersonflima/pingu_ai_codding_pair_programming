@@ -1986,10 +1986,6 @@ function! s:issue_terminal_strategy() abort
     return l:strategy
   endif
 
-  if exists('g:vscode') && get(g:, 'vscode', 0) && exists('*VSCodeNotify')
-    return 'vscode'
-  endif
-
   if exists(':TermExec') == 2
     return 'toggleterm'
   endif
@@ -2221,23 +2217,6 @@ function! s:apply_issue_run_command_toggleterm(command, cwd, context, background
   return v:true
 endfunction
 
-function! s:apply_issue_run_command_vscode(command, cwd, context, background) abort
-  let l:status_file = s:issue_terminal_status_file()
-  let l:wrapped_command = s:issue_terminal_shell_command(a:command, a:cwd, l:status_file)
-  call VSCodeNotify('workbench.action.terminal.new')
-  call VSCodeNotify('workbench.action.terminal.focus')
-  call VSCodeNotify('workbench.action.terminal.sendSequence', {'text': l:wrapped_command . "\n"})
-  if a:background
-    call timer_start(80, {-> VSCodeNotify('workbench.action.focusActiveEditorGroup')})
-    echomsg '[RealtimeDevAgent] Executando em background no terminal do VS Code: ' . a:command
-  else
-    echomsg '[RealtimeDevAgent] Executando no terminal do VS Code: ' . a:command
-  endif
-  call s:issue_terminal_remove_trigger_now(a:context)
-  call s:issue_terminal_schedule_poll(a:context, l:status_file)
-  return v:true
-endfunction
-
 function! s:apply_issue_run_command_native(command, cwd, context, background) abort
   let l:height = s:issue_terminal_height()
   let l:return_winid = win_getid()
@@ -2449,10 +2428,6 @@ function! s:apply_issue_run_command(issue, keep_focus_code) abort
   let l:is_background = l:strategy ==# 'background' || s:realtime_dev_agent_auto_fix_busy || a:keep_focus_code
 
   if l:is_background
-    if exists('g:vscode') && get(g:, 'vscode', 0) && exists('*VSCodeNotify')
-      return s:apply_issue_run_command_vscode(l:command, l:cwd, l:context, v:true)
-    endif
-
     if exists(':TermExec') == 2
       return s:apply_issue_run_command_toggleterm(l:command, l:cwd, l:context, v:true)
     endif
@@ -2460,10 +2435,6 @@ function! s:apply_issue_run_command(issue, keep_focus_code) abort
     if s:apply_issue_run_command_native(l:command, l:cwd, l:context, v:true)
       return v:true
     endif
-  endif
-
-  if l:strategy ==# 'vscode'
-    return s:apply_issue_run_command_vscode(l:command, l:cwd, l:context, v:false)
   endif
 
   if l:strategy ==# 'toggleterm'

@@ -216,19 +216,18 @@ if !exists('g:realtime_dev_agent_realtime_on_cursor_hold')
 endif
 
 if !exists('g:realtime_dev_agent_realtime_on_buf_enter')
-  " Desligado por padrao para evitar rechecagens custosas em navegacao intensa.
-  " O cursor hold continua cobrindo o contexto atual assim que o usuario para no bloco.
-  let g:realtime_dev_agent_realtime_on_buf_enter = 0
+  " Ligado por padrao para reavaliar o contexto assim que o usuario entra no buffer.
+  let g:realtime_dev_agent_realtime_on_buf_enter = 1
 endif
 
 if !exists('g:realtime_dev_agent_realtime_insert_mode')
   " 1 analisa tambem durante Insert mode; 0 concentra a checagem ao sair da insercao.
-  let g:realtime_dev_agent_realtime_insert_mode = 0
+  let g:realtime_dev_agent_realtime_insert_mode = 1
 endif
 
 if !exists('g:realtime_dev_agent_review_on_open')
-  " Desligado por padrao para reduzir custo em navegacao intensa no editor.
-  let g:realtime_dev_agent_review_on_open = 0
+  " Ligado por padrao para o agente revisar o arquivo assim que ele entra no fluxo.
+  let g:realtime_dev_agent_review_on_open = 1
 endif
 
 if !exists('g:realtime_dev_agent_start_on_editor_enter')
@@ -336,7 +335,7 @@ if !exists('g:realtime_dev_agent_terminal_height')
 endif
 
 if !exists('g:realtime_dev_agent_terminal_strategy')
-  " auto: VS Code terminal em vscode-neovim, ToggleTerm quando houver TermExec, terminal nativa como fallback.
+  " auto: ToggleTerm quando houver TermExec, terminal nativa como fallback.
   " background: abre o terminal, inicia a execucao e devolve o foco ao codigo mantendo o output visivel em tempo real.
   let g:realtime_dev_agent_terminal_strategy = 'auto'
 endif

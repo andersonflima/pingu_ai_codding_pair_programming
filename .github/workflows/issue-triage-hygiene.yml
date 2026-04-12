@@ -33,7 +33,7 @@ jobs:
             const missing = [];
             if (labels.length === 0) {
               missing.push(
-                'adicione pelo menos uma label funcional ou de superficie (`bug`, `improvement`, `autofix`, `comments`, `imports`, `lazyvim`, `vscode`, `zed`, `performance`, `packaging`, `ai`, `breaking-risk`)'
+                'adicione pelo menos uma label funcional ou de superficie (`bug`, `improvement`, `autofix`, `comments`, `imports`, `lazyvim`, `performance`, `packaging`, `ai`, `breaking-risk`)'
               );
             }
 

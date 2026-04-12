@@ -37,8 +37,6 @@ body:
         - imports
         - performance
         - lazyvim
-        - vscode
-        - zed
         - packaging
         - ai
         - outra
