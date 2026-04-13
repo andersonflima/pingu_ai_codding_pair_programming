@@ -1634,7 +1634,86 @@ function! s:issue_action_identity(item) abort
   if l:op ==# 'run_command'
     return get(l:action, 'command', '')
   endif
+  if index(['insert_before', 'insert_after', 'replace_line'], l:op) != -1
+    let l:snippet = get(a:item, 'snippet', '')
+    if !empty(l:snippet)
+      return join(
+            \ map(copy(s:split_snippet_lines(l:snippet)), {_, val ->
+            \   substitute(substitute(val, '^\s*', '', ''), '\s*$', '', '')
+            \ }),
+            \ "\n"
+            \ )
+    endif
+  endif
   return get(a:item, 'text', '')
+endfunction
+
+function! s:issue_equivalence_key(item) abort
+  let l:action = s:issue_effective_action(a:item)
+  let l:op = get(l:action, 'op', '')
+  let l:file = fnamemodify(get(a:item, 'filename', ''), ':p')
+  let l:line = get(a:item, 'lnum', 0)
+  let l:identity = s:issue_action_identity(a:item)
+
+  if !empty(l:identity) && index(['insert_before', 'insert_after', 'replace_line', 'write_file', 'run_command'], l:op) != -1
+    return printf('%s|%d|%s|%s', l:file, l:line, l:op, l:identity)
+  endif
+
+  return printf('%s|%d|%s|%s', l:file, l:line, get(a:item, 'kind', ''), l:identity)
+endfunction
+
+function! s:normalize_line_for_insert_dedupe(text) abort
+  return substitute(substitute(string(a:text), '^\s*', '', ''), '\s*$', '', '')
+endfunction
+
+function! s:find_meaningful_line_index(lines, from_end) abort
+  if type(a:lines) != v:t_list || empty(a:lines)
+    return -1
+  endif
+
+  if a:from_end
+    let l:index = len(a:lines) - 1
+    while l:index >= 0
+      if !empty(s:normalize_line_for_insert_dedupe(a:lines[l:index]))
+        return l:index
+      endif
+      let l:index -= 1
+    endwhile
+    return -1
+  endif
+
+  let l:index = 0
+  while l:index < len(a:lines)
+    if !empty(s:normalize_line_for_insert_dedupe(a:lines[l:index]))
+      return l:index
+    endif
+    let l:index += 1
+  endwhile
+  return -1
+endfunction
+
+function! s:trim_insert_snippet_anchor_duplicates(snippet_lines, line_content, op) abort
+  if index(['insert_before', 'insert_after'], a:op) == -1 || type(a:snippet_lines) != v:t_list || empty(a:snippet_lines)
+    return a:snippet_lines
+  endif
+
+  let l:current = s:normalize_line_for_insert_dedupe(a:line_content)
+  if empty(l:current)
+    return a:snippet_lines
+  endif
+
+  let l:trimmed = copy(a:snippet_lines)
+  let l:first_idx = s:find_meaningful_line_index(l:trimmed, v:false)
+  if l:first_idx >= 0 && s:normalize_line_for_insert_dedupe(l:trimmed[l:first_idx]) ==# l:current
+    call remove(l:trimmed, l:first_idx)
+  endif
+
+  let l:last_idx = s:find_meaningful_line_index(l:trimmed, v:true)
+  if l:last_idx >= 0 && s:normalize_line_for_insert_dedupe(l:trimmed[l:last_idx]) ==# l:current
+    call remove(l:trimmed, l:last_idx)
+  endif
+
+  return l:trimmed
 endfunction
 
 function! s:apply_issue_write_file(issue, snippet_lines) abort
@@ -2606,10 +2685,14 @@ function! s:apply_issue_snippet(issue, keep_focus_code) abort
     let l:indent = get(l:action, 'indent', matchstr(l:line_content, '^\s*'))
     let l:snippet_lines = s:normalize_snippet_lines(l:snippet_lines, l:indent)
   endif
-  let l:snippet_text = join(l:snippet_lines, "\n")
   if empty(l:op)
     let l:op = get(s:issue_default_action(l:kind), 'op', 'insert_before')
   endif
+  let l:snippet_lines = s:trim_insert_snippet_anchor_duplicates(l:snippet_lines, l:line_content, l:op)
+  if empty(l:snippet_lines)
+    return v:false
+  endif
+  let l:snippet_text = join(l:snippet_lines, "\n")
 
   if l:op ==# 'replace_line'
     if s:apply_issue_range_replacement(l:target_buf, l:action, l:lnum, l:line_content, l:snippet_text)
@@ -3737,13 +3820,7 @@ function! s:build_auto_fix_state(qf, file, opts) abort
       continue
     endif
 
-    let l:item_key = printf(
-          \ '%s|%d|%s|%s',
-          \ fnamemodify(l:item_file, ':p'),
-          \ get(l:item, 'lnum', 0),
-          \ get(l:item, 'kind', ''),
-          \ s:issue_action_identity(l:item)
-          \ )
+    let l:item_key = s:issue_equivalence_key(l:item)
     if has_key(l:seen, l:item_key)
       continue
     endif
@@ -3861,10 +3938,7 @@ function! s:run_auto_fix_state(state, max_items) abort
         continue
       endif
 
-      let l:item_apply_key = l:item_kind
-      if !empty(l:item_identity)
-        let l:item_apply_key = l:item_kind . '|' . l:item_identity
-      endif
+      let l:item_apply_key = s:issue_equivalence_key(l:item)
       if !empty(l:line_kinds) && index(l:line_kinds, l:item_apply_key) != -1
         let l:processed += 1
         if a:max_items > 0 && l:processed >= a:max_items
