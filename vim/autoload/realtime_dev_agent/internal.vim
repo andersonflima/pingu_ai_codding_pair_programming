@@ -1634,7 +1634,7 @@ function! s:issue_action_identity(item) abort
   if l:op ==# 'run_command'
     return get(l:action, 'command', '')
   endif
-  if index(['insert_before', 'insert_after', 'replace_line'], l:op) != -1
+  if index(['insert_before', 'insert_after', 'replace_line', 'delete_line'], l:op) != -1
     let l:snippet = get(a:item, 'snippet', '')
     if !empty(l:snippet)
       return join(
@@ -1655,7 +1655,7 @@ function! s:issue_equivalence_key(item) abort
   let l:line = get(a:item, 'lnum', 0)
   let l:identity = s:issue_action_identity(a:item)
 
-  if !empty(l:identity) && index(['insert_before', 'insert_after', 'replace_line', 'write_file', 'run_command'], l:op) != -1
+  if !empty(l:identity) && index(['insert_before', 'insert_after', 'replace_line', 'delete_line', 'write_file', 'run_command'], l:op) != -1
     return printf('%s|%d|%s|%s', l:file, l:line, l:op, l:identity)
   endif
 
@@ -2609,7 +2609,7 @@ function! s:apply_issue_snippet(issue, keep_focus_code) abort
     return s:apply_issue_run_command(l:issue, a:keep_focus_code)
   endif
   if empty(l:snippet_raw)
-    if l:kind ==# 'trailing_whitespace' || l:kind ==# 'syntax_extra_delimiter'
+    if l:kind ==# 'trailing_whitespace' || l:kind ==# 'syntax_extra_delimiter' || l:op ==# 'delete_line'
       let l:snippet_lines = ['']
     else
       echohl WarningMsg
@@ -2715,6 +2715,12 @@ function! s:apply_issue_snippet(issue, keep_focus_code) abort
     endif
     if l:kind ==# 'comment_task' && !empty(get(l:issue, '_trigger_line', ''))
       call s:remove_issue_trigger_residue(l:issue, a:keep_focus_code)
+    endif
+  elseif l:op ==# 'delete_line'
+    if line('$') <= 1
+      noautocmd call setbufline(l:target_buf, l:lnum, '')
+    else
+      noautocmd call deletebufline(l:target_buf, l:lnum)
     endif
   elseif l:op ==# 'insert_after'
     noautocmd call appendbufline(l:target_buf, l:lnum, l:snippet_lines)
@@ -2854,6 +2860,22 @@ function! s:realtime_issue_still_relevant(item, target_buf, lnum, line_content) 
       return v:true
     endif
     return substitute(l:content, '^\s*', '', '') !=# l:expected
+  endif
+
+  if l:op ==# 'delete_line'
+    let l:snippet_lines = s:split_snippet_lines(get(a:item, 'snippet', ''))
+    let l:expected = ''
+    for l:snippet_line in l:snippet_lines
+      let l:trimmed = substitute(l:snippet_line, '^\s*', '', '')
+      if !empty(l:trimmed)
+        let l:expected = l:trimmed
+        break
+      endif
+    endfor
+    if empty(l:expected)
+      return !empty(trim(l:content))
+    endif
+    return substitute(l:content, '^\s*', '', '') ==# l:expected
   endif
 
   if l:kind ==# 'undefined_variable'
@@ -3973,6 +3995,7 @@ function! s:run_auto_fix_state(state, max_items) abort
         if !empty(l:adjustment)
           call add(l:state.line_adjustments, l:adjustment)
         endif
+        let l:state = s:drop_stale_candidates_after_delete_line(l:state, l:item)
       endif
 
       let l:processed += 1
@@ -4133,6 +4156,10 @@ function! s:issue_line_delta(item) abort
     return len(l:snippet_lines)
   endif
 
+  if l:op ==# 'delete_line'
+    return -1
+  endif
+
   if l:op ==# 'replace_line'
     let l:replaced_lines = 1
     if has_key(l:action, 'range') && type(l:action.range) == v:t_dict
@@ -4161,6 +4188,28 @@ function! s:issue_shift_adjustment(item) abort
         \ 'delta': l:delta,
         \ 'inclusive': index(['insert_before', 'replace_line'], l:op) != -1,
         \ }
+endfunction
+
+function! s:drop_stale_candidates_after_delete_line(state, item) abort
+  let l:action = s:issue_effective_action(a:item)
+  if get(l:action, 'op', '') !=# 'delete_line'
+    return a:state
+  endif
+
+  let l:deleted_line = get(a:item, 'lnum', 0)
+  if l:deleted_line <= 0 || empty(get(a:state, 'candidates', []))
+    return a:state
+  endif
+
+  let l:remaining = []
+  for l:candidate in get(a:state, 'candidates', [])
+    if get(l:candidate, 'lnum', 0) == l:deleted_line
+      continue
+    endif
+    call add(l:remaining, l:candidate)
+  endfor
+  let a:state.candidates = l:remaining
+  return a:state
 endfunction
 
 function! s:cumulative_line_shift(origin_line, adjustments) abort
