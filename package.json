@@ -20,6 +20,9 @@
   "bugs": {
     "url": "https://github.com/andersonflima/pingu_ai_codding_pair_programming/issues"
   },
+  "scripts": {
+    "test": "node --test"
+  },
   "files": [
     "assets/",
     "autoload/",
