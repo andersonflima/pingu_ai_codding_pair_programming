@@ -1,0 +1,69 @@
+{
+  "version": "1.0.0",
+  "scope": "Classes de erros de desenvolvimento que o Pingu deve detectar, corrigir automaticamente quando houver transformacao segura, ou sinalizar quando depender de contexto externo.",
+  "families": [
+    {
+      "id": "syntax_structure",
+      "description": "Aspas, delimitadores, virgulas, blocos e fences quebrados.",
+      "mappedIssueKinds": ["syntax_missing_quote", "syntax_missing_delimiter", "syntax_missing_comma", "syntax_extra_delimiter"],
+      "safeAutoFix": true,
+      "languages": ["javascript", "python", "elixir", "go", "rust", "ruby", "lua", "vim", "c", "terraform", "yaml", "markdown", "mermaid", "dockerfile", "shell", "toml"]
+    },
+    {
+      "id": "workspace_hygiene",
+      "description": "Tabs, espacos finais, linhas duplicadas, TODO/FIXME sem contrato e saidas de debug.",
+      "mappedIssueKinds": ["tabs", "trailing_whitespace", "duplicate_line", "todo_fixme", "debug_output"],
+      "safeAutoFix": true,
+      "languages": ["javascript", "python", "elixir", "go", "rust", "ruby", "lua", "vim", "c", "terraform", "yaml", "markdown", "mermaid", "dockerfile", "shell", "toml"]
+    },
+    {
+      "id": "nullability_and_equality",
+      "description": "Comparacoes frouxas ou idiomaticamente incorretas contra valores nulos.",
+      "mappedIssueKinds": ["loose_equality", "none_comparison", "nil_comparison"],
+      "safeAutoFix": true,
+      "languages": ["javascript", "python", "ruby"]
+    },
+    {
+      "id": "imports_and_dependencies",
+      "description": "Imports inexistentes, exports incorretos, includes/use ausentes e dependencias exigidas por snippets.",
+      "mappedIssueKinds": ["undefined_variable", "missing_dependency"],
+      "safeAutoFix": true,
+      "languages": ["javascript", "python", "elixir", "go", "rust", "c"]
+    },
+    {
+      "id": "error_handling",
+      "description": "Captura ampla demais, erros ignorados e fluxos que escondem falhas.",
+      "mappedIssueKinds": ["bare_except"],
+      "safeAutoFix": true,
+      "languages": ["python"]
+    },
+    {
+      "id": "public_contract",
+      "description": "Funcoes, classes, specs, moduledocs, variaveis relevantes e contratos sem documentacao suficiente.",
+      "mappedIssueKinds": ["function_doc", "class_doc", "function_spec", "moduledoc", "variable_doc", "function_comment", "flow_comment"],
+      "safeAutoFix": true,
+      "languages": ["javascript", "python", "elixir", "go", "rust", "ruby", "lua", "vim", "c"]
+    },
+    {
+      "id": "architecture_and_tests",
+      "description": "Contexto arquitetural ausente, scaffolds solicitados, cobertura de testes e contratos de arquivos estruturados.",
+      "mappedIssueKinds": ["comment_task", "context_file", "context_contract", "unit_test"],
+      "safeAutoFix": true,
+      "languages": ["javascript", "python", "elixir", "go", "rust", "ruby", "lua", "vim", "c", "terraform", "yaml", "markdown", "mermaid", "dockerfile", "shell", "toml"]
+    },
+    {
+      "id": "control_flow_and_complexity",
+      "description": "Condicionais profundas, reatribuicao imperativa e fluxo dificil de testar.",
+      "mappedIssueKinds": ["nested_condition", "functional_reassignment"],
+      "safeAutoFix": false,
+      "languages": ["javascript", "python", "elixir", "go", "rust", "ruby", "lua", "vim", "c"]
+    },
+    {
+      "id": "runtime_commands",
+      "description": "Acoes de terminal, testes, build, lint, formatacao e scripts locais com politica de risco.",
+      "mappedIssueKinds": ["terminal_task"],
+      "safeAutoFix": false,
+      "languages": ["javascript", "python", "elixir", "go", "rust", "ruby", "lua", "vim", "c", "terraform", "yaml", "markdown", "mermaid", "dockerfile", "shell", "toml"]
+    }
+  ]
+}

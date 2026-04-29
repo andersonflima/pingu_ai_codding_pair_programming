@@ -1,0 +1,58 @@
+name: npm-publish
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Install Elixir runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y elixir
+
+      - name: Install dependencies
+        run: npm install --ignore-scripts
+
+      - name: Test
+        run: npm test
+
+      - name: Check published version
+        id: package
+        shell: bash
+        run: |
+          name="$(node -p "require('./package.json').name")"
+          version="$(node -p "require('./package.json').version")"
+          echo "name=${name}" >> "$GITHUB_OUTPUT"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+          if npm view "${name}@${version}" version --json >/dev/null 2>&1; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "${name}@${version} already exists on npm"
+            exit 0
+          fi
+
+          echo "published=false" >> "$GITHUB_OUTPUT"
+
+      - name: Publish to npm
+        if: steps.package.outputs.published == 'false'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public

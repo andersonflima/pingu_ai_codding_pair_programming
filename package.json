@@ -14,11 +14,17 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/andersonflima/pingu_ai_codding_pair_programming.git"
+    "url": "git+https://github.com/andersonflima/pingu_ai_codding_pair_programming.git"
   },
   "homepage": "https://github.com/andersonflima/pingu_ai_codding_pair_programming#readme",
   "bugs": {
     "url": "https://github.com/andersonflima/pingu_ai_codding_pair_programming/issues"
+  },
+  "bin": {
+    "pingu": "realtime_dev_agent.js"
+  },
+  "scripts": {
+    "test": "node --test"
   },
   "files": [
     "assets/",
