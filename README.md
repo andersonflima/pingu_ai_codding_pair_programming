@@ -617,12 +617,12 @@ Autenticacao aceita:
 - recomendado: configurar Trusted Publisher no npm apontando para este repositorio e o workflow `npm-publish.yml`;
 - fallback: criar o secret `NPM_TOKEN` no GitHub com um token npm apto a publicar.
 
-Com Trusted Publisher, o workflow usa OIDC do GitHub Actions. Com `NPM_TOKEN`, o workflow usa o token como `NODE_AUTH_TOKEN`.
+Com Trusted Publisher, o workflow usa OIDC do GitHub Actions. O workflow roda em Node.js 24 e atualiza o npm CLI para uma versao compativel com OIDC. Com `NPM_TOKEN`, o workflow usa o token como `NODE_AUTH_TOKEN`.
 
 Protecao da `main`:
 
 - exige pull request antes do merge;
-- exige o status check `ci / test`;
+- exige o status check `test`;
 - exige branch atualizada antes do merge;
 - bloqueia force push e delecao;
 - nao exige review obrigatorio, para manter o fluxo viavel em projeto solo.
