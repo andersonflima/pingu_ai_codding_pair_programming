@@ -42,6 +42,7 @@ test('comment_task normalizes :: to the code-generation marker before synthesis'
   assert.equal(issues[0].kind, 'comment_task');
   assert.equal(calls.length, 1);
   assert.equal(calls[0][4].marker, ':');
+  assert.equal(calls[0][4].rawMarker, '::');
   assert.equal(calls[0][4].lineIndex, 0);
 });
 

@@ -26,27 +26,11 @@ function escapeRegExp(value) {
   return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-test('unit test coverage prefers AI output when the AI policy is enabled', () => {
-  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pingu-unit-test-policy-'));
-  const sourceFile = path.join(projectRoot, 'src', 'sum.js');
-  fs.mkdirSync(path.dirname(sourceFile), { recursive: true });
-  fs.writeFileSync(sourceFile, 'export function sum(a, b) { return a + b; }\n');
-
-  const requests = [];
-  const checkUnitTestCoverage = createUnitTestCoverageChecker({
+function createJavaScriptUnitTestChecker(projectRoot, resolveAiGeneratedUnitTests) {
+  return createUnitTestCoverageChecker({
     hasOpenAiConfiguration: () => true,
     loadActiveBlueprintContext: () => null,
-    resolveAiGeneratedUnitTests: (request) => {
-      requests.push(request);
-      return {
-        snippet: 'test("sum", () => { expect(subject.sum(1, 2)).toBe(3); });',
-        action: {
-          op: 'write_file',
-          target_file: path.join(projectRoot, 'test', 'sum.test.js'),
-          mkdir_p: true,
-        },
-      };
-    },
+    resolveAiGeneratedUnitTests,
     sanitizeIdentifier,
     sanitizeNaturalIdentifier,
     escapeRegExp,
@@ -72,6 +56,29 @@ test('unit test coverage prefers AI output when the AI policy is enabled', () =>
     upwardDepth: () => 0,
     upperFirst: (value) => String(value || '').charAt(0).toUpperCase() + String(value || '').slice(1),
   });
+}
+
+test('unit test coverage prefers AI output when the AI policy is enabled', () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pingu-unit-test-policy-'));
+  const sourceFile = path.join(projectRoot, 'src', 'sum.js');
+  fs.mkdirSync(path.dirname(sourceFile), { recursive: true });
+  fs.writeFileSync(sourceFile, 'export function sum(a, b) { return a + b; }\n');
+
+  const requests = [];
+  const checkUnitTestCoverage = createJavaScriptUnitTestChecker(
+    projectRoot,
+    (request) => {
+      requests.push(request);
+      return {
+        snippet: 'test("sum", () => { expect(subject.sum(1, 2)).toBe(3); });',
+        action: {
+          op: 'write_file',
+          target_file: path.join(projectRoot, 'test', 'sum.test.js'),
+          mkdir_p: true,
+        },
+      };
+    },
+  );
 
   const issues = checkUnitTestCoverage(
     ['export function sum(a, b) { return a + b; }'],
@@ -84,4 +91,54 @@ test('unit test coverage prefers AI output when the AI policy is enabled', () =>
   assert.equal(requests.length, 1);
   assert.equal(requests[0].focusLine, 1);
   assert.equal(requests[0].targetFile, path.join(projectRoot, 'test', 'src', 'sum.test.js'));
+});
+
+test('unit test coverage normalizes AI action with empty op to write_file', () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pingu-unit-test-action-'));
+  const sourceFile = path.join(projectRoot, 'src', 'sum.js');
+  const aiTargetFile = path.join(projectRoot, 'test', 'sum.ai.test.js');
+  fs.mkdirSync(path.dirname(sourceFile), { recursive: true });
+  fs.writeFileSync(sourceFile, 'export function sum(a, b) { return a + b; }\n');
+
+  const checkUnitTestCoverage = createJavaScriptUnitTestChecker(
+    projectRoot,
+    () => ({
+      snippet: 'test("sum", () => { expect(subject.sum(1, 2)).toBe(3); });',
+      action: {
+        op: '',
+        target_file: aiTargetFile,
+        mkdir_p: true,
+      },
+    }),
+  );
+
+  const issues = checkUnitTestCoverage(
+    ['export function sum(a, b) { return a + b; }'],
+    sourceFile,
+  );
+
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0].action.op, 'write_file');
+  assert.equal(issues[0].action.target_file, aiTargetFile);
+  assert.equal(issues[0].action.mkdir_p, true);
+});
+
+test('unit test coverage falls back offline when preferred AI returns no snippet', () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pingu-unit-test-offline-fallback-'));
+  const sourceFile = path.join(projectRoot, 'src', 'sum.js');
+  fs.mkdirSync(path.dirname(sourceFile), { recursive: true });
+  fs.writeFileSync(sourceFile, 'export function sum(a, b) { return a + b; }\n');
+
+  const checkUnitTestCoverage = createJavaScriptUnitTestChecker(projectRoot, () => null);
+
+  const issues = checkUnitTestCoverage(
+    ['export function sum(a, b) { return a + b; }'],
+    sourceFile,
+  );
+
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0].kind, 'unit_test');
+  assert.equal(issues[0].action.op, 'write_file');
+  assert.equal(issues[0].action.target_file, path.join(projectRoot, 'test', 'src', 'sum.test.js'));
+  assert.notEqual(issues[0].kind, 'ai_required');
 });
