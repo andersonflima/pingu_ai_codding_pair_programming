@@ -20,6 +20,9 @@
   "bugs": {
     "url": "https://github.com/andersonflima/pingu_ai_codding_pair_programming/issues"
   },
+  "bin": {
+    "pingu": "./realtime_dev_agent.js"
+  },
   "scripts": {
     "test": "node --test"
   },
