@@ -24,6 +24,11 @@ jobs:
         with:
           node-version: 22
 
+      - name: Install Elixir runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y elixir
+
       - name: Install dependencies
         run: npm install --ignore-scripts
 
