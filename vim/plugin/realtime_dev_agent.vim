@@ -332,7 +332,7 @@ endif
 
 if !exists('g:realtime_dev_agent_terminal_risk_mode')
   " safe: somente leitura; workspace_write: permite escrita local; all: libera tudo.
-  let g:realtime_dev_agent_terminal_risk_mode = 'workspace_write'
+  let g:realtime_dev_agent_terminal_risk_mode = 'safe'
 endif
 
 if !exists('g:realtime_dev_agent_terminal_height')
@@ -373,7 +373,6 @@ if !exists('g:realtime_dev_agent_auto_fix_kinds')
         \ 'debug_output',
         \ 'missing_dependency',
         \ 'nested_condition',
-        \ 'terminal_task',
         \ 'todo_fixme',
         \ 'unit_test',
         \ 'trailing_whitespace',
@@ -403,7 +402,7 @@ endif
 
 if !exists('g:realtime_dev_agent_auto_fix_strict_validation')
   " 1 reanalisa e valida guard de forma sincrona apos autofix; 0 prioriza fluxo non-blocking.
-  let g:realtime_dev_agent_auto_fix_strict_validation = 0
+  let g:realtime_dev_agent_auto_fix_strict_validation = 1
 endif
 
 if !exists('g:realtime_dev_agent_auto_fix_cursor_only')
@@ -468,7 +467,7 @@ endif
 
 if !exists('g:realtime_dev_agent_target_scope')
   " current_file: limita analise exibida e auto-fix ao arquivo atual; workspace: permite acoes multi-arquivo.
-  let g:realtime_dev_agent_target_scope = 'workspace'
+  let g:realtime_dev_agent_target_scope = 'current_file'
 endif
 
 let s:internal_script = fnamemodify(resolve(expand('<sfile>:p')), ':h:h') . '/autoload/realtime_dev_agent/internal.vim'

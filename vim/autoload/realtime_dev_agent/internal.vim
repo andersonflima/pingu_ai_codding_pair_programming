@@ -1725,17 +1725,62 @@ function! s:apply_issue_write_file(issue, snippet_lines) abort
   endif
   let l:target_file = fnamemodify(l:target_file, ':p')
   let l:issue._trigger_line = s:issue_trigger_line_text(a:issue)
+  let l:source_file = fnamemodify(get(l:issue, 'filename', ''), ':p')
+  let l:snippet_lines = copy(a:snippet_lines)
+  if get(l:action, 'remove_trigger', v:false) && l:target_file ==# l:source_file
+    let l:snippet_lines = s:remove_trigger_from_snippet_lines(l:snippet_lines, get(l:issue, '_trigger_line', ''))
+  endif
 
   let l:target_dir = fnamemodify(l:target_file, ':h')
   if get(l:action, 'mkdir_p', v:false) && !isdirectory(l:target_dir)
     call mkdir(l:target_dir, 'p')
   endif
 
-  call writefile(copy(a:snippet_lines), l:target_file, 'b')
-  if get(l:action, 'remove_trigger', v:false)
+  if !s:write_file_and_sync_buffer(l:target_file, l:snippet_lines)
+    return v:false
+  endif
+  if get(l:action, 'remove_trigger', v:false) && l:target_file !=# l:source_file
     if !s:remove_issue_trigger_line(l:issue, v:false) && empty(get(l:issue, '_trigger_line', ''))
       call s:clear_issue_line(get(l:issue, 'filename', ''), get(l:issue, 'lnum', 1))
     endif
+  endif
+  return v:true
+endfunction
+
+function! s:remove_trigger_from_snippet_lines(snippet_lines, trigger_line) abort
+  let l:trigger = trim(a:trigger_line)
+  let l:lines = copy(a:snippet_lines)
+  if empty(l:trigger)
+    return l:lines
+  endif
+  for l:index in range(0, len(l:lines) - 1)
+    if trim(l:lines[l:index]) ==# l:trigger
+      call remove(l:lines, l:index)
+      return empty(l:lines) ? [''] : l:lines
+    endif
+  endfor
+  return l:lines
+endfunction
+
+function! s:write_file_and_sync_buffer(target_file, lines) abort
+  let l:lines = empty(a:lines) ? [''] : copy(a:lines)
+  let l:target_buf = bufnr(a:target_file)
+  if l:target_buf > 0 && bufexists(l:target_buf)
+    if !getbufvar(l:target_buf, '&modifiable', 0)
+      return v:false
+    endif
+    noautocmd call setbufline(l:target_buf, 1, l:lines[0])
+    let l:current_count = len(getbufline(l:target_buf, 1, '$'))
+    if l:current_count > 1
+      noautocmd call deletebufline(l:target_buf, 2, l:current_count)
+    endif
+    if len(l:lines) > 1
+      noautocmd call appendbufline(l:target_buf, 1, l:lines[1:])
+    endif
+  endif
+  call writefile(copy(l:lines), a:target_file, 'b')
+  if l:target_buf > 0 && bufexists(l:target_buf)
+    call setbufvar(l:target_buf, '&modified', 0)
   endif
   return v:true
 endfunction
@@ -2088,16 +2133,16 @@ function! s:issue_terminal_strategy() abort
 endfunction
 
 function! s:issue_terminal_risk_mode() abort
-  let l:mode = trim(get(g:, 'realtime_dev_agent_terminal_risk_mode', 'workspace_write'))
+  let l:mode = trim(get(g:, 'realtime_dev_agent_terminal_risk_mode', 'safe'))
   if empty(l:mode)
-    return 'workspace_write'
+    return 'safe'
   endif
   let l:mode = tolower(l:mode)
   if l:mode ==# 'destructive'
     return 'all'
   endif
   if index(['safe', 'workspace_write', 'all'], l:mode) == -1
-    return 'workspace_write'
+    return 'safe'
   endif
   return l:mode
 endfunction
