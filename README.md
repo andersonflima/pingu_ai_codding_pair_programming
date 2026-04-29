@@ -65,6 +65,7 @@ Correcoes deterministicas ja mapeadas:
 - Python: `== None` e `!= None` viram `is None` e `is not None`.
 - Python: `except:` vira `except Exception:`.
 - Ruby: comparacoes diretas com `nil` viram `nil?`.
+- Elixir: comparacoes diretas com `nil` viram `is_nil/1`.
 
 ## Operacao de issues
 
@@ -85,6 +86,38 @@ Esse fluxo define:
 - Nao substitui decisao arquitetural do time.
 - Nao promete gerar qualquer coisa em qualquer linguagem sem contrato de capacidade.
 - Nao gera cobertura para arquivos que ja estao dentro de `tests/` ou `test/`, evitando loop de auto-geracao.
+
+## Instalacao rapida
+
+### CLI `pingu`
+
+Quando o pacote estiver publicado no npm:
+
+```bash
+npm install -g pingu-dev-agent
+pingu doctor
+```
+
+Enquanto o primeiro publish no npm nao estiver concluido, instale direto do GitHub:
+
+```bash
+npm install -g github:andersonflima/pingu_ai_codding_pair_programming
+pingu doctor
+```
+
+Para desenvolvimento local:
+
+```bash
+git clone git@github.com:andersonflima/pingu_ai_codding_pair_programming.git
+cd pingu_ai_codding_pair_programming
+npm install --ignore-scripts
+npm link
+pingu doctor
+```
+
+### IDE
+
+Para Vim, Neovim e LazyVim, instale o plugin pelo GitHub conforme a secao [Instalacao via GitHub no Vim](#instalacao-via-github-no-vim). A IDE usa o mesmo runtime do CLI, entao `pingu doctor` tambem ajuda a validar Node.js, runtime local, linguagens ativas e chave OpenAI opcional.
 
 ## Como o loop funciona
 
@@ -618,6 +651,23 @@ Autenticacao aceita:
 - fallback: criar o secret `NPM_TOKEN` no GitHub com um token npm apto a publicar.
 
 Com Trusted Publisher, o workflow usa OIDC do GitHub Actions. O workflow roda em Node.js 24 e atualiza o npm CLI para uma versao compativel com OIDC. Com `NPM_TOKEN`, o workflow usa o token como `NODE_AUTH_TOKEN`.
+
+Campos esperados no Trusted Publisher do npm:
+
+- Publisher: `GitHub Actions`
+- Organization or user: `andersonflima`
+- Repository: `pingu_ai_codding_pair_programming`
+- Workflow file name: `npm-publish.yml`
+- Environment name: deixe vazio, a menos que o workflow passe a usar `environment`
+
+Para usar fallback por token:
+
+```bash
+gh secret set NPM_TOKEN --body "<token-npm-com-permissao-de-publish>"
+gh workflow run npm-publish.yml --ref main
+```
+
+Se o pacote ainda nao existir no npm e o publish OIDC retornar `404 Not Found` com mensagem de permissao, falta configurar o Trusted Publisher para este pacote ou fazer o primeiro publish com uma conta npm que tenha permissao sobre o nome `pingu-dev-agent`.
 
 Protecao da `main`:
 
