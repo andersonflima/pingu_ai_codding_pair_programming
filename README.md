@@ -41,6 +41,31 @@ Esse contrato organiza o que o Pingu precisa fazer automaticamente para ser exce
 - validar e reverter sozinho quando piorar o estado do arquivo
 - manter baixo custo no loop de edicao
 
+## Taxonomia de erros de desenvolvimento
+
+A taxonomia versionada fica em [config/developer-error-taxonomy.json](./config/developer-error-taxonomy.json).
+
+Ela organiza os erros que o Pingu deve tratar por familias:
+
+- sintaxe e estrutura
+- higiene de workspace
+- nulabilidade e igualdade
+- imports e dependencias
+- tratamento de erros
+- contrato publico
+- arquitetura e testes
+- fluxo/complexidade
+- comandos de runtime
+
+Nem toda classe de erro tem auto-fix seguro. Quando a correcao depende de tipo, framework, contrato de dominio ou efeito colateral externo, o Pingu deve sinalizar ou pedir contexto em vez de reescrever especulativamente.
+
+Correcoes deterministicas ja mapeadas:
+
+- JavaScript/TypeScript: `==` e `!=` viram `===` e `!==` quando nao envolvem `null`/`undefined`.
+- Python: `== None` e `!= None` viram `is None` e `is not None`.
+- Python: `except:` vira `except Exception:`.
+- Ruby: comparacoes diretas com `nil` viram `nil?`.
+
 ## Operacao de issues
 
 O fluxo de melhoria continua do Pingu via GitHub Issues esta em [docs/triage.md](./docs/triage.md).
@@ -71,8 +96,10 @@ Esse fluxo define:
    - `unit_test`
    - `terminal_task`
 4. O editor aplica a acao automaticamente ou via quick fix, dependendo do fluxo.
-5. Quando a acao termina com sucesso, a linha gatilho e removida.
+5. Quando a acao termina com sucesso, a linha gatilho e removida sem deixar o buffer aberto divergente do arquivo escrito em disco.
 6. O arquivo e reanalisado para continuar o pareamento.
+
+O runtime que atende a IDE e o CLI e o mesmo. Isso significa que os comentarios acionaveis sao detectados pelo mesmo analisador nos dois modos. A diferenca intencional e operacional: `pingu fix` corrige apenas erros locais seguros; `pingu prompts` executa explicitamente os prompts dos comentarios.
 
 ## Tipos de comentario acionavel
 
@@ -92,6 +119,10 @@ Em linguagens com comentario `//`, o formato recomendado para evitar ambiguidade
 
 ```python
 #: implementar funcao para calcular total do pedido
+```
+
+```elixir
+#:: funcao soma
 ```
 
 ```lua
@@ -120,6 +151,10 @@ Formato recomendado em comentarios com `//`:
 -- ** projeto existente usa onion architecture, controllers finos e casos de uso puros
 ```
 
+```elixir
+#::: contexto Phoenix usa contexts por dominio, funcoes puras no core e Ecto apenas na fronteira
+```
+
 Quando o blueprint descreve um fluxo de BFF CRUD, o scaffold nativo hoje e mais forte em:
 
 - `JavaScript` e `TypeScript`
@@ -138,6 +173,10 @@ Quando o blueprint descreve um fluxo de BFF CRUD, o scaffold nativo hoje e mais 
 
 ```python
 # * listar arquivos do projeto
+```
+
+```elixir
+# * rodar testes
 ```
 
 ```lua
@@ -466,6 +505,141 @@ Atalhos principais:
 - `r`: reanalisa
 - `q`: fecha o painel
 
+## CLI de terminal
+
+O Pingu tambem pode ser usado fora do editor como CLI, mantendo os flags legados que o Vim/Neovim ja usam.
+
+Comandos principais:
+
+```bash
+pingu analyze src/app.js --json
+pingu analyze src/app.js src/domain/user.py --json
+pingu analyze src --json
+pingu analyze --stdin --source-path src/app.js --json
+pingu fix src/app.js
+pingu fix src/app.js --write
+pingu fix src --check
+pingu fix src --write
+pingu prompts src/app.js
+pingu prompts src/app.js --write
+pingu prompts src --check
+pingu comments src/app.js --write
+pingu prompts lib/calculator.ex --write
+pingu analyze lib/calculator.ex test/calculator_test.exs --json
+pingu offline --json
+pingu taxonomy
+pingu doctor
+```
+
+Equivalentes pelo entrypoint direto:
+
+```bash
+node realtime_dev_agent.js analyze src/app.js --json
+node realtime_dev_agent.js fix src/app.js --write --json
+node realtime_dev_agent.js prompts src/app.js --write --json
+node realtime_dev_agent.js taxonomy --json
+node realtime_dev_agent.js doctor --json
+```
+
+Contratos:
+
+- `analyze` usa o mesmo motor do editor, aceita arquivos/diretorios e nao escreve arquivos.
+- `fix` mostra um plano por padrao e so escreve com `--write`.
+- `fix --write` aplica apenas correcoes locais de erro/higiene com alta confianca no proprio arquivo.
+- `fix --check` nao escreve e retorna exit code `1` quando houver correcao aplicavel; use em CI/pre-commit.
+- geracao estrutural, `comment_task`, testes, arquivos adjacentes e terminal continuam fora do `fix` padrao.
+- `prompts` mostra os comentarios acionaveis encontrados e nao escreve por padrao.
+- `prompts --write` executa `comment_task` e `context_file` de forma explicita, usando o mesmo motor da IDE e validando o resultado antes de concluir.
+- `prompts --check` nao escreve e retorna exit code `1` quando existir prompt acionavel pendente; use em CI/pre-commit quando quiser bloquear comentarios `//::`, `#:` ou equivalentes nao aplicados.
+- `comments` e alias de `prompts`.
+- `offline` mostra a cobertura offline das linguagens ativas para `comment_task`, `context_file`, `unit_test` e `terminal_task`.
+- `taxonomy` lista as familias de erro e os `issue kinds` mapeados.
+- `doctor` valida ambiente local, runtime, linguagens ativas e presenca opcional de `OPENAI_API_KEY`.
+- `--serve`, `--stdin`, `--analyze` e `--autofix-guard` continuam preservados para a integracao da IDE.
+
+## Contrato da IA
+
+Quando o Pingu usa IA, o payload enviado inclui:
+
+- buffer completo do arquivo atual
+- janela de foco em torno do comentario ou issue
+- comentario acionavel com marcador, papel, linha gatilho e texto original
+- memoria persistente do projeto, quando existir
+- perfil da linguagem e boas praticas ativas
+- mapa de simbolos do arquivo, incluindo funcoes, metodos, classes, tipos e modulos ja existentes
+
+Esse contrato existe para reduzir chute e evitar regressao. A IA deve complementar o codigo existente, preservar contratos observaveis, nao duplicar simbolos e retornar o menor trecho aplicavel. No CLI, prompts e fixes so escrevem com `--write`; na IDE, o auto-fix reanalisa e passa pelo guard antes de considerar o lote concluido.
+
+## Cobertura Offline
+
+O Pingu deve continuar util sem IA. O contrato offline versionado cobre todas as linguagens ativas do registry para:
+
+- comentarios acionaveis: `comment_task`
+- contexto persistente: `context_file`
+- testes: `unit_test`
+- terminal seguro/manual: `terminal_task`
+
+Para verificar:
+
+```bash
+pingu offline --json
+```
+
+O resultado esperado para o registry atual e `percent: 100`.
+
+Quando a IA esta em modo `prefer`, ela pode melhorar a resposta, mas nao e requisito para concluir o fluxo. Se a IA falhar, o Pingu cai para o gerador offline. Apenas modo `force` bloqueia fallback e pode emitir `ai_required`.
+
+Correcoes offline tambem rodam pelo analisador e pelo CLI:
+
+```bash
+pingu fix src --write
+```
+
+Exemplos de correcoes deterministicas:
+
+- JavaScript/TypeScript: igualdade estrita quando seguro.
+- Python: `None` com `is`/`is not` e `except Exception`.
+- Ruby: `nil?`.
+- Elixir: `is_nil/1`.
+- higiene geral: whitespace, tabs, linhas duplicadas e sintaxe local.
+
+## Exemplo Elixir
+
+Arquivo `lib/calculator.ex`:
+
+```elixir
+#:: funcao soma
+```
+
+Aplicando pelo CLI:
+
+```bash
+pingu prompts lib/calculator.ex --write
+```
+
+Resultado esperado:
+
+```elixir
+defmodule Calculator do
+  @doc """
+    Orquestra o comportamento principal de soma
+  """
+  @spec soma(any(), any()) :: any()
+  def soma(a, b) do
+    a + b
+  end
+end
+```
+
+Outros fluxos Elixir cobertos:
+
+- `#::` gera ou ajusta codigo no arquivo atual.
+- `#:::` cria contexto persistente e scaffold quando o pedido permitir.
+- `# * rodar testes` infere `mix test`.
+- `# * compilar projeto` infere `mix compile`.
+- `# * formatar projeto` infere `mix format`.
+- `unit_test` gera teste ExUnit em `test/**/*_test.exs`.
+
 ## Instalacao via GitHub no Vim
 
 O repositorio expoe `plugin/` e `autoload/` na raiz, entao pode ser instalado direto do GitHub.
@@ -512,7 +686,7 @@ Plug 'andersonflima/pingu_ai_codding_pair_programming'
 
 - inicia no primeiro buffer suportado
 - mantem o painel fechado por padrao
-- por padrao usa `let g:realtime_dev_agent_target_scope = 'workspace'`; para restringir ao arquivo atual, use `current_file`
+- por padrao usa `let g:realtime_dev_agent_target_scope = 'current_file'`; use `workspace` apenas com opt-in explicito
 - `let g:realtime_dev_agent_open_window_on_start = 0` mantem o agente ativo sem abrir painel
 - `let g:realtime_dev_agent_open_window_on_start = 1` reabre o painel no startup automatico
 - `let g:realtime_dev_agent_start_on_editor_enter = 0` desliga o startup automatico
@@ -539,18 +713,19 @@ Plug 'andersonflima/pingu_ai_codding_pair_programming'
 - `let g:realtime_dev_agent_auto_fix_doc_cursor_context_only = 0` deixa `function_doc`, `class_doc`, `variable_doc` e `flow_comment` elegiveis no arquivo inteiro
 - `let g:realtime_dev_agent_auto_fix_local_cursor_context_only = 1` restringe `debug_output`, syntax local, `trailing_whitespace`, `function_spec`, `markdown_title`, `terraform_required_version` e `dockerfile_workdir` ao bloco textual atual
 - `let g:realtime_dev_agent_auto_fix_doc_cursor_context_max_lines = 80` controla o tamanho maximo desse bloco automatico
-- com os defaults atuais no Vim, o auto-fix realtime continua priorizando correcoes locais para syntax e higiene, mas comentarios documentais voltam a ser elegiveis no arquivo inteiro; no `save`, o agente consolida o buffer inteiro e pode incluir `unit_test` adjacente seguro e `context_file` para `.realtime-dev-agent/` e `.gitignore`, enquanto `terminal_task` continua sob controle explicito do runtime de terminal
+- com os defaults atuais no Vim, o auto-fix realtime continua priorizando correcoes locais para syntax e higiene, valida o lote antes de concluir e mantem o escopo no arquivo atual; no `save`, o agente pode incluir `unit_test` adjacente seguro e `context_file` para `.realtime-dev-agent/` e `.gitignore`, enquanto `terminal_task` continua fora do auto-fix padrao e sob controle explicito do runtime de terminal
 
 ### Terminal no Vim / Neovim
 
 - `let g:realtime_dev_agent_terminal_actions_enabled = 0` desliga `terminal_task`
-- `let g:realtime_dev_agent_terminal_risk_mode = 'safe'`
+- `let g:realtime_dev_agent_terminal_risk_mode = 'safe'` (default)
 - `let g:realtime_dev_agent_terminal_risk_mode = 'workspace_write'`
 - `let g:realtime_dev_agent_terminal_risk_mode = 'all'`
-- `let g:realtime_dev_agent_terminal_strategy = 'auto'` (default)
+- comandos como teste, build, install e scripts locais exigem `workspace_write`
+- `let g:realtime_dev_agent_terminal_strategy = 'background'` (default)
+- `let g:realtime_dev_agent_terminal_strategy = 'auto'`
 - `let g:realtime_dev_agent_terminal_strategy = 'toggleterm'`
 - `let g:realtime_dev_agent_terminal_strategy = 'native'`
-- `let g:realtime_dev_agent_terminal_strategy = 'background'`
 
 ## Credenciais e variaveis de ambiente
 
