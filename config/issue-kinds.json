@@ -104,6 +104,13 @@
     "supportsQuickFix": true,
     "supportsFollowUp": true
   },
+  "loose_equality": {
+    "defaultAction": { "op": "replace_line" },
+    "autoFixDefault": true,
+    "autoFixPriority": 42,
+    "supportsQuickFix": true,
+    "supportsFollowUp": true
+  },
   "markdown_title": {
     "defaultAction": { "op": "insert_before" },
     "autoFixDefault": true,
@@ -129,6 +136,27 @@
     "defaultAction": { "op": "insert_before" },
     "autoFixDefault": true,
     "autoFixPriority": 170,
+    "supportsQuickFix": true,
+    "supportsFollowUp": true
+  },
+  "nil_comparison": {
+    "defaultAction": { "op": "replace_line" },
+    "autoFixDefault": true,
+    "autoFixPriority": 43,
+    "supportsQuickFix": true,
+    "supportsFollowUp": true
+  },
+  "none_comparison": {
+    "defaultAction": { "op": "replace_line" },
+    "autoFixDefault": true,
+    "autoFixPriority": 42,
+    "supportsQuickFix": true,
+    "supportsFollowUp": true
+  },
+  "bare_except": {
+    "defaultAction": { "op": "replace_line" },
+    "autoFixDefault": true,
+    "autoFixPriority": 44,
     "supportsQuickFix": true,
     "supportsFollowUp": true
   },
@@ -176,7 +204,7 @@
   },
   "terminal_task": {
     "defaultAction": { "op": "run_command" },
-    "autoFixDefault": true,
+    "autoFixDefault": false,
     "autoFixPriority": 150,
     "supportsQuickFix": true,
     "supportsFollowUp": true

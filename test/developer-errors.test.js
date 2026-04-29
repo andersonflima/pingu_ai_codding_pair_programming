@@ -1,0 +1,91 @@
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+
+const { analyzeText } = require('../lib/analyzer');
+const { developerErrorFamiliesForLanguage, developerErrorKinds } = require('../lib/developer-error-taxonomy');
+
+process.env.PINGU_AI_MODE = 'off';
+
+function issueByKind(issues, kind) {
+  return issues.find((issue) => issue.kind === kind);
+}
+
+test('developer error taxonomy maps correction families for active languages', () => {
+  assert.ok(developerErrorKinds().includes('loose_equality'));
+  assert.ok(developerErrorKinds().includes('none_comparison'));
+  assert.ok(developerErrorKinds().includes('nil_comparison'));
+  assert.ok(developerErrorFamiliesForLanguage('javascript').some((family) => family.id === 'nullability_and_equality'));
+  assert.ok(developerErrorFamiliesForLanguage('python').some((family) => family.id === 'error_handling'));
+});
+
+test('analyzer corrects JavaScript loose equality without touching strings or null checks', () => {
+  const issues = analyzeText('/tmp/sample.js', [
+    'if (total == expected) {',
+    '  return "a == b"',
+    '}',
+    'if (value == null) {',
+    '  return false',
+    '}',
+  ].join('\n'), { analysisMode: 'light' });
+
+  const issue = issueByKind(issues, 'loose_equality');
+
+  assert.equal(issue.line, 1);
+  assert.equal(issue.snippet, 'if (total === expected) {');
+});
+
+test('analyzer corrects Python None comparison and bare except', () => {
+  const issues = analyzeText('/tmp/sample.py', [
+    'if value == None:',
+    '    result = "value == None"',
+    'try:',
+    '    run()',
+    'except:',
+    '    pass',
+  ].join('\n'), { analysisMode: 'light' });
+
+  const noneIssue = issueByKind(issues, 'none_comparison');
+  const exceptIssue = issueByKind(issues, 'bare_except');
+
+  assert.equal(noneIssue.line, 1);
+  assert.equal(noneIssue.snippet, 'if value is None:');
+  assert.equal(exceptIssue.line, 5);
+  assert.equal(exceptIssue.snippet, 'except Exception:');
+});
+
+test('analyzer corrects Ruby nil comparison', () => {
+  const issues = analyzeText('/tmp/sample.rb', [
+    'return user == nil',
+    'message = "user == nil"',
+  ].join('\n'), { analysisMode: 'light' });
+
+  const issue = issueByKind(issues, 'nil_comparison');
+
+  assert.equal(issue.line, 1);
+  assert.equal(issue.snippet, 'return user.nil?');
+});
+
+test('analyzer corrects Elixir nil comparison offline', () => {
+  const issues = analyzeText('/tmp/sample.ex', [
+    'value != nil',
+    'message = "value != nil"',
+  ].join('\n'), { analysisMode: 'light' });
+
+  const issue = issueByKind(issues, 'nil_comparison');
+
+  assert.equal(issue.line, 1);
+  assert.equal(issue.snippet, '!is_nil(value)');
+});
+
+test('analyzer does not treat equal trimmed lines with different indentation as duplicate', () => {
+  const issues = analyzeText('/tmp/sample.py', [
+    'def normalize(value):',
+    '    if value is None:',
+    '        return value',
+    '    return value',
+  ].join('\n'), { analysisMode: 'light' });
+
+  assert.equal(issues.some((issue) => issue.kind === 'duplicate_line'), false);
+});
