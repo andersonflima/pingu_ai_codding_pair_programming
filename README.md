@@ -15,6 +15,7 @@ O projeto funciona hoje em `Vim/Neovim`, com foco pratico em `LazyVim`, runtime 
 - Cria `context_file` a partir de blueprints descritos no comentario, com scaffold nativo nas stacks principais.
 - Gera ou complementa testes automaticamente e cria `tests/` ou `test/` quando necessario, seguindo o convenio da linguagem.
 - Detecta dependencias faltantes quando o snippet gerado exige imports, `use`, `require` ou `#include`.
+- Consulta bibliotecas Node instaladas e importadas pelo buffer para orientar geracoes e correcoes com base na API real da dependencia.
 - Tenta inserir imports e includes na fronteira correta do arquivo em vez de simplesmente despejar tudo na linha do comentario.
 - Executa `terminal_task` com inferencia por stack e politica de risco configuravel.
 - Expoe follow-up acionavel para continuar o pareamento sem sair do arquivo.
