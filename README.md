@@ -637,47 +637,6 @@ Exemplos de correcoes deterministicas:
 - Elixir: `is_nil/1`.
 - higiene geral: whitespace, tabs, linhas duplicadas e sintaxe local.
 
-## Publicacao no npm via GitHub Actions
-
-O repositorio possui dois workflows principais:
-
-- `.github/workflows/ci.yml`: roda `npm test` em pull requests para `main` e pushes relevantes.
-- `.github/workflows/npm-publish.yml`: roda testes e publica no npm quando um merge chega na `main`.
-
-O publish e idempotente por versao: se `name@version` ja existir no npm, o workflow encerra sem republicar.
-
-Autenticacao aceita:
-
-- recomendado: configurar Trusted Publisher no npm apontando para este repositorio e o workflow `npm-publish.yml`;
-- fallback: criar o secret `NPM_TOKEN` no GitHub com um token npm apto a publicar.
-
-Com Trusted Publisher, o workflow usa OIDC do GitHub Actions. O workflow roda em Node.js 24 e atualiza o npm CLI para uma versao compativel com OIDC. Com `NPM_TOKEN`, o workflow usa o token como `NODE_AUTH_TOKEN`.
-
-Campos esperados no Trusted Publisher do npm:
-
-- Publisher: `GitHub Actions`
-- Organization or user: `andersonflima`
-- Repository: `pingu_ai_codding_pair_programming`
-- Workflow file name: `npm-publish.yml`
-- Environment name: deixe vazio, a menos que o workflow passe a usar `environment`
-
-Para usar fallback por token:
-
-```bash
-gh secret set NPM_TOKEN --body "<token-npm-com-permissao-de-publish>"
-gh workflow run npm-publish.yml --ref main
-```
-
-Se o pacote ainda nao existir no npm e o publish OIDC retornar `404 Not Found` com mensagem de permissao, falta configurar o Trusted Publisher para este pacote ou fazer o primeiro publish com uma conta npm que tenha permissao sobre o nome `pingu-dev-agent`.
-
-Protecao da `main`:
-
-- exige pull request antes do merge;
-- exige o status check `test`;
-- exige branch atualizada antes do merge;
-- bloqueia force push e delecao;
-- nao exige review obrigatorio, para manter o fluxo viavel em projeto solo.
-
 ## Exemplo Elixir
 
 Arquivo `lib/calculator.ex`:
